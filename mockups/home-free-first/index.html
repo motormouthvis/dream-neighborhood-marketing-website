@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>MOCKUP · Free-first home page · Dream Neighborhood</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Real production stylesheets so the mockup renders in the live design system. -->
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/nav.css" />
+
+    <style>
+      /* ---- Mockup-only chrome. None of this ships. ---- */
+      .mk-flag {
+        position: sticky;
+        top: 0;
+        z-index: 900;
+        background: repeating-linear-gradient(
+          45deg,
+          #b91c1c,
+          #b91c1c 14px,
+          #991b1b 14px,
+          #991b1b 28px
+        );
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        text-align: center;
+        padding: 7px 12px;
+      }
+
+      [data-variant-block] {
+        display: none;
+      }
+      body[data-variant="a"] [data-variant-block="a"],
+      body[data-variant="b"] [data-variant-block="b"],
+      body[data-variant="c"] [data-variant-block="c"] {
+        display: block;
+      }
+
+      /* Annotation pins */
+      .mk-note {
+        display: none;
+        margin: 0 auto 26px;
+        max-width: 860px;
+        border: 1px dashed #b91c1c;
+        border-radius: 14px;
+        background: #fef2f2;
+        color: #7f1d1d;
+        padding: 14px 18px;
+        font-size: 14.5px;
+        line-height: 1.55;
+      }
+      body[data-notes="on"] .mk-note {
+        display: block;
+      }
+      .mk-note strong {
+        display: block;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+
+      /* Free-tier emphasis bits that would become real CSS if approved */
+      .mk-ccfree {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        font-size: 14.5px;
+        font-weight: 600;
+        color: var(--ink-500);
+      }
+      .mk-ccfree svg {
+        width: 17px;
+        height: 17px;
+        stroke: var(--green-700);
+        flex: 0 0 17px;
+      }
+      .hero__ctas + .mk-ccfree {
+        margin-top: 16px;
+      }
+
+      .mk-why {
+        max-width: 900px;
+        margin: 0 auto;
+        text-align: center;
+        background: var(--bg-mint);
+        border: 1px solid rgba(18, 125, 107, 0.18);
+        border-radius: var(--radius-lg);
+        padding: 34px 30px;
+      }
+      .mk-why h3 {
+        margin: 12px 0 10px;
+        font-size: clamp(21px, 2.6vw, 27px);
+        color: var(--ink-900);
+      }
+      .mk-why p {
+        margin: 0 auto;
+        max-width: 660px;
+        color: var(--ink-500);
+        font-size: 16.5px;
+        line-height: 1.65;
+      }
+
+      /* Two-product comparison */
+      .mk-split {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 22px;
+        max-width: 980px;
+        margin: 0 auto;
+      }
+      @media (max-width: 820px) {
+        .mk-split {
+          grid-template-columns: 1fr;
+        }
+      }
+      .mk-card {
+        border: 1px solid var(--ink-200);
+        border-radius: var(--radius-md);
+        background: #fff;
+        padding: 28px 26px;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+      }
+      .mk-card--free {
+        border: 2px solid var(--green-700);
+      }
+      .mk-card__tag {
+        align-self: flex-start;
+        font-size: 11.5px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 6px 12px;
+        border-radius: var(--radius-pill);
+        background: var(--green-100);
+        color: var(--green-900);
+      }
+      .mk-card--paid .mk-card__tag {
+        background: #f1f5f9;
+        color: var(--ink-500);
+      }
+      .mk-card h3 {
+        margin: 16px 0 4px;
+        font-size: 23px;
+        color: var(--ink-900);
+      }
+      .mk-card__price {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--green-700);
+        margin: 0 0 16px;
+      }
+      .mk-card--paid .mk-card__price {
+        color: var(--ink-500);
+      }
+      .mk-card ul {
+        list-style: none;
+        margin: 0 0 22px;
+        padding: 0;
+        display: grid;
+        gap: 11px;
+      }
+      .mk-card li {
+        position: relative;
+        padding-left: 27px;
+        font-size: 15.5px;
+        line-height: 1.5;
+        color: var(--ink-700);
+      }
+      .mk-card li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 5px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--green-100);
+        border: 1.5px solid var(--green-500);
+      }
+      .mk-card .btn {
+        margin-top: auto;
+        align-self: flex-start;
+      }
+
+      .mk-arrow {
+        text-align: center;
+        margin: 26px auto 0;
+        max-width: 760px;
+        font-size: 16px;
+        color: var(--ink-500);
+      }
+      .mk-arrow strong {
+        color: var(--ink-900);
+      }
+
+      /* Free plan card slotted into the existing pricing grid */
+      .plan--free {
+        border: 2px solid var(--green-700);
+        position: relative;
+      }
+      .plan__free-flag {
+        position: absolute;
+        top: -13px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--green-700);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 5px 14px;
+        border-radius: var(--radius-pill);
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+
+  <body data-variant="b" data-notes="on">
+    <div class="mk-flag">
+      Mockup for review — not the live site — nothing here is published
+    </div>
+
+    <!-- ============== NAVIGATION (unchanged from live) ============== -->
+    <header class="nav">
+      <div class="container nav__inner">
+        <a class="nav__logo" href="#">
+          <img
+            src="https://cdn.prod.website-files.com/68d4266c1bda64aac3888ce1/68d4278d2e08c6f1a213ea51_nav_logo.svg"
+            alt="Dream Neighborhood"
+            width="220"
+            height="54"
+          />
+        </a>
+
+        <nav class="nav__links" aria-label="Primary">
+          <a href="#" class="nav__main" aria-current="page">For Realtors &amp; Brokerages</a>
+          <a href="#" class="nav__main">For Partners</a>
+          <a href="#" class="nav__main">See It In Action</a>
+        </nav>
+
+        <div class="nav__cta">
+          <a class="btn btn--primary" href="#">Log in / Sign up</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============== HERO — THREE VARIANTS ============== -->
+    <section class="hero hero--illustrated">
+      <img
+        class="hero__illustration"
+        src="/assets/img/hero_background.svg"
+        alt=""
+        aria-hidden="true"
+      />
+
+      <div class="hero__badge" role="img" aria-label="Installed on thousands of websites">
+        <span class="hero__badge-text">Installed on thousands of websites</span>
+      </div>
+
+      <div class="container hero__grid">
+        <!-- ---------- VARIANT A: what is live today ---------- -->
+        <div class="hero__copy" data-variant-block="a">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            THE #1 NEIGHBORHOOD DATA PROVIDER
+          </span>
+
+          <h1 class="hero__title">
+            Keep customers on your real estate website longer.
+            <span class="accent">Add neighborhood data.</span>
+          </h1>
+
+          <p class="hero__lead">
+            Stop losing leads to Zillow, Realtor.com and ChatGPT by adding
+            comprehensive, proprietary neighborhood data to every listing.
+          </p>
+
+          <ul class="hero__bullets">
+            <li>One line of code</li>
+            <li>Zero website redesign</li>
+            <li>Works with any website</li>
+          </ul>
+
+          <div class="hero__ctas">
+            <a class="btn btn--primary btn--lg" href="#">Watch Video</a>
+            <a class="btn btn--lime btn--lg" href="#pricing">Get started</a>
+          </div>
+        </div>
+
+        <!-- ---------- VARIANT B: recommended, outcome headline + free entry ---------- -->
+        <div class="hero__copy" data-variant-block="b">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            FREE SCHOOL EXPLORER · NO CREDIT CARD
+          </span>
+
+          <h1 class="hero__title">
+            Keep buyers on your website —
+            <span class="accent">and make sure they pick you.</span>
+          </h1>
+
+          <p class="hero__lead">
+            One line of code adds a School Explorer to every listing on your
+            site: 119,000+ schools with ratings, test scores, and safety data.
+            <strong>Free for life.</strong> Upgrade anytime for the full 38+
+            data point Neighborhood Explorer.
+          </p>
+
+          <ul class="hero__bullets">
+            <li>Installs in 60 seconds</li>
+            <li>Auto-detects every listing address</li>
+            <li>Works with any IDX or website</li>
+          </ul>
+
+          <div class="hero__ctas">
+            <a class="btn btn--lime btn--lg" href="#free">Get the free School Explorer</a>
+            <a class="btn btn--primary btn--lg" href="#free">See the Neighborhood Explorer</a>
+          </div>
+
+          <span class="mk-ccfree">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            Free for life. No credit card required.
+          </span>
+        </div>
+
+        <!-- ---------- VARIANT C: free-only, maximum friction removal ---------- -->
+        <div class="hero__copy" data-variant-block="c">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            100% FREE FOR LIFE
+          </span>
+
+          <h1 class="hero__title">
+            Free school data on every listing.
+            <span class="accent">Forever.</span>
+          </h1>
+
+          <p class="hero__lead">
+            One line of code puts ratings, test scores, college readiness, and
+            safety data for 119,000+ schools on your listing pages. No credit
+            card. No trial. No catch.
+          </p>
+
+          <ul class="hero__bullets">
+            <li>Installs in 60 seconds</li>
+            <li>Nothing to maintain</li>
+            <li>Cancel-proof: it is just free</li>
+          </ul>
+
+          <div class="hero__ctas">
+            <a class="btn btn--lime btn--lg" href="#free">Install free in 60 seconds</a>
+            <a class="btn btn--primary btn--lg" href="#why-free">What&rsquo;s the catch?</a>
+          </div>
+
+          <span class="mk-ccfree">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            No credit card required.
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <div class="container" style="padding-top: 26px">
+      <div class="mk-note">
+        <strong>Note 1 · The hero decision</strong>
+        Variant A is today&rsquo;s live hero: no mention of anything free, and
+        the only path forward is a form that gates Calendly. Variant B keeps the
+        outcome in the headline and puts the free install underneath it, so the
+        page still reads as a platform rather than a school widget. Variant C
+        shows what happens if &ldquo;free&rdquo; becomes the whole identity —
+        highest install rate, lowest perceived ceiling, and a harder $39
+        conversation later. My recommendation is B.
+      </div>
+    </div>
+
+    <!-- ============== WHY IS IT FREE (reason-why) ============== -->
+    <section id="why-free" class="section">
+      <div class="container">
+        <div class="mk-note">
+          <strong>Note 2 · New section</strong>
+          &ldquo;Free for life&rdquo; is the strongest claim on the page and the
+          least believed. An explained business model converts far better than
+          unexplained generosity, so this strip exists purely to answer
+          &ldquo;what&rsquo;s the catch?&rdquo; before the visitor invents an
+          answer of their own.
+        </div>
+
+        <div class="mk-why">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            WHY IS IT FREE?
+          </span>
+          <h3>Because we make money when you outgrow it — not before.</h3>
+          <p>
+            The School Explorer is free for life, for everyone, with no credit
+            card and no view limit games. We only earn when you decide you also
+            want crime, demographics, walkability, commute times, market trends
+            and the other 38+ data points in the Neighborhood Explorer. That is
+            a real upgrade you will want, not a wall we put in front of you.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== FREE VS PAID ============== -->
+    <section id="free" class="section section--alt">
+      <div class="container">
+        <div class="section-head">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            TWO EXPLORERS, ONE LINE OF CODE
+          </span>
+          <h2 class="section-title">
+            Start Free. <span class="accent">Upgrade When You Want More.</span>
+          </h2>
+          <p class="section-lead">
+            Both run from the same snippet and the same dashboard. Turning on
+            the full neighborhood picture is a switch, not a second install.
+          </p>
+        </div>
+
+        <div class="mk-note">
+          <strong>Note 3 · This section only works because of the merge</strong>
+          Before the dashboard consolidation, going from free to paid meant a
+          second product, a second login and a second install. Now it is one
+          account and one snippet, which is exactly what makes leading with free
+          safe rather than reckless.
+        </div>
+
+        <div class="mk-split">
+          <article class="mk-card mk-card--free">
+            <span class="mk-card__tag">Free for life</span>
+            <h3>School Explorer</h3>
+            <p class="mk-card__price">$0 — no credit card required</p>
+            <ul>
+              <li>119,000+ schools with ratings and test scores</li>
+              <li>College readiness and student-teacher ratios</li>
+              <li>Safety data including violent incidents and suspensions</li>
+              <li>Type, grades served, and distance from the listing</li>
+              <li>Cross-links to Niche, GreatSchools and Google Maps</li>
+              <li>Popup or embedded, on every listing automatically</li>
+            </ul>
+            <a class="btn btn--lime" href="#">Get it free</a>
+          </article>
+
+          <article class="mk-card mk-card--paid">
+            <span class="mk-card__tag">Upgrade anytime</span>
+            <h3>Neighborhood Explorer</h3>
+            <p class="mk-card__price">From $24.92/mo billed annually</p>
+            <ul>
+              <li>Everything in the free School Explorer</li>
+              <li>38+ hyperlocal data points on every listing</li>
+              <li>Crime and safety, demographics, walkability</li>
+              <li>Market trends, commute times, nearby points of interest</li>
+              <li>Same snippet, same dashboard — flip one switch</li>
+              <li>Cancel anytime, no lock-in</li>
+            </ul>
+            <a class="btn btn--primary" href="#pricing">See pricing</a>
+          </article>
+        </div>
+
+        <p class="mk-arrow">
+          <strong>Compare that to LocalLogic</strong> at $500&ndash;$1,500+ a
+          month, with no free tier and an enterprise contract attached.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== PRICING WITH FREE TIER ============== -->
+    <section id="pricing" class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="pill pill--solid">
+            <span class="pill__dot" aria-hidden="true"></span>
+            PRICING
+          </span>
+          <h2 class="section-title">
+            Free Forever, Then Pricing Built For
+            <span class="accent">Agents And Brokerages</span>
+          </h2>
+          <p class="section-lead">
+            Keep one buyer a year on your website instead of sending them to
+            Zillow, and their transaction wins back your subscription.
+          </p>
+        </div>
+
+        <div class="mk-note">
+          <strong>Note 4 · Free belongs in the pricing grid too</strong>
+          Adding the free column here is what stops the upgrade from feeling
+          like a bait-and-switch. The visitor sees the whole ladder at once and
+          picks their own rung. Live prices are unchanged from the current site.
+        </div>
+
+        <div class="pricing">
+          <div class="plan plan--free">
+            <span class="plan__free-flag">Start here</span>
+            <div class="plan__name">School Explorer</div>
+            <div class="plan__price"><strong>$0</strong><span>/ forever</span></div>
+            <p class="plan__annual">No credit card required</p>
+            <p class="plan__sub">For every agent, team and brokerage.</p>
+            <ul class="plan__features">
+              <li>School Explorer on every listing</li>
+              <li>119,000+ schools, ratings, test scores, safety data</li>
+              <li>Free installation help</li>
+            </ul>
+            <a class="btn btn--lime" href="#">Get started free</a>
+          </div>
+
+          <div class="plan">
+            <div class="plan__name">Solo Agents</div>
+            <div class="plan__price"><strong>$24.92</strong><span>/ mo</span></div>
+            <p class="plan__annual">Billed annually · or $39/mo month-to-month</p>
+            <p class="plan__sub">For individual agents who want to stand out.</p>
+            <ul class="plan__features">
+              <li>Full Neighborhood Explorer, 38+ data points</li>
+              <li>Up to 5,000 views per month</li>
+              <li>24/7 Support</li>
+            </ul>
+            <a class="btn btn--primary" href="#">Upgrade</a>
+          </div>
+
+          <div class="plan plan--featured">
+            <div class="plan__name">Brokerages</div>
+            <div class="plan__price"><strong>$99.92</strong><span>/ mo</span></div>
+            <p class="plan__annual">Billed annually · or $149/mo month-to-month</p>
+            <p class="plan__sub">For teams rolling out across all agents.</p>
+            <ul class="plan__features">
+              <li>Full Neighborhood Explorer, 38+ data points</li>
+              <li><strong>No per-seat pricing, unlimited agents</strong></li>
+              <li>Up to 25,000 views per month</li>
+              <li>24/7 Support</li>
+            </ul>
+            <a class="btn btn--lime" href="#">Upgrade</a>
+          </div>
+
+          <div class="plan">
+            <div class="plan__name">Partners</div>
+            <div class="plan__price"><strong>Custom</strong></div>
+            <p class="plan__annual">&nbsp;</p>
+            <p class="plan__sub">For IDX providers, web developers and B2B partners.</p>
+            <ul class="plan__features">
+              <li>White-label the free School Explorer</li>
+              <li>40% recurring revenue share</li>
+              <li>We handle install, billing and support</li>
+            </ul>
+            <a class="btn btn--primary" href="#">Learn more</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== CLOSING NOTE ============== -->
+    <section class="section section--alt">
+      <div class="container">
+        <div class="mk-note" style="display: block; border-style: solid">
+          <strong>Note 5 · Separate issue found while building this</strong>
+          The live &ldquo;Advanced Options&rdquo; section on
+          <code>index.html</code> still sells the built-in lead capture form,
+          shareable explorer links and branded PDF reports, and the homepage
+          benefits grid still promises &ldquo;an optional built-in form.&rdquo;
+          Per the simplified August build, those were removed from the product.
+          That copy should come down in the same pass, otherwise the free signups
+          this page generates will arrive expecting features that no longer
+          exist. Not fixed here — this mockup adds new files only and changes
+          nothing on the real pages.
+        </div>
+      </div>
+    </section>
+
+    <script>
+      (function () {
+        var body = document.body;
+
+        function applyFromQuery() {
+          var params = new URLSearchParams(window.location.search);
+          var v = (params.get("v") || "b").toLowerCase();
+          if (["a", "b", "c"].indexOf(v) === -1) v = "b";
+          body.setAttribute("data-variant", v);
+          body.setAttribute("data-notes", params.get("notes") === "off" ? "off" : "on");
+        }
+
+        applyFromQuery();
+        window.addEventListener("popstate", applyFromQuery);
+
+        // Let the review shell drive the page without reloading it.
+        window.addEventListener("message", function (e) {
+          var d = e.data || {};
+          if (d.type !== "dn-mockup") return;
+          if (d.variant) body.setAttribute("data-variant", d.variant);
+          if (d.notes) body.setAttribute("data-notes", d.notes);
+        });
+      })();
+    </script>
+  </body>
+</html>

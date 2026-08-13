@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Dream Neighborhood · Mockup review</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: Urbanist, system-ui, -apple-system, Segoe UI, sans-serif;
+        background: #0c1512;
+        color: #e6f0ec;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        flex: 0 0 auto;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        background: #10201b;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 18px;
+        padding: 12px 20px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        font-weight: 800;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+        margin-right: 4px;
+      }
+      .brand span {
+        background: #b91c1c;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        padding: 4px 9px;
+        border-radius: 100px;
+      }
+
+      .group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .group > label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #7f9a90;
+      }
+      .seg {
+        display: flex;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 100px;
+        padding: 3px;
+      }
+      .seg button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: #cfe0d9;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        padding: 7px 15px;
+        border-radius: 100px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .seg button:hover {
+        color: #fff;
+      }
+      .seg button[aria-pressed="true"] {
+        background: #acef00;
+        color: #10201b;
+      }
+
+      .spacer {
+        flex: 1 1 auto;
+      }
+      .links {
+        display: flex;
+        gap: 16px;
+        font-size: 13px;
+      }
+      .links a {
+        color: #9fe870;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .links a:hover {
+        text-decoration: underline;
+      }
+
+      .desc {
+        padding: 0 20px 13px;
+        font-size: 13.5px;
+        line-height: 1.6;
+        color: #9db3aa;
+        max-width: 1000px;
+      }
+      .desc b {
+        color: #e6f0ec;
+      }
+
+      main {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+        background: #0c1512;
+      }
+      .frame-wrap {
+        width: 100%;
+        max-width: 100%;
+        transition: max-width 0.18s ease;
+        display: flex;
+        flex-direction: column;
+      }
+      .frame-wrap[data-device="tablet"] {
+        max-width: 834px;
+      }
+      .frame-wrap[data-device="mobile"] {
+        max-width: 414px;
+      }
+      iframe {
+        width: 100%;
+        flex: 1 1 auto;
+        min-height: 78vh;
+        border: 0;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <div class="brand">Dream Neighborhood <span>MOCKUP</span></div>
+
+        <div class="group">
+          <label for="seg-variant">Hero</label>
+          <div class="seg" id="seg-variant">
+            <button type="button" data-variant="a">A · Live today</button>
+            <button type="button" data-variant="b" aria-pressed="true">B · Free-first ★</button>
+            <button type="button" data-variant="c">C · Free-only</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <label>Width</label>
+          <div class="seg" id="seg-device">
+            <button type="button" data-device="desktop" aria-pressed="true">Desktop</button>
+            <button type="button" data-device="tablet">Tablet</button>
+            <button type="button" data-device="mobile">Mobile</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <label>Notes</label>
+          <div class="seg" id="seg-notes">
+            <button type="button" data-notes="on" aria-pressed="true">On</button>
+            <button type="button" data-notes="off">Off</button>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="links">
+          <a id="open-tab" href="/mockups/home-free-first/?v=b" target="_blank" rel="noopener">Open full screen ↗</a>
+          <a href="https://dreamneighborhood.com" target="_blank" rel="noopener">Compare to live ↗</a>
+        </div>
+      </div>
+
+      <p class="desc">
+        Nothing on this page is published. It adds new files only and changes no
+        existing page, so the live site is untouched. Switch the hero between
+        <b>A</b> (exactly what is live today), <b>B</b> (recommended: outcome
+        headline with the free School Explorer underneath) and <b>C</b> (free is
+        the entire identity). Red dashed boxes are my notes — turn them off to
+        see the page as a visitor would.
+      </p>
+    </header>
+
+    <main>
+      <div class="frame-wrap" id="wrap" data-device="desktop">
+        <iframe
+          id="stage"
+          src="/mockups/home-free-first/?v=b"
+          title="Home page mockup"
+        ></iframe>
+      </div>
+    </main>
+
+    <script>
+      (function () {
+        var stage = document.getElementById("stage");
+        var wrap = document.getElementById("wrap");
+        var openTab = document.getElementById("open-tab");
+        var state = { variant: "b", notes: "on", device: "desktop" };
+
+        function press(groupId, key, value) {
+          document
+            .querySelectorAll("#" + groupId + " button")
+            .forEach(function (b) {
+              b.setAttribute(
+                "aria-pressed",
+                String(b.dataset[key] === value)
+              );
+            });
+        }
+
+        function post() {
+          stage.contentWindow.postMessage(
+            { type: "dn-mockup", variant: state.variant, notes: state.notes },
+            "*"
+          );
+          openTab.href =
+            "/mockups/home-free-first/?v=" +
+            state.variant +
+            (state.notes === "off" ? "&notes=off" : "");
+        }
+
+        document
+          .querySelectorAll("#seg-variant button")
+          .forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              state.variant = btn.dataset.variant;
+              press("seg-variant", "variant", state.variant);
+              post();
+            });
+          });
+
+        document.querySelectorAll("#seg-notes button").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            state.notes = btn.dataset.notes;
+            press("seg-notes", "notes", state.notes);
+            post();
+          });
+        });
+
+        document.querySelectorAll("#seg-device button").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            state.device = btn.dataset.device;
+            press("seg-device", "device", state.device);
+            wrap.setAttribute("data-device", state.device);
+          });
+        });
+
+        // Re-assert state after the iframe reloads (device switches keep it, but be safe).
+        stage.addEventListener("load", post);
+      })();
+    </script>
+  </body>
+</html>
