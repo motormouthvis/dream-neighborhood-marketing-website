@@ -204,15 +204,89 @@
         align-self: flex-start;
       }
 
-      .mk-arrow {
-        text-align: center;
-        margin: 26px auto 0;
-        max-width: 760px;
+      /* Competitor cost comparison */
+      .mk-compare {
+        max-width: 980px;
+        margin: 40px auto 0;
+        border: 1px solid var(--ink-200);
+        border-radius: var(--radius-md);
+        background: #fff;
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+      }
+      .mk-compare > h3 {
+        margin: 0;
+        padding: 20px 26px;
+        font-size: 17px;
+        letter-spacing: 0.02em;
+        color: var(--ink-900);
+        background: var(--bg-soft);
+        border-bottom: 1px solid var(--ink-200);
+      }
+      .mk-compare__row {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 20px 26px;
+        border-bottom: 1px solid #eef2f6;
+      }
+      .mk-compare__row--us {
+        background: var(--bg-mint);
+      }
+      .mk-compare__who {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .mk-compare__who strong {
+        display: block;
         font-size: 16px;
+        color: var(--ink-900);
+        margin-bottom: 4px;
+      }
+      .mk-compare__who span {
+        font-size: 14.5px;
+        line-height: 1.55;
         color: var(--ink-500);
       }
-      .mk-arrow strong {
+      .mk-compare__cost {
+        flex: 0 0 auto;
+        text-align: right;
+        font-size: 25px;
+        font-weight: 800;
         color: var(--ink-900);
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+      }
+      .mk-compare__cost--free {
+        color: var(--green-700);
+      }
+      .mk-compare__cost span {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 600;
+        letter-spacing: 0;
+        color: var(--ink-400);
+      }
+      .mk-compare__foot {
+        margin: 0;
+        padding: 18px 26px;
+        font-size: 15px;
+        line-height: 1.6;
+        color: var(--ink-500);
+        background: var(--bg-soft);
+      }
+      .mk-compare__foot strong {
+        color: var(--ink-900);
+      }
+      @media (max-width: 700px) {
+        .mk-compare__row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+        }
+        .mk-compare__cost {
+          text-align: left;
+        }
       }
 
       /* The production .pricing grid is fixed at 3 columns; the free tier makes 4. */
@@ -464,7 +538,7 @@
             and the other 38+ data points in the Neighborhood Explorer. It&rsquo;s a
             very cost-effective, high-impact solution &mdash; but if you
             don&rsquo;t upgrade, no worries. You still get free school data for
-            life, versus $95&ndash;$800 per month from our competitors.
+            life, versus $97.50 to $1,800 per month from our competitors.
           </p>
         </div>
       </div>
@@ -531,10 +605,49 @@
           </article>
         </div>
 
-        <p class="mk-arrow">
-          <strong>Compare that to LocalLogic</strong> at $500&ndash;$1,500+ a
-          month, with no free tier and an enterprise contract attached.
-        </p>
+        <div class="mk-compare">
+          <h3>What the same school data costs everywhere else</h3>
+
+          <div class="mk-compare__row mk-compare__row--us">
+            <div class="mk-compare__who">
+              <strong>Dream Neighborhood School Explorer</strong>
+              <span>Ratings, test scores, college readiness, student-teacher ratios and school safety records</span>
+            </div>
+            <div class="mk-compare__cost mk-compare__cost--free">$0<span>forever</span></div>
+          </div>
+
+          <div class="mk-compare__row">
+            <div class="mk-compare__who">
+              <strong>GreatSchools NearbySchools API &mdash; School Quality</strong>
+              <span>Three quality bands only: below average, average, above average. The 1&ndash;10 ratings and assigned schools are <em>not included</em>. Metered at $0.006 per lookup past 15,000.</span>
+            </div>
+            <div class="mk-compare__cost">$97.50<span>/mo + usage</span></div>
+          </div>
+
+          <div class="mk-compare__row">
+            <div class="mk-compare__who">
+              <strong>GreatSchools NearbySchools API &mdash; School Essentials</strong>
+              <span>Directory data only: names, addresses, grades and school type. No ratings of any kind. Metered at $0.003 per lookup past 15,000.</span>
+            </div>
+            <div class="mk-compare__cost">$52.50<span>/mo + usage</span></div>
+          </div>
+
+          <div class="mk-compare__row">
+            <div class="mk-compare__who">
+              <strong>LocalLogic</strong>
+              <span>Enterprise neighborhood SDKs and APIs. No free tier, annual contract.</span>
+            </div>
+            <div class="mk-compare__cost">$500&ndash;$1,500+<span>/mo</span></div>
+          </div>
+
+          <p class="mk-compare__foot">
+            A brokerage site serving 100,000 listing views a month pays
+            GreatSchools <strong>$607.50</strong> for three coarse quality
+            bands. At their 300,000 call ceiling it is
+            <strong>$1,807.50</strong>. Ours is free, and it includes the
+            ratings theirs leaves out.
+          </p>
+        </div>
       </div>
     </section>
 
@@ -782,21 +895,37 @@
     <section class="section section--alt">
       <div class="container">
         <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 7 · One number to confirm before this goes live</strong>
-          The &ldquo;Why is it free?&rdquo; section now claims competitors charge
-          <strong>$95&ndash;$800 per month</strong>. Two things to check before
-          we publish it. First, the GreatSchools figure I have is roughly
-          $95&ndash;$150 <em>per year</em> for agents, not per month, so the
-          bottom of that range may be off by 12x in our favor &mdash; and a
-          realtor who already pays GreatSchools annually will notice. Second,
-          LocalLogic runs $500&ndash;$1,500+ per month, which pushes above the
-          $800 top end, and the comparison line further up this page still says
-          $500&ndash;$1,500. Right now the page contradicts itself. Give me the
-          range you want to stand behind and I will make both spots match.
+          <strong>Note 7 · Pricing claim now sourced &mdash; and it moved in our favor</strong>
+          Checked against the GreatSchools NearbySchools API page on 13 Aug
+          2026. Their published rates are <strong>$52.50/mo</strong> for School
+          Essentials and <strong>$97.50/mo</strong> for School Quality, both
+          including 15,000 calls, then metered at $0.003 and $0.006 per call up
+          to a 300,000 ceiling. So your $95 floor was very close to right, and
+          the $800 top end was too low: School Quality at the ceiling is
+          $1,807.50/mo, and LocalLogic runs to $1,500+. The copy now reads
+          <strong>$97.50 to $1,800 per month</strong>, which is defensible at
+          both ends and no longer contradicts the LocalLogic figure. If you
+          prefer a rounder number for the page, &ldquo;$97 to $1,800&rdquo; or
+          &ldquo;$100 to $1,800&rdquo; both still hold up.
         </div>
 
         <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 8 · Still zero production changes</strong>
+          <strong>Note 8 · Our own view caps undercut two claims on this page</strong>
+          The &ldquo;Why is it free?&rdquo; copy says <em>no view limit
+          games</em>, but the pricing table right below it caps Solo at 5,000
+          views and Brokerages at 25,000. Two problems. First, does the free
+          School Explorer have a view cap? If it does, <em>no view limit
+          games</em> is not a claim we can make. Second, GreatSchools includes
+          15,000 calls in their $52.50 tier, which is three times what our
+          $24.92 Solo plan allows, so a prospect who does the math finds we look
+          expensive per view. We win decisively on data depth &mdash; they
+          exclude the 1&ndash;10 ratings entirely &mdash; so the comparison
+          table above argues depth rather than volume. Worth deciding how you
+          want to answer this on a call before the free traffic starts arriving.
+        </div>
+
+        <div class="mk-note" style="display: block; border-style: solid">
+          <strong>Note 9 · Still zero production changes</strong>
           Everything above lives in <code>/mockups/</code>. No live page,
           stylesheet or redirect has been modified on this branch, so
           <code>dreamneighborhood.com</code> is exactly as it was. The removals
