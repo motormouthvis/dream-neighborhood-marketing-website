@@ -113,6 +113,12 @@
         font-size: 16.5px;
         line-height: 1.65;
       }
+      .mk-why__sub {
+        font-size: 15px !important;
+        font-weight: 600;
+        color: var(--green-700) !important;
+        margin-bottom: 16px !important;
+      }
 
       /* Two-product comparison */
       .mk-split {
@@ -520,9 +526,12 @@
           &ldquo;crime&rdquo; swapped out for safety and mobility. The
           confident framing works better than my original: it explains the
           business model, which is what makes &ldquo;free for life&rdquo;
-          believable, and the &ldquo;if you don&rsquo;t upgrade, no
-          worries&rdquo; line defuses the suspicion that free is a trap. See
-          Note 7 about the $95&ndash;$800 figure.
+          believable, and the &ldquo;if not, no worries&rdquo; line defuses the
+          suspicion that free is a trap. The heading has been softened from
+          &ldquo;so confident&rdquo; to &ldquo;confident,&rdquo; with the
+          reassurance broken out underneath in smaller type so it reads as a
+          promise rather than a hedge. See Note 8 for the sourcing behind the
+          competitor price range.
         </div>
 
         <div class="mk-why">
@@ -530,15 +539,19 @@
             <span class="pill__dot" aria-hidden="true"></span>
             WHY IS IT FREE?
           </span>
-          <h3>We&rsquo;re so confident you&rsquo;ll upgrade to the full Neighborhood Explorer.</h3>
+          <h3>We&rsquo;re confident you&rsquo;ll upgrade to the full Neighborhood Explorer.</h3>
+          <p class="mk-why__sub">
+            If not, no worries. You keep the School Explorer for life.
+          </p>
           <p>
-            The School Explorer is free for life, for everyone, with no credit
-            card and no view limit games. We only earn when you decide you also
-            want demographics, safety, mobility, commute times, market trends
-            and the other 38+ data points in the Neighborhood Explorer. It&rsquo;s a
-            very cost-effective, high-impact solution &mdash; but if you
-            don&rsquo;t upgrade, no worries. You still get free school data for
-            life, versus $97.50 to $1,800 per month from our competitors.
+            The School Explorer is free for life, for everyone, with
+            <strong>unlimited views</strong>, no credit card and no games. We
+            only earn when you decide you also want demographics, safety,
+            mobility, commute times, market trends and the other 38+ data
+            points in the Neighborhood Explorer. It&rsquo;s a very
+            cost-effective, high-impact solution &mdash; and either way you keep
+            free school data for life, versus $97.50 to $1,800 per month from
+            our competitors.
           </p>
         </div>
       </div>
@@ -575,12 +588,12 @@
             <h3>School Explorer</h3>
             <p class="mk-card__price">$0 — no credit card required</p>
             <ul>
+              <li><strong>Unlimited views</strong>, on every listing you have</li>
               <li>119,000+ schools with ratings and test scores</li>
               <li>College readiness and student-teacher ratios</li>
               <li>School safety records and student-conduct data</li>
               <li>Type, grades served, and distance from the listing</li>
               <li>Cross-links to Niche, GreatSchools and Google Maps</li>
-              <li>Popup or embedded, on every listing automatically</li>
             </ul>
             <a class="btn btn--lime" href="#">Get it free</a>
           </article>
@@ -588,7 +601,7 @@
           <article class="mk-card mk-card--paid">
             <span class="mk-card__tag">Upgrade anytime</span>
             <h3>Neighborhood Explorer</h3>
-            <p class="mk-card__price">From $24.92/mo billed annually</p>
+            <p class="mk-card__price">From Only $24.92/mo billed annually</p>
             <p class="mk-card__blurb">
               The Neighborhood Explorer adds demographics, commute times,
               housing and market trends, political leanings, safety, nearby
@@ -611,7 +624,7 @@
           <div class="mk-compare__row mk-compare__row--us">
             <div class="mk-compare__who">
               <strong>Dream Neighborhood School Explorer</strong>
-              <span>Ratings, test scores, college readiness, student-teacher ratios and school safety records</span>
+              <span>Full ratings, test scores, college readiness, student-teacher ratios and school safety records. Unlimited views, free installation.</span>
             </div>
             <div class="mk-compare__cost mk-compare__cost--free">$0<span>forever</span></div>
           </div>
@@ -619,17 +632,17 @@
           <div class="mk-compare__row">
             <div class="mk-compare__who">
               <strong>GreatSchools NearbySchools API &mdash; School Quality</strong>
-              <span>Three quality bands only: below average, average, above average. The 1&ndash;10 ratings and assigned schools are <em>not included</em>. Metered at $0.006 per lookup past 15,000.</span>
+              <span>Their top published tier, and it still does <em>not</em> include the 1&ndash;10 ratings or assigned schools. You get three bands: below average, average, above average. 15,000 lookups included, then $0.006 each.</span>
             </div>
             <div class="mk-compare__cost">$97.50<span>/mo + usage</span></div>
           </div>
 
           <div class="mk-compare__row">
             <div class="mk-compare__who">
-              <strong>GreatSchools NearbySchools API &mdash; School Essentials</strong>
-              <span>Directory data only: names, addresses, grades and school type. No ratings of any kind. Metered at $0.003 per lookup past 15,000.</span>
+              <strong>Niche</strong>
+              <span>Enterprise data licensing. No published pricing at all &mdash; you have to book a call with a data expert to find out what it costs.</span>
             </div>
-            <div class="mk-compare__cost">$52.50<span>/mo + usage</span></div>
+            <div class="mk-compare__cost">Quote<span>only</span></div>
           </div>
 
           <div class="mk-compare__row">
@@ -644,9 +657,32 @@
             A brokerage site serving 100,000 listing views a month pays
             GreatSchools <strong>$607.50</strong> for three coarse quality
             bands. At their 300,000 call ceiling it is
-            <strong>$1,807.50</strong>. Ours is free, and it includes the
-            ratings theirs leaves out.
+            <strong>$1,807.50</strong>. Ours is free, unlimited, and it includes
+            the ratings theirs leaves out.
           </p>
+        </div>
+
+        <div class="mk-note">
+          <strong>Note 4 · Niche could not be priced</strong>
+          You asked me to check the $800/month figure. Niche does not publish
+          any pricing: their licensing page only says &ldquo;request a call with
+          a data expert,&rdquo; and every rate I could find online was an
+          unofficial third-party scraper, not Niche. So I have listed them as
+          quote-only rather than print a number we cannot defend. If you have an
+          actual Niche quote in writing, send it and I will put the real figure
+          in with a &ldquo;quoted at&rdquo; qualifier. Until then, their refusal
+          to publish is itself the argument, and it is the line I used.
+        </div>
+
+        <div class="lime-banner" style="max-width: 900px; margin: 34px auto 0">
+          <div class="lime-banner__num">Free</div>
+          <div class="lime-banner__text">
+            <strong>We&rsquo;ll install the popup on your website for you, free.</strong>
+            School Explorer or Neighborhood Explorer, your choice. If you
+            don&rsquo;t like it, tell us and we&rsquo;ll take it right back off.
+            Free installation covers the popup; embedded explorers are a
+            self-install.
+          </div>
         </div>
       </div>
     </section>
@@ -670,7 +706,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 4 · Free belongs in the pricing grid too</strong>
+          <strong>Note 5 · Free belongs in the pricing grid too</strong>
           Adding the free column here is what stops the upgrade from feeling
           like a bait-and-switch. The visitor sees the whole ladder at once and
           picks their own rung. Live prices are unchanged from the current site.
@@ -684,9 +720,10 @@
             <p class="plan__annual">No credit card required</p>
             <p class="plan__sub">For every agent, team and brokerage.</p>
             <ul class="plan__features">
+              <li><strong>Unlimited views</strong></li>
               <li>School Explorer on every listing</li>
               <li>119,000+ schools, ratings, test scores, safety data</li>
-              <li>Free installation help</li>
+              <li>Free popup installation</li>
             </ul>
             <a class="btn btn--lime" href="#">Get started free</a>
           </div>
@@ -753,7 +790,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 5 · Removed the lead-form promise</strong>
+          <strong>Note 6 · Removed the lead-form promise</strong>
           The live grid&rsquo;s fourth card says &ldquo;An optional built-in form
           turns engaged buyers into contacts that land straight in your
           inbox.&rdquo; That feature is gone from the simplified build, so the
@@ -846,7 +883,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 6 · Three items deleted from this section</strong>
+          <strong>Note 7 · Three items deleted from this section</strong>
           The live &ldquo;Advanced Options&rdquo; section has five accordion
           items. These three are gone in the mockup because the product no
           longer has them: <em>Built-in lead capture form</em>,
@@ -895,7 +932,7 @@
     <section class="section section--alt">
       <div class="container">
         <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 7 · Pricing claim now sourced &mdash; and it moved in our favor</strong>
+          <strong>Note 8 · Pricing claim now sourced &mdash; and it moved in our favor</strong>
           Checked against the GreatSchools NearbySchools API page on 13 Aug
           2026. Their published rates are <strong>$52.50/mo</strong> for School
           Essentials and <strong>$97.50/mo</strong> for School Quality, both
@@ -904,28 +941,51 @@
           the $800 top end was too low: School Quality at the ceiling is
           $1,807.50/mo, and LocalLogic runs to $1,500+. The copy now reads
           <strong>$97.50 to $1,800 per month</strong>, which is defensible at
-          both ends and no longer contradicts the LocalLogic figure. If you
-          prefer a rounder number for the page, &ldquo;$97 to $1,800&rdquo; or
-          &ldquo;$100 to $1,800&rdquo; both still hold up.
+          both ends and no longer contradicts the LocalLogic figure.
+          <br /><br />
+          On comparing against the ratings tier: agreed, and the table now leads
+          with School Quality and drops School Essentials, since Essentials has
+          no ratings at all and muddied the point. But I could not find an
+          <strong>$87.50</strong> tier anywhere on their pricing page. The only
+          two published prices are $52.50 and $97.50, and I pulled those from
+          the raw page markup rather than the rendered text, because the cents
+          are superscripted and scrape as &ldquo;$5250&rdquo; and
+          &ldquo;$9750&rdquo;. I have used $97.50. If $87.50 came from a quote
+          or an older rate card, tell me and I will switch it, but I did not
+          want to publish a number I cannot point at a source for.
+          <br /><br />
+          Worth noting the comparison is even better than a price gap: their
+          $97.50 tier explicitly excludes the 1&ndash;10 ratings and assigned
+          schools. Getting real ratings from GreatSchools means their separate
+          Data Licensing product, which has no public pricing at all. So we are
+          not just cheaper than their top published tier, we include the thing
+          it does not sell.
         </div>
 
         <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 8 · Our own view caps undercut two claims on this page</strong>
-          The &ldquo;Why is it free?&rdquo; copy says <em>no view limit
-          games</em>, but the pricing table right below it caps Solo at 5,000
-          views and Brokerages at 25,000. Two problems. First, does the free
-          School Explorer have a view cap? If it does, <em>no view limit
-          games</em> is not a claim we can make. Second, GreatSchools includes
-          15,000 calls in their $52.50 tier, which is three times what our
-          $24.92 Solo plan allows, so a prospect who does the math finds we look
-          expensive per view. We win decisively on data depth &mdash; they
-          exclude the 1&ndash;10 ratings entirely &mdash; so the comparison
-          table above argues depth rather than volume. Worth deciding how you
-          want to answer this on a call before the free traffic starts arriving.
+          <strong>Note 9 · Unlimited free views is a bigger weapon than it looks</strong>
+          Confirmed no view cap on the School Explorer, so
+          <em>unlimited views</em> is now stated in the hero section copy, the
+          free product card, the pricing grid and the comparison table. It is
+          worth hammering, because GreatSchools meters everything: their
+          $97.50 tier includes 15,000 lookups and then charges $0.006 for every
+          one after, to a 300,000 ceiling. Unlimited versus metered is a cleaner
+          contrast than free versus paid, and it kills the &ldquo;what happens
+          when my traffic grows&rdquo; objection outright.
+          <br /><br />
+          One thing to settle before this ships: the paid tiers directly below
+          still cap Solo at 5,000 views and Brokerages at 25,000, so the grid
+          currently reads <em>free = unlimited, paid = capped</em>. A prospect
+          will ask why paying gets them less. It is defensible &mdash; the
+          Neighborhood Explorer has real per-lookup cost behind it while the
+          school data does not &mdash; but the page does not say that anywhere,
+          and right now the caps are the first thing you see on the paid cards.
+          Either raise them, describe them as fair-use, or add one line of
+          explanation.
         </div>
 
         <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 9 · Still zero production changes</strong>
+          <strong>Note 10 · Still zero production changes</strong>
           Everything above lives in <code>/mockups/</code>. No live page,
           stylesheet or redirect has been modified on this branch, so
           <code>dreamneighborhood.com</code> is exactly as it was. The removals
