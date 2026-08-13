@@ -163,6 +163,14 @@
         <div class="brand">Dream Neighborhood <span>MOCKUP</span></div>
 
         <div class="group">
+          <label>Page</label>
+          <div class="seg" id="seg-page">
+            <button type="button" data-page="home" aria-pressed="true">Home</button>
+            <button type="button" data-page="competition">Competition</button>
+          </div>
+        </div>
+
+        <div class="group" id="grp-variant">
           <label for="seg-variant">Hero</label>
           <div class="seg" id="seg-variant">
             <button type="button" data-variant="a">A · Live today</button>
@@ -191,22 +199,22 @@
         <div class="spacer"></div>
 
         <div class="links">
-          <a id="open-tab" href="/mockups/home-free-first/?v=b" target="_blank" rel="noopener">Open full screen ↗</a>
+          <a id="open-tab" href="/mockups/home-free-first/?v=b&amp;notes=off" target="_blank" rel="noopener">Open clean full screen ↗</a>
           <a href="https://dreamneighborhood.com" target="_blank" rel="noopener">Compare to live ↗</a>
         </div>
       </div>
 
       <p class="desc">
         Nothing on this page is published. It adds new files only and changes no
-        existing page, so the live site is untouched. <b>Revision 4:</b>
-        unlimited views on the free School Explorer is now stated in four
-        places, the free popup installation offer and its take-it-back-off
-        guarantee are in, the &ldquo;Why is it free?&rdquo; heading is softened
-        with the reassurance underneath, and the comparison table now leads with
-        the GreatSchools ratings tier and lists Niche as quote-only. Earlier
-        revisions set the free-first hero, removed every mention of crime, and
-        stripped the discontinued features. Red dashed boxes are my notes — turn
-        them off to see the page as a visitor would.
+        existing page, so the live site is untouched. <b>Revision 5:</b> the
+        cost comparison has moved off the home page onto its own
+        <b>Competition</b> page with full disclaimers, reachable from the button
+        in the home page&rsquo;s free-vs-paid section. <b>THE DATA</b> section is
+        back in (it was never deleted — the mockup simply only contained the
+        sections that change), now with a data-scale band. The view allowances
+        are reframed as included rather than capped, with an explanation of why
+        free is unlimited and paid is not. Red dashed boxes are my notes;
+        <b>Open clean full screen</b> always opens without them.
       </p>
     </header>
 
@@ -225,7 +233,12 @@
         var stage = document.getElementById("stage");
         var wrap = document.getElementById("wrap");
         var openTab = document.getElementById("open-tab");
-        var state = { variant: "b", notes: "on", device: "desktop" };
+        var grpVariant = document.getElementById("grp-variant");
+        var state = { page: "home", variant: "b", notes: "on", device: "desktop" };
+        var PAGES = {
+          home: "/mockups/home-free-first/",
+          competition: "/mockups/competition/",
+        };
 
         function press(groupId, key, value) {
           document
@@ -243,11 +256,30 @@
             { type: "dn-mockup", variant: state.variant, notes: state.notes },
             "*"
           );
+          // Full screen is always the clean view, with no annotations.
           openTab.href =
-            "/mockups/home-free-first/?v=" +
-            state.variant +
-            (state.notes === "off" ? "&notes=off" : "");
+            PAGES[state.page] +
+            (state.page === "home" ? "?v=" + state.variant + "&notes=off" : "?notes=off");
         }
+
+        function loadPage() {
+          grpVariant.style.display = state.page === "home" ? "" : "none";
+          stage.src =
+            PAGES[state.page] +
+            (state.page === "home" ? "?v=" + state.variant : "") +
+            (state.page === "home" ? "&" : "?") +
+            "notes=" +
+            state.notes;
+          post();
+        }
+
+        document.querySelectorAll("#seg-page button").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            state.page = btn.dataset.page;
+            press("seg-page", "page", state.page);
+            loadPage();
+          });
+        });
 
         document
           .querySelectorAll("#seg-variant button")

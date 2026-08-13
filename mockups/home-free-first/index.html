@@ -64,6 +64,9 @@
       body[data-notes="on"] .mk-note {
         display: block;
       }
+      .mk-note--solid {
+        border-style: solid;
+      }
       .mk-note strong {
         display: block;
         font-size: 12px;
@@ -210,89 +213,96 @@
         align-self: flex-start;
       }
 
-      /* Competitor cost comparison */
-      .mk-compare {
+      /* Link out to the competition page instead of a table on the home page */
+      .mk-teaser {
         max-width: 980px;
-        margin: 40px auto 0;
+        margin: 34px auto 0;
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        padding: 26px 30px;
         border: 1px solid var(--ink-200);
         border-radius: var(--radius-md);
         background: #fff;
-        overflow: hidden;
         box-shadow: var(--shadow-sm);
       }
-      .mk-compare > h3 {
-        margin: 0;
-        padding: 20px 26px;
-        font-size: 17px;
-        letter-spacing: 0.02em;
-        color: var(--ink-900);
-        background: var(--bg-soft);
-        border-bottom: 1px solid var(--ink-200);
-      }
-      .mk-compare__row {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-        padding: 20px 26px;
-        border-bottom: 1px solid #eef2f6;
-      }
-      .mk-compare__row--us {
-        background: var(--bg-mint);
-      }
-      .mk-compare__who {
+      .mk-teaser__copy {
         flex: 1 1 auto;
         min-width: 0;
       }
-      .mk-compare__who strong {
-        display: block;
-        font-size: 16px;
+      .mk-teaser h3 {
+        margin: 0 0 6px;
+        font-size: 19px;
         color: var(--ink-900);
-        margin-bottom: 4px;
       }
-      .mk-compare__who span {
-        font-size: 14.5px;
-        line-height: 1.55;
-        color: var(--ink-500);
-      }
-      .mk-compare__cost {
-        flex: 0 0 auto;
-        text-align: right;
-        font-size: 25px;
-        font-weight: 800;
-        color: var(--ink-900);
-        letter-spacing: -0.02em;
-        white-space: nowrap;
-      }
-      .mk-compare__cost--free {
-        color: var(--green-700);
-      }
-      .mk-compare__cost span {
-        display: block;
-        font-size: 12.5px;
-        font-weight: 600;
-        letter-spacing: 0;
-        color: var(--ink-400);
-      }
-      .mk-compare__foot {
+      .mk-teaser p {
         margin: 0;
-        padding: 18px 26px;
-        font-size: 15px;
+        font-size: 15.5px;
         line-height: 1.6;
         color: var(--ink-500);
-        background: var(--bg-soft);
       }
-      .mk-compare__foot strong {
-        color: var(--ink-900);
+      .mk-teaser .btn {
+        flex: 0 0 auto;
       }
-      @media (max-width: 700px) {
-        .mk-compare__row {
+      @media (max-width: 760px) {
+        .mk-teaser {
           flex-direction: column;
           align-items: flex-start;
-          gap: 10px;
+          gap: 18px;
         }
-        .mk-compare__cost {
-          text-align: left;
+      }
+
+      /* Data scale band */
+      .mk-scale {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+        max-width: 1000px;
+        margin: 34px auto 0;
+      }
+      @media (max-width: 860px) {
+        .mk-scale {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+      }
+      .mk-scale__cell {
+        background: #fff;
+        border: 1px solid var(--ink-200);
+        border-radius: var(--radius-md);
+        padding: 24px 20px;
+        text-align: center;
+        box-shadow: var(--shadow-sm);
+      }
+      .mk-scale__num {
+        font-size: clamp(28px, 3.4vw, 38px);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: var(--green-700);
+        line-height: 1.05;
+      }
+      .mk-scale__label {
+        margin-top: 8px;
+        font-size: 14.5px;
+        font-weight: 600;
+        color: var(--ink-500);
+        line-height: 1.45;
+      }
+
+      /* Pricing footnote explaining the view allowances */
+      .mk-allowance {
+        max-width: 900px;
+        margin: 32px auto 0;
+        padding: 22px 26px;
+        border-radius: var(--radius-md);
+        background: var(--bg-mint);
+        border: 1px solid rgba(18, 125, 107, 0.18);
+        font-size: 15.5px;
+        line-height: 1.65;
+        color: var(--ink-500);
+        text-align: center;
+      }
+      .mk-allowance strong {
+        color: var(--ink-900);
       }
 
       /* The production .pricing grid is fixed at 3 columns; the free tier makes 4. */
@@ -530,7 +540,7 @@
           suspicion that free is a trap. The heading has been softened from
           &ldquo;so confident&rdquo; to &ldquo;confident,&rdquo; with the
           reassurance broken out underneath in smaller type so it reads as a
-          promise rather than a hedge. See Note 8 for the sourcing behind the
+          promise rather than a hedge. See Note 12 for the sourcing behind the
           competitor price range.
         </div>
 
@@ -550,8 +560,8 @@
             mobility, commute times, market trends and the other 38+ data
             points in the Neighborhood Explorer. It&rsquo;s a very
             cost-effective, high-impact solution &mdash; and either way you keep
-            free school data for life, versus $97.50 to $1,800 per month from
-            our competitors.
+            free school data for life, versus $97.50 to $800 per month from our
+            school data competitors.
           </p>
         </div>
       </div>
@@ -618,60 +628,30 @@
           </article>
         </div>
 
-        <div class="mk-compare">
-          <h3>What the same school data costs everywhere else</h3>
-
-          <div class="mk-compare__row mk-compare__row--us">
-            <div class="mk-compare__who">
-              <strong>Dream Neighborhood School Explorer</strong>
-              <span>Full ratings, test scores, college readiness, student-teacher ratios and school safety records. Unlimited views, free installation.</span>
-            </div>
-            <div class="mk-compare__cost mk-compare__cost--free">$0<span>forever</span></div>
-          </div>
-
-          <div class="mk-compare__row">
-            <div class="mk-compare__who">
-              <strong>GreatSchools NearbySchools API &mdash; School Quality</strong>
-              <span>Their top published tier, and it still does <em>not</em> include the 1&ndash;10 ratings or assigned schools. You get three bands: below average, average, above average. 15,000 lookups included, then $0.006 each.</span>
-            </div>
-            <div class="mk-compare__cost">$97.50<span>/mo + usage</span></div>
-          </div>
-
-          <div class="mk-compare__row">
-            <div class="mk-compare__who">
-              <strong>Niche</strong>
-              <span>Enterprise data licensing. No published pricing at all &mdash; you have to book a call with a data expert to find out what it costs.</span>
-            </div>
-            <div class="mk-compare__cost">Quote<span>only</span></div>
-          </div>
-
-          <div class="mk-compare__row">
-            <div class="mk-compare__who">
-              <strong>LocalLogic</strong>
-              <span>Enterprise neighborhood SDKs and APIs. No free tier, annual contract.</span>
-            </div>
-            <div class="mk-compare__cost">$500&ndash;$1,500+<span>/mo</span></div>
-          </div>
-
-          <p class="mk-compare__foot">
-            A brokerage site serving 100,000 listing views a month pays
-            GreatSchools <strong>$607.50</strong> for three coarse quality
-            bands. At their 300,000 call ceiling it is
-            <strong>$1,807.50</strong>. Ours is free, unlimited, and it includes
-            the ratings theirs leaves out.
-          </p>
+        <div class="mk-note">
+          <strong>Note 4 · Comparison table moved off the home page</strong>
+          Agreed with your instinct, mostly. Naming competitors and their prices
+          on the home page teaches visitors that alternatives exist, invites
+          them to go price-shop mid-decision, and puts our credibility on a
+          number that can go stale without warning. But removing every
+          comparison is the wrong fix: <em>$0</em> means nothing without a
+          reference price next to it, and free with no anchor reads as cheap
+          rather than generous. So the anchor sentence stays here and the full
+          table moves to its own page, behind the link below, with the
+          disclaimers it needs. Anyone who wants to price-shop can, and everyone
+          else stays pointed at the install.
         </div>
 
-        <div class="mk-note">
-          <strong>Note 4 · Niche could not be priced</strong>
-          You asked me to check the $800/month figure. Niche does not publish
-          any pricing: their licensing page only says &ldquo;request a call with
-          a data expert,&rdquo; and every rate I could find online was an
-          unofficial third-party scraper, not Niche. So I have listed them as
-          quote-only rather than print a number we cannot defend. If you have an
-          actual Niche quote in writing, send it and I will put the real figure
-          in with a &ldquo;quoted at&rdquo; qualifier. Until then, their refusal
-          to publish is itself the argument, and it is the line I used.
+        <div class="mk-teaser">
+          <div class="mk-teaser__copy">
+            <h3>What the same school data costs everywhere else</h3>
+            <p>
+              Comparable school data licenses start at $97.50 a month and are
+              metered by the lookup. Ours is $0, unlimited, and it includes the
+              ratings theirs leaves out.
+            </p>
+          </div>
+          <a class="btn btn--primary" href="/mockups/competition/">See the full comparison</a>
         </div>
 
         <div class="lime-banner" style="max-width: 900px; margin: 34px auto 0">
@@ -682,6 +662,119 @@
             don&rsquo;t like it, tell us and we&rsquo;ll take it right back off.
             Free installation covers the popup; embedded explorers are a
             self-install.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== THE DATA (unchanged from live, plus scale band) ============== -->
+    <section id="data" class="section">
+      <div class="container">
+        <div class="mk-note">
+          <strong>Note 5 · Two crime chips are hiding in this section</strong>
+          Worth catching before you publish anything. The scrolling chip list in
+          this section is generated by a script at the bottom of the live
+          <code>index.html</code>, and two of its 43 entries are
+          <em>Property &amp; Violent Crime Rates</em> and <em>Sex Offender
+          Information</em>. They scroll past on the live home page right now. I
+          have renamed them here to <em>Neighborhood Safety Ratings</em> and
+          <em>Registered Offender Awareness</em> so the section obeys the
+          no-crime rule, but you should pick the wording you actually want,
+          since these describe real data in the product rather than just
+          marketing copy.
+        </div>
+
+        <div class="mk-note">
+          <strong>Note 6 · This was never removed</strong>
+          Nothing has been taken off the live page. The mockup only ever
+          contained the sections that <em>change</em>, so THE DATA, the 60%
+          stat banner, How It Works, the Winn Team testimonial, the contact form
+          and the footer were simply never copied in. They are all still live
+          and untouched. I have pulled this one in verbatim so you can judge the
+          flow with it in place. My view: keep it on the home page. It is the
+          only section that argues we have something nobody else has, and it is
+          what makes the free offer read as generous rather than thin. It should
+          appear on the competition page as well, not instead.
+        </div>
+
+        <div class="data-moat">
+          <div class="data-moat__copy">
+            <span class="pill pill--solid">
+              <span class="pill__dot" aria-hidden="true"></span>
+              THE DATA
+            </span>
+            <h2 class="section-title" style="text-align: left;">
+              A Neighborhood Database
+              <span class="accent">No One Else Has</span>
+            </h2>
+            <p class="section-lead" style="text-align: left; margin-left: 0;">
+              Dream Neighborhood is built on a <strong>proprietary database of
+              38+ hyperlocal data points</strong>, more complete than Zillow,
+              Realtor.com, or ChatGPT. It’s exclusive to our customers and
+              surfaced on every listing automatically.
+            </p>
+            <div class="data-moat__chips">
+              <span class="data-tag">Proprietary</span>
+              <span class="data-tag">38+ data points</span>
+              <span class="data-tag">Not available anywhere else</span>
+            </div>
+          </div>
+
+          <div class="data-stream" aria-hidden="true">
+            <div class="data-stream__col data-stream__col--a"></div>
+            <div class="data-stream__col data-stream__col--b"></div>
+            <div class="data-stream__col data-stream__col--c"></div>
+          </div>
+        </div>
+
+        <div class="mk-note" style="margin-top: 34px">
+          <strong>Note 7 · Counting data points against Local Logic</strong>
+          You can absolutely reach a very big number, and the four tiles below
+          are the honest version of it: every figure is one you already gave me.
+          Before we print a headline total, decide the counting rule and write
+          it down, because a number this size will get challenged. Three
+          defensible methods, from most conservative to most aggressive:
+          <br /><br />
+          <strong>1. Records.</strong> 16M points of interest + 119K schools +
+          census geographies. Lands in the tens of millions and nobody can argue
+          with it.
+          <br />
+          <strong>2. Records × attributes.</strong> If each POI carries name,
+          category, coordinates, address and distance, 16M POIs alone becomes
+          80M+ values. Schools at roughly 20 metrics each add another 2.4M.
+          <br />
+          <strong>3. Data points served per address.</strong> 38+ per address
+          across every US address we can resolve. That is the method that
+          produces a billions-scale number, and it is the one Local Logic
+          almost certainly uses, because that is how you get to
+          &ldquo;x million data points&rdquo; on a slide.
+          <br /><br />
+          My recommendation is to lead with the concrete counts, not the
+          headline total. <strong>16 million points of interest</strong> is
+          more persuasive than <em>2 billion data points</em>, because the first
+          one sounds like a database and the second one sounds like marketing.
+          Keep the big number as the follow-up for anyone who asks how we
+          compare to Local Logic, with the counting rule ready. Give me their
+          exact claim and the number you want to stand behind and I will put it
+          on the competition page.
+        </div>
+
+        <div class="mk-scale">
+          <div class="mk-scale__cell">
+            <div class="mk-scale__num">16M+</div>
+            <div class="mk-scale__label">Points of interest mapped</div>
+          </div>
+          <div class="mk-scale__cell">
+            <div class="mk-scale__num">119K+</div>
+            <div class="mk-scale__label">Schools with ratings, test scores and safety records</div>
+          </div>
+          <div class="mk-scale__cell">
+            <div class="mk-scale__num">38+</div>
+            <div class="mk-scale__label">Hyperlocal data points on every listing address</div>
+          </div>
+          <div class="mk-scale__cell">
+            <div class="mk-scale__num">1</div>
+            <div class="mk-scale__label">Line of code to install all of it</div>
           </div>
         </div>
       </div>
@@ -706,7 +799,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 5 · Free belongs in the pricing grid too</strong>
+          <strong>Note 8 · Free belongs in the pricing grid too</strong>
           Adding the free column here is what stops the upgrade from feeling
           like a bait-and-switch. The visitor sees the whole ladder at once and
           picks their own rung. Live prices are unchanged from the current site.
@@ -735,7 +828,7 @@
             <p class="plan__sub">For individual agents who want to stand out.</p>
             <ul class="plan__features">
               <li>Full Neighborhood Explorer, 38+ data points</li>
-              <li>Up to 5,000 views per month</li>
+              <li>5,000 listing views included monthly</li>
               <li>24/7 Support</li>
             </ul>
             <a class="btn btn--primary" href="#">Upgrade</a>
@@ -749,7 +842,7 @@
             <ul class="plan__features">
               <li>Full Neighborhood Explorer, 38+ data points</li>
               <li><strong>No per-seat pricing, unlimited agents</strong></li>
-              <li>Up to 25,000 views per month</li>
+              <li>25,000 listing views included monthly</li>
               <li>24/7 Support</li>
             </ul>
             <a class="btn btn--lime" href="#">Upgrade</a>
@@ -767,6 +860,55 @@
             </ul>
             <a class="btn btn--primary" href="#">Learn more</a>
           </div>
+        </div>
+
+        <p class="mk-allowance">
+          <strong>Why the School Explorer is unlimited and the Neighborhood
+          Explorer has an allowance.</strong>
+          School data costs us nothing to serve, so we give it away with no cap
+          and no catch. Neighborhood data costs us money on every single
+          lookup, so those plans include a monthly view allowance instead of
+          charging you per agent. You get unlimited agents and unlimited
+          listings either way &mdash; you only move up a tier when your audience
+          grows. Go over? We will never switch you off mid-month. We will just
+          talk about the right plan.
+        </p>
+
+        <div class="mk-note" style="margin-top: 26px">
+          <strong>Note 9 · How to spin the caps</strong>
+          Your real reason is sound and more common than you think: the view
+          allowance is how you stop a 200-agent brokerage buying a $24.92 solo
+          seat. Traffic is a proxy for company size, and using it means you can
+          keep the genuinely attractive part of the offer, which is
+          <em>unlimited agents, no per-seat pricing</em>. Almost every usage
+          priced SaaS works this way. Three moves make it land.
+          <br /><br />
+          <strong>Never call it a cap or a limit.</strong> The copy above says
+          <em>included</em>, and the plan cards now read &ldquo;5,000 listing
+          views included monthly&rdquo; instead of &ldquo;up to 5,000 views per
+          month.&rdquo; Same number, and an allowance sounds like something you
+          were given rather than something you are being denied. GreatSchools
+          words it exactly this way.
+          <br /><br />
+          <strong>Explain the asymmetry before they notice it.</strong> Free is
+          unlimited and paid is not, which looks backwards until you say why.
+          The one-line explanation above turns that into proof the free offer is
+          real: we are not capping the free product because it genuinely costs
+          us nothing, and we are metering the paid one because it genuinely
+          costs us something. That is a far better answer than silence, and it
+          makes the &ldquo;free for life&rdquo; claim more believable rather
+          than less.
+          <br /><br />
+          <strong>Remove the fear of an overage bill.</strong> &ldquo;We will
+          never switch you off mid-month&rdquo; costs you nothing and kills the
+          objection that a busy month produces a surprise invoice or a dead
+          widget in front of a buyer. Note that this is a promise, so make sure
+          the billing system actually behaves that way.
+          <br /><br />
+          What I would not do is defend the number on the page. Nobody argues
+          with an allowance they have not hit yet. If a big brokerage does the
+          math and asks, that is a sales conversation you want, because it means
+          they are large enough for the Brokerages or Partners tier.
         </div>
       </div>
     </section>
@@ -790,7 +932,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 6 · Removed the lead-form promise</strong>
+          <strong>Note 10 · Removed the lead-form promise</strong>
           The live grid&rsquo;s fourth card says &ldquo;An optional built-in form
           turns engaged buyers into contacts that land straight in your
           inbox.&rdquo; That feature is gone from the simplified build, so the
@@ -883,7 +1025,7 @@
         </div>
 
         <div class="mk-note">
-          <strong>Note 7 · Three items deleted from this section</strong>
+          <strong>Note 11 · Three items deleted from this section</strong>
           The live &ldquo;Advanced Options&rdquo; section has five accordion
           items. These three are gone in the mockup because the product no
           longer has them: <em>Built-in lead capture form</em>,
@@ -931,17 +1073,22 @@
     <!-- ============== CLOSING NOTE ============== -->
     <section class="section section--alt">
       <div class="container">
-        <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 8 · Pricing claim now sourced &mdash; and it moved in our favor</strong>
+        <div class="mk-note mk-note--solid">
+          <strong>Note 12 · Pricing claim now sourced &mdash; and it moved in our favor</strong>
           Checked against the GreatSchools NearbySchools API page on 13 Aug
           2026. Their published rates are <strong>$52.50/mo</strong> for School
           Essentials and <strong>$97.50/mo</strong> for School Quality, both
           including 15,000 calls, then metered at $0.003 and $0.006 per call up
-          to a 300,000 ceiling. So your $95 floor was very close to right, and
-          the $800 top end was too low: School Quality at the ceiling is
-          $1,807.50/mo, and LocalLogic runs to $1,500+. The copy now reads
-          <strong>$97.50 to $1,800 per month</strong>, which is defensible at
-          both ends and no longer contradicts the LocalLogic figure.
+          to a 300,000 ceiling. So your $95 floor was very close to right.
+          <br /><br />
+          The copy now reads <strong>$97.50 to $800 per month from our school
+          data competitors</strong>, and scoping it to school data is what makes
+          the $800 ceiling work. It is defensible from GreatSchools&rsquo;
+          published rates alone: their School Quality tier passes $800 a month
+          at roughly 132,000 lookups, comfortably inside their own 300,000
+          ceiling. That means we no longer need a Niche figure to hold up the
+          top of the range, which is fortunate, because Niche still does not
+          publish one.
           <br /><br />
           On comparing against the ratings tier: agreed, and the table now leads
           with School Quality and drops School Essentials, since Essentials has
@@ -962,8 +1109,8 @@
           it does not sell.
         </div>
 
-        <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 9 · Unlimited free views is a bigger weapon than it looks</strong>
+        <div class="mk-note mk-note--solid">
+          <strong>Note 13 · Unlimited free views is a bigger weapon than it looks</strong>
           Confirmed no view cap on the School Explorer, so
           <em>unlimited views</em> is now stated in the hero section copy, the
           free product card, the pricing grid and the comparison table. It is
@@ -984,8 +1131,8 @@
           explanation.
         </div>
 
-        <div class="mk-note" style="display: block; border-style: solid">
-          <strong>Note 10 · Still zero production changes</strong>
+        <div class="mk-note mk-note--solid">
+          <strong>Note 14 · Still zero production changes</strong>
           Everything above lives in <code>/mockups/</code>. No live page,
           stylesheet or redirect has been modified on this branch, so
           <code>dreamneighborhood.com</code> is exactly as it was. The removals
@@ -1016,6 +1163,121 @@
           if (d.type !== "dn-mockup") return;
           if (d.variant) body.setAttribute("data-variant", d.variant);
           if (d.notes) body.setAttribute("data-notes", d.notes);
+        });
+      })();
+    </script>
+
+    <!-- Data-stream chips, copied verbatim from the live home page. -->
+    <script>
+      (function () {
+        var cols = document.querySelectorAll('.data-stream__col');
+        if (!cols.length) return;
+
+        var I = {
+          map: '<path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15"/><path d="M15 6v15"/>',
+          home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+          key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+          ruler: '<path d="M3 13.4 13.4 3 21 10.6 10.6 21z"/><path d="m7 11 2 2"/><path d="m11 7 2 2"/><path d="m15 11 2 2"/>',
+          box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+          calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+          trend: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+          homeCheck: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m9 12 2 2 4-4"/>',
+          building: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M9 6h.01"/><path d="M15 6h.01"/><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M9 14h.01"/><path d="M15 14h.01"/>',
+          truck: '<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+          wallet: '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+          coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
+          briefcase: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+          cap: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/>',
+          award: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
+          users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+          buildings: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/>',
+          user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+          baby: '<path d="M9 12h.01"/><path d="M15 12h.01"/><path d="M10 16c.5.3 1.2.5 2 .5s1.5-.2 2-.5"/><path d="M17.6 6.5a9 9 0 1 1-11.2 0"/><path d="M12 2v4"/>',
+          percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+          flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+          languages: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+          footprints: '<path d="M4 16v-2.4C4 11.5 3 10.5 3 8c0-2.7 1.5-6 4.5-6C9.4 2 10 3.8 10 5.5c0 3.1-2 5.7-2 8.7V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.4c0-2.1 1-3.1 1-5.6 0-2.7-1.5-6-4.5-6C14.6 6 14 7.8 14 9.5c0 3.1 2 5.7 2 8.7V20a2 2 0 1 0 4 0Z"/>',
+          bike: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+          calculator: '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="16" y2="18"/>',
+          car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+          bus: '<path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.8-1.7.8-2.8V8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/>',
+          school: '<path d="m4 6 8-4 8 4"/><path d="m18 10 4 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8l4-2"/><path d="M14 22v-4a2 2 0 0 0-4 0v4"/><path d="M18 5v17"/><path d="M6 5v17"/><circle cx="12" cy="9" r="2"/>',
+          cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+          utensils: '<path d="M3 2v7c0 1.1.9 2 2 2a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+          bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+          coffee: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M6 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/>',
+          wine: '<path d="M8 22h8"/><path d="M7 10h10"/><path d="M12 15v7"/><path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-5-7-4.5 3-5 5-5 7a5 5 0 0 0 5 5Z"/>',
+          dumbbell: '<path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/>',
+          tree: '<path d="m17 14 3 3.3a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14H6.5a1 1 0 0 1-.7-1.7L9 9H8.8A1 1 0 0 1 8 7.3L12 3l4 4.3a1 1 0 0 1-.8 1.7H15l3 3.3a1 1 0 0 1-.7 1.7H17Z"/><path d="M12 22v-3"/>',
+          hospital: '<path d="M12 6v4"/><path d="M14 8h-4"/><path d="M9 22v-4h6v4"/><path d="M19 22V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v18"/><path d="M2 22h20"/>',
+          shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>',
+          shieldAlert: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+          vote: '<path d="m9 12 2 2 4-4"/><path d="M5 19V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12"/><path d="M22 19H2"/>',
+          landmark: '<line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+          mountain: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>'
+        };
+
+        var ITEMS = [
+          ['Interactive Neighborhood Map', 'map'],
+          ['Median Home Price', 'home'],
+          ['Median Rent', 'key'],
+          ['Median Price Per Sq Ft', 'ruler'],
+          ['Current Housing Inventory', 'box'],
+          ['Median Days on Market', 'calendar'],
+          ['Historical Sale Price Trend', 'trend'],
+          ['Homeownership Rate', 'homeCheck'],
+          ['High-Density Housing %', 'building'],
+          ['Mobile Homes %', 'truck'],
+          ['Household Income', 'wallet'],
+          ['Per Capita Income', 'coins'],
+          ['Employment Rate', 'briefcase'],
+          ['High School Graduation Rate', 'cap'],
+          ['College Degree Attainment', 'award'],
+          ['Neighborhood Population', 'users'],
+          ['City Population', 'buildings'],
+          ['Neighborhood Median Age', 'user'],
+          ['Residents Under 18', 'baby'],
+          ['Gender Distribution', 'percent'],
+          ['Percentage Born in the USA', 'flag'],
+          ['English Fluency Rate', 'languages'],
+          ['Walk Score', 'footprints'],
+          ['Bike Score', 'bike'],
+          ['Custom Commute Calculator', 'calculator'],
+          ['Drive Commute Times', 'car'],
+          ['Transit Commute Times', 'bus'],
+          ['Walk Commute Times', 'footprints'],
+          ['Bike Commute Times', 'bike'],
+          ['Nearby Schools', 'school'],
+          ['Nearby Grocery Stores', 'cart'],
+          ['Nearby Restaurants', 'utensils'],
+          ['Nearby Shopping Centers', 'bag'],
+          ['Nearby Cafes', 'coffee'],
+          ['Nearby Nightlife', 'wine'],
+          ['Nearby Gyms', 'dumbbell'],
+          ['Nearby Parks', 'tree'],
+          ['Nearby Hospitals', 'hospital'],
+          ['Neighborhood Safety Ratings', 'shield'],
+          ['Registered Offender Awareness', 'shieldAlert'],
+          ['2024 Election Voting Results', 'vote'],
+          ['City History & Background', 'landmark'],
+          ['Local Geography Details', 'mountain']
+        ];
+
+        function chip(label, key) {
+          var svg =
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            (I[key] || '') + '</svg>';
+          return '<span class="data-item"><span class="data-item__icon">' + svg + '</span>' + label + '</span>';
+        }
+
+        var n = cols.length;
+        var buckets = [];
+        for (var b = 0; b < n; b++) buckets.push('');
+        ITEMS.forEach(function (item, i) {
+          buckets[i % n] += chip(item[0], item[1]);
+        });
+        cols.forEach(function (col, i) {
+          col.innerHTML = buckets[i] + buckets[i];
         });
       })();
     </script>
