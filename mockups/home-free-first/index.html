@@ -209,6 +209,41 @@
         color: var(--ink-900);
       }
 
+      /* The production .pricing grid is fixed at 3 columns; the free tier makes 4. */
+      .pricing--four {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 10px;
+      }
+      .pricing--four .plan {
+        padding: 32px 22px;
+      }
+      .pricing--four .plan__price strong {
+        font-size: 42px;
+      }
+      .pricing--four .plan__features li {
+        font-size: 14.5px;
+      }
+      /* Match the featured badge to the free flag so both read as intentional. */
+      .pricing--four .plan--featured::after {
+        top: -13px;
+        right: auto;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      @media (max-width: 1180px) {
+        .pricing--four {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 26px 18px;
+        }
+      }
+      @media (max-width: 760px) {
+        .pricing--four {
+          grid-template-columns: 1fr;
+          gap: 28px;
+        }
+      }
+
       /* Free plan card slotted into the existing pricing grid */
       .plan--free {
         border: 2px solid var(--green-700);
@@ -512,7 +547,7 @@
           picks their own rung. Live prices are unchanged from the current site.
         </div>
 
-        <div class="pricing">
+        <div class="pricing pricing--four">
           <div class="plan plan--free">
             <span class="plan__free-flag">Start here</span>
             <div class="plan__name">School Explorer</div>
