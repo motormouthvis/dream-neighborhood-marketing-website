@@ -2810,6 +2810,107 @@ a.calendly-gate.calendly-gate--locked {
   width: 100%;
 }
 
+.pricing--4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.pricing--4 .plan {
+  padding: 28px 20px;
+}
+
+.pricing--4 .plan__price strong {
+  font-size: 40px;
+}
+
+.pricing--4 .plan--featured::after {
+  top: 14px;
+  right: 12px;
+  font-size: 10px;
+  padding: 4px 8px;
+}
+
+.plan--free {
+  border: 2px solid var(--green-700);
+  background: var(--bg-mint);
+}
+
+.pricing-note {
+  max-width: 760px;
+  margin: 28px auto 0;
+  text-align: center;
+  color: var(--ink-400);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.explorer-card {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-card--free {
+  border: 2px solid var(--green-700);
+  background: var(--bg-mint);
+}
+
+.explorer-card h3 {
+  margin: 14px 0 4px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.explorer-card__price {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green-700);
+}
+
+.explorer-card p {
+  margin: 0 0 22px;
+  color: var(--ink-400);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.explorer-card .btn {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+@media (max-width: 1100px) {
+  .pricing--4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .explorer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .pricing--4 {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- FAQ ---------- */
 .faq {
   max-width: 820px;
@@ -3817,4 +3918,112 @@ a.calendly-gate.calendly-gate--locked {
   .install-benefits {
     grid-template-columns: 1fr;
   }
+}
+
+/* =========================================================
+   LEGAL PAGES (Terms / Privacy)
+   ========================================================= */
+
+.legal {
+  background: var(--bg);
+  padding: 48px 0 96px;
+}
+
+.legal__inner {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.legal__subtitle {
+  margin: 8px 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+
+.legal__meta {
+  margin: 16px 0 0;
+  font-size: 14px;
+  color: var(--ink-400);
+  line-height: 1.6;
+}
+
+.legal__company {
+  margin: 8px 0 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+
+.legal h1.section-title,
+.legal .legal__title {
+  text-align: left;
+  margin: 20px 0 0;
+}
+
+.legal h2 {
+  margin: 2.4rem 0 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
+  line-height: 1.3;
+}
+
+.legal h3 {
+  margin: 1.4rem 0 0.5rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--ink-700);
+}
+
+.legal p {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--ink-700);
+}
+
+.legal ul {
+  margin: 0 0 1.15rem;
+  padding: 0 0 0 1.2rem;
+}
+
+.legal ul li {
+  margin: 0 0 0.45rem;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--ink-700);
+}
+
+.legal a {
+  color: var(--green-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal a:hover {
+  color: var(--green-900);
+}
+
+.legal__contact {
+  margin-top: 2.5rem;
+  padding: 24px 26px;
+  background: var(--bg-soft);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: var(--radius-md);
+}
+
+.legal__contact p {
+  margin: 0 0 0.35rem;
+}
+
+.legal__contact p:last-child {
+  margin-bottom: 0;
+}
+
+.legal__related {
+  margin-top: 2rem;
+  font-size: 15px;
+  color: var(--ink-400);
 }

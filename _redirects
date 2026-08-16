@@ -3,3 +3,7 @@
 # so /drafts/* is never served publicly. Drafts remain available to the team
 # in the Git repository for later use once approvals are received.
 /drafts/*    /404.html    404!
+
+# Combined legal pages (pretty URLs: terms.html → /terms, privacy.html → /privacy)
+/terms-of-service    /terms      301
+/privacy-policy      /privacy    301
