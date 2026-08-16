@@ -2810,6 +2810,107 @@ a.calendly-gate.calendly-gate--locked {
   width: 100%;
 }
 
+.pricing--4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.pricing--4 .plan {
+  padding: 28px 20px;
+}
+
+.pricing--4 .plan__price strong {
+  font-size: 40px;
+}
+
+.pricing--4 .plan--featured::after {
+  top: 14px;
+  right: 12px;
+  font-size: 10px;
+  padding: 4px 8px;
+}
+
+.plan--free {
+  border: 2px solid var(--green-700);
+  background: var(--bg-mint);
+}
+
+.pricing-note {
+  max-width: 760px;
+  margin: 28px auto 0;
+  text-align: center;
+  color: var(--ink-400);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.explorer-card {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-card--free {
+  border: 2px solid var(--green-700);
+  background: var(--bg-mint);
+}
+
+.explorer-card h3 {
+  margin: 14px 0 4px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.explorer-card__price {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green-700);
+}
+
+.explorer-card p {
+  margin: 0 0 22px;
+  color: var(--ink-400);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.explorer-card .btn {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+@media (max-width: 1100px) {
+  .pricing--4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .explorer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .pricing--4 {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- FAQ ---------- */
 .faq {
   max-width: 820px;
