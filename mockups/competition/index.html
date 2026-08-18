@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>MOCKUP · How we compare · Dream Neighborhood</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/nav.css" />
+
+    <style>
+      .mk-flag {
+        position: sticky;
+        top: 0;
+        z-index: 900;
+        background: repeating-linear-gradient(
+          45deg,
+          #b91c1c,
+          #b91c1c 14px,
+          #991b1b 14px,
+          #991b1b 28px
+        );
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        text-align: center;
+        padding: 7px 12px;
+      }
+
+      .mk-note {
+        display: none;
+        margin: 0 auto 26px;
+        max-width: 900px;
+        border: 1px dashed #b91c1c;
+        border-radius: 14px;
+        background: #fef2f2;
+        color: #7f1d1d;
+        padding: 14px 18px;
+        font-size: 14.5px;
+        line-height: 1.55;
+      }
+      body[data-notes="on"] .mk-note {
+        display: block;
+      }
+      .mk-note strong {
+        display: block;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+
+      .cmp-head {
+        padding: 56px 0 10px;
+        text-align: center;
+      }
+      .cmp-head h1 {
+        margin: 16px auto 14px;
+        max-width: 900px;
+        font-size: clamp(30px, 4.4vw, 46px);
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        color: var(--ink-900);
+      }
+      .cmp-head p {
+        margin: 0 auto;
+        max-width: 720px;
+        font-size: 17px;
+        line-height: 1.65;
+        color: var(--ink-500);
+      }
+
+      .cmp-block {
+        max-width: 1000px;
+        margin: 0 auto 34px;
+        border: 1px solid var(--ink-200);
+        border-radius: var(--radius-md);
+        background: #fff;
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+      }
+      .cmp-block__head {
+        padding: 18px 26px;
+        background: var(--bg-soft);
+        border-bottom: 1px solid var(--ink-200);
+      }
+      .cmp-block__head h2 {
+        margin: 0;
+        font-size: 18px;
+        color: var(--ink-900);
+      }
+      .cmp-block__head span {
+        display: block;
+        margin-top: 4px;
+        font-size: 13.5px;
+        color: var(--ink-400);
+      }
+
+      .cmp-row {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 22px 26px;
+        border-bottom: 1px solid #eef2f6;
+      }
+      .cmp-row:last-child {
+        border-bottom: 0;
+      }
+      .cmp-row--us {
+        background: var(--bg-mint);
+      }
+      .cmp-row__who {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .cmp-row__who strong {
+        display: block;
+        font-size: 16.5px;
+        color: var(--ink-900);
+        margin-bottom: 5px;
+      }
+      .cmp-row__who span {
+        font-size: 14.5px;
+        line-height: 1.55;
+        color: var(--ink-500);
+      }
+      .cmp-row__cost {
+        flex: 0 0 auto;
+        text-align: right;
+        font-size: 25px;
+        font-weight: 800;
+        color: var(--ink-900);
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+      }
+      .cmp-row__cost--free {
+        color: var(--green-700);
+      }
+      .cmp-row__cost span {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 600;
+        letter-spacing: 0;
+        color: var(--ink-400);
+      }
+      @media (max-width: 700px) {
+        .cmp-row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+        }
+        .cmp-row__cost {
+          text-align: left;
+        }
+      }
+
+      .cmp-callout {
+        max-width: 1000px;
+        margin: 0 auto 34px;
+        padding: 26px 30px;
+        border-radius: var(--radius-md);
+        background: var(--bg-mint);
+        border: 1px solid rgba(18, 125, 107, 0.18);
+      }
+      .cmp-callout h3 {
+        margin: 0 0 10px;
+        font-size: 20px;
+        color: var(--ink-900);
+      }
+      .cmp-callout p {
+        margin: 0;
+        font-size: 15.5px;
+        line-height: 1.65;
+        color: var(--ink-500);
+      }
+      .cmp-callout p + p {
+        margin-top: 12px;
+      }
+      .cmp-callout strong {
+        color: var(--ink-900);
+      }
+
+      .cmp-disclaimer {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 26px 30px;
+        border-radius: var(--radius-md);
+        background: var(--bg-soft);
+        border: 1px solid var(--ink-200);
+      }
+      .cmp-disclaimer h3 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-500);
+      }
+      .cmp-disclaimer p {
+        margin: 0 0 10px;
+        font-size: 13.5px;
+        line-height: 1.65;
+        color: var(--ink-400);
+      }
+      .cmp-disclaimer p:last-child {
+        margin-bottom: 0;
+      }
+    </style>
+  </head>
+
+  <body data-notes="on">
+    <div class="mk-flag">
+      Mockup for review — not the live site — nothing here is published
+    </div>
+
+    <header class="nav">
+      <div class="container nav__inner">
+        <a class="nav__logo" href="/mockups/home-free-first/">
+          <img
+            src="https://cdn.prod.website-files.com/68d4266c1bda64aac3888ce1/68d4278d2e08c6f1a213ea51_nav_logo.svg"
+            alt="Dream Neighborhood"
+            width="220"
+            height="54"
+          />
+        </a>
+        <nav class="nav__links" aria-label="Primary">
+          <a href="/mockups/home-free-first/" class="nav__main">For Realtors &amp; Brokerages</a>
+          <a href="#" class="nav__main">For Partners</a>
+          <a href="#" class="nav__main" aria-current="page">How We Compare</a>
+        </nav>
+        <div class="nav__cta">
+          <a class="btn btn--primary" href="#">Log in / Sign up</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="cmp-head">
+      <div class="container">
+        <span class="pill pill--solid">
+          <span class="pill__dot" aria-hidden="true"></span>
+          HOW WE COMPARE
+        </span>
+        <h1>The same data on your listings, without the licence fee.</h1>
+        <p>
+          Every price below comes from the vendor&rsquo;s own published pricing
+          page. Where a vendor does not publish pricing, we say so instead of
+          guessing. Last verified 13 August 2026.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="mk-note">
+          <strong>Note A · Why this page exists and the home page table is gone</strong>
+          Your instinct was right that the table was risky in the hero flow, but
+          the reasoning matters for what we do next. Naming competitors on the
+          home page creates awareness of alternatives for visitors who had none,
+          and it invites price-shopping at the exact moment we want a single
+          action. It also puts our credibility on numbers that can go stale
+          without us noticing. On the other hand &ldquo;they already know what
+          they pay&rdquo; is only true of the agent who is already a
+          GreatSchools customer. Most solo agents have never seen an API price
+          sheet, and a partner evaluating us against Local Logic definitely
+          wants this. So: one anchor sentence on the home page, the full
+          argument here, and a link between them. This page is also the right
+          place to send a prospect mid-call.
+        </div>
+
+        <div class="cmp-block">
+          <div class="cmp-block__head">
+            <h2>School data on your listing pages</h2>
+            <span>Published rates for the tiers that come closest to what our free School Explorer does.</span>
+          </div>
+
+          <div class="cmp-row cmp-row--us">
+            <div class="cmp-row__who">
+              <strong>Dream Neighborhood School Explorer</strong>
+              <span>
+                Full ratings, test scores, college readiness, student-teacher
+                ratios and school safety records for 119,000+ schools.
+                Unlimited views. Free popup installation. No credit card.
+              </span>
+            </div>
+            <div class="cmp-row__cost cmp-row__cost--free">$0<span>forever</span></div>
+          </div>
+
+          <div class="cmp-row">
+            <div class="cmp-row__who">
+              <strong>GreatSchools NearbySchools API &mdash; School Quality</strong>
+              <span>
+                Their highest published tier. Includes 15,000 lookups a month,
+                then $0.006 per lookup up to 300,000. Per their own
+                documentation, the GreatSchools 1&ndash;10 ratings and assigned
+                schools are <strong>not included</strong>; schools are grouped
+                into three bands instead.
+              </span>
+            </div>
+            <div class="cmp-row__cost">$97.50<span>/mo + usage</span></div>
+          </div>
+
+          <div class="cmp-row">
+            <div class="cmp-row__who">
+              <strong>GreatSchools NearbySchools API &mdash; School Essentials</strong>
+              <span>
+                Directory data only: names, addresses, IDs, type and grades. No
+                ratings or quality data of any kind. 15,000 lookups included,
+                then $0.003 each.
+              </span>
+            </div>
+            <div class="cmp-row__cost">$52.50<span>/mo + usage</span></div>
+          </div>
+
+          <div class="cmp-row">
+            <div class="cmp-row__who">
+              <strong>GreatSchools Data Licensing</strong>
+              <span>
+                The product you need if you actually want the 1&ndash;10
+                ratings. No pricing is published.
+              </span>
+            </div>
+            <div class="cmp-row__cost">Quote<span>only</span></div>
+          </div>
+
+          <div class="cmp-row">
+            <div class="cmp-row__who">
+              <strong>Niche</strong>
+              <span>
+                Enterprise data licensing for K-12, colleges and places. No
+                pricing is published; their licensing page asks you to request a
+                call with a data expert.
+              </span>
+            </div>
+            <div class="cmp-row__cost">Quote<span>only</span></div>
+          </div>
+        </div>
+
+        <div class="cmp-callout">
+          <h3>The part that matters more than the price</h3>
+          <p>
+            GreatSchools does not sell their 1&ndash;10 ratings in the API tiers
+            above. At $97.50 a month you get three bands &mdash; below average,
+            average, above average. Ratings live in a separate licensing product
+            with no published price.
+          </p>
+          <p>
+            <strong>Our free tier includes the ratings.</strong> So this is not
+            only a cheaper option than their paid one, it is a more complete one.
+          </p>
+        </div>
+
+        <div class="cmp-block">
+          <div class="cmp-block__head">
+            <h2>Full neighborhood data on your listing pages</h2>
+            <span>What it costs to put the whole picture in front of a buyer.</span>
+          </div>
+
+          <div class="cmp-row cmp-row--us">
+            <div class="cmp-row__who">
+              <strong>Dream Neighborhood Explorer</strong>
+              <span>
+                38+ hyperlocal data points: demographics, commute times,
+                housing and market trends, political leanings, safety, nearby
+                points of interest and more. Unlimited agents, no per-seat
+                pricing, cancel anytime.
+              </span>
+            </div>
+            <div class="cmp-row__cost cmp-row__cost--free">$24.92<span>/mo billed annually</span></div>
+          </div>
+
+          <div class="cmp-row">
+            <div class="cmp-row__who">
+              <strong>Local Logic</strong>
+              <span>
+                Neighborhood SDKs from $500 a month, APIs to $1,500+. Enterprise
+                onboarding, annual commitment, no free tier.
+              </span>
+            </div>
+            <div class="cmp-row__cost">$500&ndash;$1,500+<span>/mo</span></div>
+          </div>
+        </div>
+
+        <div class="mk-note">
+          <strong>Note B · Where the Local Logic data-point claim would go</strong>
+          This block is the natural home for the counting argument from Note 6
+          on the home page. Once you tell me Local Logic&rsquo;s exact published
+          claim and the total you want to stand behind, it goes right here as a
+          head-to-head line, with the counting method stated plainly underneath
+          so it survives scrutiny. I have deliberately left it out rather than
+          invent a number.
+        </div>
+
+        <div class="cmp-callout">
+          <h3>A worked example</h3>
+          <p>
+            A brokerage site serving <strong>100,000 listing views a month</strong>
+            pays GreatSchools <strong>$607.50</strong> on the School Quality
+            tier, and still does not get the 1&ndash;10 ratings. At their
+            300,000 lookup ceiling it is <strong>$1,807.50</strong>.
+          </p>
+          <p>
+            The same brokerage pays us <strong>$0</strong> for school data,
+            with no view limit, and $99.92 a month if they also want the full
+            Neighborhood Explorer across every agent.
+          </p>
+        </div>
+
+        <div class="mk-note">
+          <strong>Note C · Read the disclaimer block below carefully</strong>
+          This is the part that makes a comparison page safe to publish.
+          Comparative advertising is legal and normal, but it has to be
+          accurate, current, and clear about what is being compared. The four
+          paragraphs below cover: sourcing and a verification date, a
+          commitment that prices change, an explicit statement that we are
+          comparing named published tiers rather than whole companies, and a
+          trademark and non-affiliation line. I would also put a calendar
+          reminder to re-verify every quarter, because the risk here is not
+          writing something false today, it is leaving something true today up
+          for two years. If legal review is available before this goes live,
+          this is the page to send them.
+        </div>
+
+        <div class="cmp-disclaimer">
+          <h3>About this comparison</h3>
+          <p>
+            All third-party pricing shown on this page was taken from each
+            vendor&rsquo;s own publicly available pricing or licensing page and
+            was last verified on 13 August 2026. Pricing and product features
+            change without notice. Please confirm current rates and inclusions
+            directly with the vendor before making a purchasing decision.
+          </p>
+          <p>
+            Comparisons refer to the specific named tiers described above and to
+            the features those tiers include according to the vendor&rsquo;s own
+            published documentation. They are not a comparison of the vendors
+            as a whole, and they do not account for enterprise, custom,
+            negotiated, promotional or reseller pricing, which may differ
+            substantially. Where a vendor does not publish pricing, we state
+            that rather than estimate a figure.
+          </p>
+          <p>
+            Usage-based figures are illustrative calculations using each
+            vendor&rsquo;s published rates applied to a stated volume, and are
+            not quotes. Your actual cost will depend on your traffic and your
+            agreement with that vendor.
+          </p>
+          <p>
+            GreatSchools, Niche and Local Logic are trademarks of their
+            respective owners. Dream Neighborhood is not affiliated with,
+            endorsed by, sponsored by, or otherwise associated with any of them.
+            References are for identification and comparison purposes only.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container cta__inner">
+        <span class="pill pill--solid pill--on-dark">
+          <span class="pill__dot" aria-hidden="true"></span>
+          GET STARTED
+        </span>
+        <h2 class="cta__title">
+          Start with the School Explorer.
+          <span class="accent-lime">Free for life, unlimited views.</span>
+        </h2>
+        <p class="cta__lead">
+          One line of code, installed by us for free. If you don&rsquo;t like
+          it, we&rsquo;ll take it right back off.
+        </p>
+        <div style="margin-top: 26px">
+          <a class="btn btn--lime btn--lg" href="/mockups/home-free-first/">Get the free School Explorer</a>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      (function () {
+        var body = document.body;
+        function applyFromQuery() {
+          var params = new URLSearchParams(window.location.search);
+          body.setAttribute("data-notes", params.get("notes") === "off" ? "off" : "on");
+        }
+        applyFromQuery();
+        window.addEventListener("popstate", applyFromQuery);
+        window.addEventListener("message", function (e) {
+          var d = e.data || {};
+          if (d.type !== "dn-mockup") return;
+          if (d.notes) body.setAttribute("data-notes", d.notes);
+        });
+      })();
+    </script>
+  </body>
+</html>
