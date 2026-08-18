@@ -2830,7 +2830,8 @@ a.calendly-gate.calendly-gate--locked {
   padding: 4px 8px;
 }
 
-.plan--free {
+.plan--free,
+.plan--outlined {
   border: 2px solid var(--green-700);
   background: var(--bg-mint);
 }
