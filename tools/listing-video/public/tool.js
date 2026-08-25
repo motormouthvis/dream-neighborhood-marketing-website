@@ -64,6 +64,11 @@
       show(el("signout"), state.session.signedIn);
       if (state.session.signedIn) paintSession();
       return state.session;
+    }, function () {
+      // If the server cannot be reached, fall back to the sign-in panel rather
+      // than leaving a blank page.
+      show(el("gate"), true);
+      showError(el("gate-error"), "Could not reach the server. Refresh the page.");
     });
   }
 

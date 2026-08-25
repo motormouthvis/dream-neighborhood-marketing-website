@@ -12,6 +12,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Author `display` rules below would otherwise beat the browser's own
+   [hidden] rule and leave hidden panels on screen. */
+[hidden] { display: none !important; }
+
 body {
   font-family: Inter, -apple-system, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
   background: var(--bg);
@@ -66,6 +70,8 @@ legend.label { padding: 0; }
   background: #fff; border: 2px solid var(--line); border-radius: 11px; padding: 14px 16px;
 }
 .input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 4px rgba(31, 122, 77, 0.14); }
+.input::placeholder { color: #9aa9b6; font-style: italic; }
+.input:invalid:not(:placeholder-shown) { border-color: #e0b4ae; }
 .input--select { max-width: 300px; }
 .hint { display: block; font-size: 15px; color: var(--ink-soft); margin-top: 8px; }
 .hint--above { margin-top: -2px; margin-bottom: 12px; }
@@ -117,7 +123,6 @@ legend.label { padding: 0; }
   background: var(--amber-bg); border: 1px solid var(--amber-line);
   border-radius: 11px; padding: 12px 15px;
 }
-.pickfirst[hidden] { display: none; }
 
 /* ---------- buttons ---------- */
 .btn {
