@@ -3,7 +3,7 @@
 const fsp = require("fs/promises");
 const path = require("path");
 const { launch } = require("./browser");
-const { captureSite } = require("./capture");
+const { captureSite, plainBackdrop } = require("./capture");
 const { renderFrames } = require("./frames");
 const { buildAiVoiceTrack, buildOverdubTrack } = require("./audio");
 const { buildVideo, buildPoster } = require("./video");
@@ -36,7 +36,13 @@ async function renderJob(job) {
         : await buildAiVoiceTrack({ segments, workDir, log });
 
     browser = await launch();
-    const capture = await captureSite({ browser, url: job.input.websiteUrl, outDir: workDir, log });
+    let capture;
+    try {
+      capture = await captureSite({ browser, url: job.input.websiteUrl, outDir: workDir, log });
+    } catch (error) {
+      log(`Could not open their website (${error.message}) - using a plain background instead`);
+      capture = await plainBackdrop(workDir, { company: job.input.company, url: job.input.websiteUrl });
+    }
 
     log("Drawing the scenes");
     const frames = await renderFrames({
@@ -45,6 +51,7 @@ async function renderJob(job) {
       screenshot: capture.screenshot,
       address: capture.address,
       company: job.input.company,
+      placeholder: capture.placeholder,
       outDir: workDir,
       log,
     });

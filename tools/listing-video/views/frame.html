@@ -32,6 +32,15 @@
 
       /* ---------- captured website ---------- */
       #bg { position: absolute; top: 0; left: 0; width: 1920px; display: block; }
+      /* Shown only when the customer's site could not be opened at all. */
+      #placeholder {
+        position: absolute; inset: 112px 0 0; display: none;
+        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      }
+      #stage.is-placeholder #placeholder { display: flex; }
+      #placeholder-name { font-size: 74px; font-weight: 800; color: #2c4b3c; letter-spacing: -1.4px; }
+      #placeholder-sub { font-size: 30px; font-weight: 600; color: #6d8579; }
+
       #scrim {
         position: absolute; inset: 0;
         background: rgba(255, 255, 255, 0.5);
@@ -257,6 +266,7 @@
   <body>
     <div id="stage">
       <img id="bg" alt="" />
+      <div id="placeholder"><div id="placeholder-name"></div><div id="placeholder-sub"></div></div>
       <div id="scrim"></div>
       <div id="card"></div>
       <div id="caption"><h1></h1><p></p></div>
@@ -475,6 +485,12 @@
         document.getElementById("tooltip").style.display = spec.tooltip ? "" : "none";
         document.getElementById("house").innerHTML = ICONS.house;
         document.getElementById("popup").className = spec.tapping ? "is-tapping" : "";
+
+        stage.classList.toggle("is-placeholder", Boolean(spec.placeholder));
+        if (spec.placeholder) {
+          document.getElementById("placeholder-name").textContent = spec.placeholder.company || "";
+          document.getElementById("placeholder-sub").textContent = spec.placeholder.website || "";
+        }
 
         const card = document.getElementById("card");
         stage.classList.toggle("has-card", Boolean(spec.card));

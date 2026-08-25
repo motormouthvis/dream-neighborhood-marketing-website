@@ -1,6 +1,8 @@
 "use strict";
 
 const path = require("path");
+const config = require("./config");
+const { run } = require("./exec");
 
 const STREET_TYPES =
   "St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Blvd|Boulevard|Ct|Court|Cir|Circle|Way|Pl|Place|Ter|Terrace|Trl|Trail|Pkwy|Parkway|Hwy|Highway|Loop|Run|Row|Path|Commons|Crossing|Xing";
@@ -214,4 +216,37 @@ async function captureSite({ browser, url, outDir, log }) {
   return result;
 }
 
-module.exports = { captureSite, normalizeUrl };
+/**
+ * Last resort when their site cannot be opened at all: a plain backdrop, so a
+ * video still gets made instead of leaving Myles with nothing.
+ */
+async function plainBackdrop(outDir, { company, url } = {}) {
+  const file = path.join(outDir, "site.png");
+  await run(config.ffmpegPath, [
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=0xEDF1EE:s=1920x1080",
+    "-frames:v",
+    "1",
+    file,
+  ]);
+  let host = "";
+  try {
+    host = new URL(normalizeUrl(url || "")).hostname;
+  } catch (_) {
+    host = "";
+  }
+
+  return {
+    screenshot: file,
+    pageUrl: "",
+    usedListingPage: false,
+    address: null,
+    placeholder: { company: company || "", website: host },
+    notes: ["Their website could not be opened, so the video uses a plain background."],
+  };
+}
+
+module.exports = { captureSite, normalizeUrl, plainBackdrop };

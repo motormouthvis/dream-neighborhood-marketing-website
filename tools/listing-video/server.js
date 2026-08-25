@@ -259,6 +259,7 @@ app.get(["/v/:id", `${TOOL_PATH}/v/:id`], async (req, res) => {
         firstName: job.input.firstName,
         company: job.input.company,
         videoTypeLabel: job.result.videoTypeLabel,
+        durationSeconds: job.result.durationSeconds,
         videoUrl: `/v/${job.id}/video.mp4`,
         posterUrl: `/v/${job.id}/poster.jpg`,
       }

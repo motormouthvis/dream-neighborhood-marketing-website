@@ -25,6 +25,7 @@ function specForSegment(segment, context) {
     tabs: NE_TABS,
     summary: NE_SUMMARY,
     year: new Date().getFullYear(),
+    placeholder: context.placeholder,
   };
 
   if (segment.scene === "listing-tap") return { ...base, tapping: true };
@@ -36,7 +37,7 @@ function specForSegment(segment, context) {
 /**
  * Render one 1920x1080 PNG per narration segment.
  */
-async function renderFrames({ browser, segments, screenshot, address, company, outDir, log }) {
+async function renderFrames({ browser, segments, screenshot, address, company, placeholder, outDir, log }) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
   const templateUrl = pathToFileURL(path.join(config.root, "views", "frame.html")).toString();
@@ -46,6 +47,7 @@ async function renderFrames({ browser, segments, screenshot, address, company, o
     bgUrl: pathToFileURL(screenshot).toString(),
     address,
     company,
+    placeholder: placeholder || null,
   };
 
   const frames = [];

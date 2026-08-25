@@ -342,8 +342,9 @@
     show(el("result"), true);
 
     var summary = [job.result.videoTypeLabel, job.result.voice.label, job.result.durationSeconds + " seconds"];
-    if (!job.result.usedListingPage) summary.push("filmed on their homepage - no live listing was found");
-    setText(el("resultSummary"), summary.join(" \u00b7 ") + ".");
+    var text = summary.join(" \u00b7 ") + ".";
+    if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");
+    setText(el("resultSummary"), text);
 
     el("player").src = "/v/" + job.id + "/video.mp4";
     el("player").poster = "/v/" + job.id + "/poster.jpg";
@@ -376,30 +377,48 @@
   });
 
   function copy(value, button, resetLabel) {
-    var done = function () {
+    // execCommand runs inside the click itself, so it works even where the async
+    // clipboard API is blocked or left hanging.
+    var copied = legacyCopy(value);
+    if (copied) return done();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value).then(done, failed);
+    }
+    return failed();
+
+    function done() {
       setText(button, "Copied");
       setTimeout(function () {
         setText(button, resetLabel);
-      }, 1800);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(value).then(done, fallback);
-    } else {
-      fallback();
+      }, 2000);
     }
-    function fallback() {
-      var area = document.createElement("textarea");
-      area.value = value;
-      document.body.appendChild(area);
+    function failed() {
+      setText(button, "Press Ctrl+C to copy");
+      el("shareLink").focus();
+      el("shareLink").select();
+      setTimeout(function () {
+        setText(button, resetLabel);
+      }, 4000);
+    }
+  }
+
+  function legacyCopy(value) {
+    var area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "readonly");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    document.body.appendChild(area);
+    var ok = false;
+    try {
       area.select();
-      try {
-        document.execCommand("copy");
-        done();
-      } catch (_) {
-        setText(button, "Copy failed");
-      }
-      document.body.removeChild(area);
+      area.setSelectionRange(0, value.length);
+      ok = document.execCommand("copy");
+    } catch (_) {
+      ok = false;
     }
+    document.body.removeChild(area);
+    return ok;
   }
 
   el("sendBtn").addEventListener("click", function () {

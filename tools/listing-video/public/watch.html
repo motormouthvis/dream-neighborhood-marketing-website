@@ -68,7 +68,7 @@
           "here is a quick look at School Explorer on the " +
           escapeHtml(company) +
           " website</h1>" +
-          '<p class="sub">About two minutes. Sound on.</p>' +
+          '<p class="sub">' + runtime(DATA.durationSeconds) + " Sound on.</p>" +
           '<video controls playsinline preload="metadata" poster="' +
           escapeHtml(DATA.posterUrl) +
           '"><source src="' +
@@ -79,6 +79,14 @@
           '">Download it instead</a>.</video>' +
           '<p class="foot">From Dream Neighborhood &middot; ' +
           '<a href="https://www.dreamneighborhood.com">dreamneighborhood.com</a></p>';
+      }
+
+      function runtime(seconds) {
+        if (!seconds) return "";
+        if (seconds < 60) return Math.round(seconds) + " seconds.";
+        var minutes = Math.floor(seconds / 60);
+        var rest = Math.round(seconds % 60);
+        return minutes + " minute" + (minutes === 1 ? "" : "s") + (rest ? " " + rest + " seconds" : "") + ".";
       }
 
       function escapeHtml(value) {
