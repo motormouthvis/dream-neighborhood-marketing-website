@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Listing video frame</title>
+    <style>
+      :root {
+        --dn-green: #1f7a4d;
+        --dn-green-dark: #17493a;
+        --ink: #16202b;
+        --ink-soft: #5b6b7b;
+        --line: #e3e8ee;
+        --amber: #f0932b;
+        --red: #e0396b;
+        --green: #2fa96b;
+        --grey: #9aa7b4;
+        --purple: #6d5bd0;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #ffffff;
+        font-family: Inter, "Liberation Sans", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #f2f4f6; }
+
+      /* ---------- captured website ---------- */
+      #bg { position: absolute; top: 0; left: 0; width: 1920px; display: block; }
+      /* Shown only when the customer's site could not be opened at all. */
+      #placeholder {
+        position: absolute; inset: 112px 0 0; display: none;
+        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      }
+      #stage.is-placeholder #placeholder { display: flex; }
+      #placeholder-name { font-size: 74px; font-weight: 800; color: #2c4b3c; letter-spacing: -1.4px; }
+      #placeholder-sub { font-size: 30px; font-weight: 600; color: #6d8579; }
+
+      #scrim {
+        position: absolute; inset: 0;
+        background: rgba(255, 255, 255, 0.5);
+        opacity: 0;
+        transition: none;
+      }
+      #stage.has-card #scrim { opacity: 1; }
+
+      /* ---------- top caption bar (never a bottom bar: it would cover the popup) ---------- */
+      #caption {
+        position: absolute; top: 0; left: 0; right: 0; height: 112px;
+        background: rgba(26, 56, 43, 0.9);
+        padding: 16px 48px 0;
+        display: flex; flex-direction: column; justify-content: center;
+      }
+      #caption h1 {
+        color: #ffffff; font-size: 44px; font-weight: 800; letter-spacing: -0.6px;
+        line-height: 1.08; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #caption p {
+        color: rgba(255, 255, 255, 0.86); font-size: 23px; font-weight: 600;
+        margin-top: 8px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+
+      /* ---------- popup button, bottom right ---------- */
+      #popup {
+        position: absolute; right: 40px; bottom: 40px;
+        display: flex; align-items: center; gap: 18px;
+      }
+      #tooltip {
+        background: #ffffff; color: #1d2b36; font-size: 25px; font-weight: 600;
+        padding: 17px 30px; border-radius: 999px;
+        box-shadow: 0 10px 34px rgba(15, 23, 42, 0.22);
+        white-space: nowrap; max-width: 1200px; overflow: hidden; text-overflow: ellipsis;
+      }
+      #house {
+        width: 86px; height: 86px; border-radius: 50%;
+        background: linear-gradient(180deg, #24855a 0%, #17604180 100%), #1c7148;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 12px 30px rgba(14, 68, 46, 0.4);
+        flex: 0 0 auto;
+      }
+      #house svg { width: 44px; height: 44px; }
+      #popup.is-tapping #house {
+        box-shadow: 0 0 0 14px rgba(31, 122, 77, 0.28), 0 12px 30px rgba(14, 68, 46, 0.45);
+        transform: scale(1.06);
+      }
+      #stage.hide-popup #popup { display: none; }
+
+      /* ---------- explorer card (same size and place for SE and NE) ---------- */
+      #card {
+        position: absolute; left: 290px; top: 208px; width: 1340px; height: 764px;
+        background: #f6f7f5; border-radius: 16px;
+        box-shadow: 0 40px 90px rgba(12, 26, 20, 0.32), 0 2px 0 rgba(255, 255, 255, 0.6) inset;
+        overflow: hidden; display: none;
+      }
+      #stage.has-card #card { display: block; }
+
+      /* ===== School Explorer ===== */
+      .se { padding: 26px 30px 0; height: 100%; }
+      .se__top { display: flex; align-items: center; justify-content: space-between; }
+      .se__brand { display: flex; align-items: center; gap: 12px; }
+      .se__logo {
+        width: 34px; height: 34px; border-radius: 9px; background: #1f7a4d;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .se__logo svg { width: 20px; height: 20px; }
+      .se__brandname { font-size: 21px; font-weight: 700; color: #1f7a4d; }
+      .burger { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 9px; background: #fff;
+        display: flex; align-items: center; justify-content: center; }
+      .burger span { display: block; width: 20px; height: 2px; background: #4a5866; box-shadow: 0 6px 0 #4a5866, 0 -6px 0 #4a5866; }
+
+      .heading { display: flex; align-items: center; gap: 14px; margin-top: 26px; }
+      .heading__bar { width: 6px; height: 30px; background: #1f7a4d; border-radius: 3px; }
+      .heading__text { font-size: 31px; font-weight: 800; color: var(--ink); letter-spacing: -0.4px; }
+      .heading__right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+      .heading__count { font-size: 17px; color: var(--ink-soft); font-weight: 500; }
+
+      .se__locrow { display: flex; align-items: stretch; gap: 14px; margin-top: 20px; }
+      .pillbtn {
+        display: inline-flex; align-items: center; gap: 9px; background: #fff; border: 1px solid var(--line);
+        border-radius: 11px; padding: 12px 18px; font-size: 18px; font-weight: 600; color: #2c3a47;
+      }
+      .pillbtn svg { width: 19px; height: 19px; }
+      .se__loc {
+        flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 11px;
+        padding: 12px 18px; display: flex; align-items: center; gap: 16px;
+      }
+      .se__loc-main { flex: 1; min-width: 0; }
+      .se__loc-line1 { font-size: 19px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .se__loc-line1 .pin { color: var(--red); }
+      .se__loc-line2 { font-size: 15px; color: var(--ink-soft); margin-top: 4px; }
+      .btn-outline {
+        border: 1px solid #b8ddc7; color: #1f7a4d; background: #fff; border-radius: 9px;
+        padding: 10px 16px; font-size: 17px; font-weight: 700; white-space: nowrap;
+      }
+
+      .filters { display: flex; align-items: center; gap: 28px; margin-top: 18px; }
+      .filters__group { display: flex; align-items: center; gap: 10px; }
+      .filters__label { font-size: 16px; color: var(--ink-soft); font-weight: 600; }
+      .chip {
+        border: 1px solid var(--line); background: #fff; color: #4a5866; border-radius: 999px;
+        padding: 7px 17px; font-size: 16px; font-weight: 600;
+      }
+      .chip--on { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+      .chip--dark { background: #16202b; border-color: #16202b; color: #fff; }
+
+      .schools { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 20px; }
+      .school {
+        background: #fff; border: 1px solid var(--line); border-radius: 13px;
+        display: flex; align-items: stretch; overflow: hidden; min-height: 96px;
+      }
+      .school__score {
+        width: 82px; flex: 0 0 82px; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; color: #fff; position: relative; padding: 6px;
+      }
+      .school__score--amber { background: var(--amber); }
+      .school__score--red { background: var(--red); }
+      .school__score--green { background: var(--green); }
+      .school__score--grey { background: #aab5c0; }
+      .school__score-num { font-size: 30px; font-weight: 800; line-height: 1; }
+      .school__score-den { font-size: 14px; font-weight: 600; opacity: 0.92; margin-top: 2px; }
+      .school__score-nr { font-size: 13px; font-weight: 800; line-height: 1.1; text-align: center; letter-spacing: 0.2px; }
+      .school__rank {
+        position: absolute; top: 5px; left: 7px; font-size: 13px; font-weight: 800; opacity: 0.95;
+      }
+      .school__body { flex: 1; min-width: 0; padding: 13px 14px; }
+      .school__name { font-size: 19px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .school__private {
+        display: inline-block; background: #efeaff; color: var(--purple); font-size: 11px; font-weight: 800;
+        letter-spacing: 0.6px; border-radius: 5px; padding: 3px 7px; margin-right: 8px; vertical-align: 2px;
+      }
+      .school__meta { font-size: 15px; color: var(--ink-soft); margin-top: 5px; }
+      .school__foot { font-size: 15px; font-weight: 600; margin-top: 7px; display: flex; align-items: center; gap: 10px; }
+      .school__rating--amber { color: #d97e14; }
+      .school__rating--red { color: #d02f5f; }
+      .school__rating--grey { color: var(--grey); }
+      .school__dist { color: var(--ink-soft); font-weight: 500; }
+      .school__compare {
+        width: 84px; flex: 0 0 84px; border-left: 1px solid #f0f3f6;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+      }
+      .school__box { width: 19px; height: 19px; border: 2px solid #cbd5e0; border-radius: 4px; }
+      .school__compare span { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+
+      /* ===== Neighborhood Explorer ===== */
+      .ne { padding: 22px 26px 0; height: 100%; display: flex; flex-direction: column; }
+      .ne__tabs { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+      .ne__tab {
+        border: 1px solid var(--line); background: #fff; color: #55636f; border-radius: 999px;
+        padding: 10px 20px; font-size: 17px; font-weight: 600; white-space: nowrap;
+      }
+      .ne__tab--on { background: #16202b; border-color: #16202b; color: #fff; }
+      .ne__body { display: flex; gap: 22px; margin-top: 22px; flex: 1; min-height: 0; }
+      .ne__map {
+        flex: 0 0 47%; border-radius: 12px; overflow: hidden; position: relative;
+        border: 1px solid var(--line); background: #eef1ec;
+      }
+      .ne__map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .ne__search {
+        position: absolute; top: 14px; left: 14px; right: 14px;
+        background: rgba(94, 110, 100, 0.82); color: #fff; border-radius: 9px;
+        padding: 9px 14px; display: flex; align-items: center; gap: 12px;
+      }
+      .ne__search-main { flex: 1; min-width: 0; }
+      .ne__search-lbl { font-size: 13px; opacity: 0.82; }
+      .ne__search-val { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ne__search-x { font-size: 22px; opacity: 0.9; }
+      .ne__result {
+        position: absolute; top: 78px; left: 14px; width: 66%;
+        background: rgba(94, 110, 100, 0.86); color: #fff; border-radius: 9px; padding: 12px 16px;
+      }
+      .ne__result-1 { font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ne__result-2 { font-size: 15px; opacity: 0.86; margin-top: 3px; }
+      .ne__viewbtn {
+        position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%);
+        background: rgba(88, 104, 95, 0.88); color: #fff; border-radius: 999px;
+        padding: 13px 26px; font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 11px;
+        white-space: nowrap;
+      }
+      .ne__viewbtn svg { width: 22px; height: 22px; flex: 0 0 22px; }
+
+      .ne__side { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .ne__side-top { display: flex; align-items: center; gap: 14px; }
+      .ne__place { font-size: 29px; font-weight: 800; color: var(--ink); letter-spacing: -0.3px; }
+      .ne__about {
+        margin-left: auto; border: 1px solid var(--line); background: #fff; border-radius: 999px;
+        padding: 9px 16px; font-size: 16px; font-weight: 600; color: #4a5866;
+        display: flex; align-items: center; gap: 8px;
+      }
+      .ne__about svg { width: 17px; height: 17px; }
+      .ne__sub { font-size: 17px; color: var(--ink-soft); margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+      .ne__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+      .stat {
+        background: #eef0ec; border-radius: 12px; padding: 18px 20px;
+        display: flex; align-items: center; gap: 16px;
+      }
+      .stat__ic {
+        width: 46px; height: 46px; border-radius: 50%; background: #dfe3dd; flex: 0 0 46px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .stat__ic svg { width: 23px; height: 23px; }
+      .stat__val { font-size: 25px; font-weight: 800; color: var(--ink); line-height: 1.1; }
+      .stat__lbl { font-size: 15px; color: var(--ink-soft); margin-top: 3px; }
+
+      .bars { margin-top: 22px; }
+      .bar { margin-bottom: 16px; }
+      .bar__lbl { font-size: 18px; color: #3d4a56; font-weight: 600; }
+      .bar__track { height: 22px; border-radius: 999px; background: #e6e9e4; margin-top: 8px; position: relative; overflow: hidden; }
+      .bar__fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; display: flex; align-items: center; justify-content: flex-end; padding-right: 12px; }
+      .bar__fill--dark { background: #1e2a24; }
+      .bar__fill--light { background: #cfd6cf; }
+      .bar__pct { font-size: 13px; font-weight: 700; }
+      .bar__fill--dark .bar__pct { color: #fff; }
+      .bar__fill--light .bar__pct { color: #3d4a56; }
+
+      .ne__foot { margin-top: auto; padding: 16px 0 14px; text-align: center; }
+      .ne__foot-1 { font-size: 14px; color: var(--ink-soft); }
+      .ne__foot-2 { font-size: 13px; color: #9aa7b4; margin-top: 6px; }
+      .ne__foot-2 a { color: #9aa7b4; text-decoration: underline; margin-left: 10px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <img id="bg" alt="" />
+      <div id="placeholder"><div id="placeholder-name"></div><div id="placeholder-sub"></div></div>
+      <div id="scrim"></div>
+      <div id="card"></div>
+      <div id="caption"><h1></h1><p></p></div>
+      <div id="popup"><div id="tooltip"></div><div id="house"></div></div>
+    </div>
+
+    <script>
+      const ICONS = {
+        house:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
+        houseGreen:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#1f7a4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
+        eye:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12S5.4 5.5 12 5.5 22.2 12 22.2 12 18.6 18.5 12 18.5 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>',
+        info:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#4a5866" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.1"/></svg>',
+        income:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#3f4d44" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M14.4 9.2a2.6 2.6 0 0 0-2.4-1.3c-1.4 0-2.4.8-2.4 1.9 0 2.7 5 1.3 5 4.1 0 1.2-1.1 2.1-2.6 2.1a2.8 2.8 0 0 1-2.6-1.5"/><path d="M12 6.3v11.4"/></svg>',
+        home:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#3f4d44" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 11 12 4l8.6 7"/><path d="M5.8 10.3V20h12.4v-9.7"/><path d="M10.2 20v-4.6h3.6V20"/></svg>',
+        rent:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#3f4d44" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 8.4h16.8v9.2H3.6z"/><circle cx="12" cy="13" r="2.3"/><path d="M3.6 6.2h16.8"/></svg>',
+        owners:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#3f4d44" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.3" cy="9" r="3.1"/><path d="M3.6 19.2c0-3 2.6-4.8 5.7-4.8s5.7 1.8 5.7 4.8"/><path d="M16.4 7.6a2.9 2.9 0 0 1 0 5.6M17.6 18.6c0-1.8-.6-3.2-1.8-4.1"/></svg>',
+      };
+
+      // A quiet street-grid map. It stands in for the live map tiles the real
+      // Neighborhood Explorer draws; no third-party tiles are fetched here.
+      function mapSvg() {
+        const roads = [
+          "M0 118 H640", "M0 236 H640", "M0 352 H640", "M0 466 H640",
+          "M92 0 V560", "M232 0 V560", "M386 0 V560", "M520 0 V560",
+        ];
+        const thin = [
+          "M0 62 H640", "M0 176 H640", "M0 296 H640", "M0 412 H640", "M0 516 H640",
+          "M46 0 V560", "M158 0 V560", "M306 0 V560", "M452 0 V560", "M584 0 V560",
+        ];
+        return (
+          '<svg viewBox="0 0 640 560" preserveAspectRatio="xMidYMid slice">' +
+          '<rect width="640" height="560" fill="#eceee9"/>' +
+          '<path d="M156 150 H470 V392 H156 Z" fill="#e3e7e1"/>' +
+          '<g stroke="#f7f8f6" stroke-width="2.4">' + thin.map((d) => `<path d="${d}"/>`).join("") + "</g>" +
+          '<g stroke="#ffffff" stroke-width="6">' + roads.map((d) => `<path d="${d}"/>`).join("") + "</g>" +
+          '<path d="M0 300 C120 292 190 340 300 336 C420 332 520 288 640 296" stroke="#f0d9a8" stroke-width="9" fill="none"/>' +
+          '<path d="M232 0 C238 120 208 220 236 330 C262 430 250 500 258 560" stroke="#f0d9a8" stroke-width="9" fill="none"/>' +
+          '<circle cx="256" cy="336" r="13" fill="#fff" stroke="#c9d0c7" stroke-width="2"/>' +
+          '<text x="256" y="341" font-size="11" font-family="Inter, Arial" text-anchor="middle" fill="#7d8a80">280</text>' +
+          '<circle cx="330" cy="252" r="15" fill="#7f8c83" opacity="0.85"/>' +
+          '<circle cx="330" cy="252" r="6" fill="#ffffff"/>' +
+          "</svg>"
+        );
+      }
+
+      function esc(value) {
+        return String(value == null ? "" : value).replace(/[&<>"]/g, (ch) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])
+        );
+      }
+
+      function seCard(spec) {
+        const demo = spec.demo;
+        const rows = spec.schools
+          .map((school) => {
+            const score =
+              school.score === "NOT RATED"
+                ? '<div class="school__score-nr">NOT<br />RATED</div>'
+                : `<div class="school__score-num">${esc(school.score)}</div><div class="school__score-den">/ 10</div>`;
+            const privateChip = school.private ? '<span class="school__private">PRIVATE</span>' : "";
+            return `
+              <div class="school">
+                <div class="school__score school__score--${esc(school.tone)}">
+                  <div class="school__rank">${esc(school.rank)}</div>${score}
+                </div>
+                <div class="school__body">
+                  <div class="school__name">${privateChip}${esc(school.name)}</div>
+                  <div class="school__meta">${esc(school.meta)}</div>
+                  <div class="school__foot">
+                    <span class="school__rating--${esc(school.ratingTone)}">${esc(school.rating)}</span>
+                    <span class="school__dist">&#9678; ${esc(school.distance)}</span>
+                  </div>
+                </div>
+                <div class="school__compare"><div class="school__box"></div><span>Compare</span></div>
+              </div>`;
+          })
+          .join("");
+
+        return `
+          <div class="se">
+            <div class="se__top">
+              <div class="se__brand">
+                <div class="se__logo">${ICONS.house}</div>
+                <div class="se__brandname">Dream Neighborhood</div>
+              </div>
+              <div class="burger"><span></span></div>
+            </div>
+
+            <div class="heading">
+              <div class="heading__bar"></div>
+              <div class="heading__text">Find Your Dream School</div>
+            </div>
+
+            <div class="se__locrow">
+              <div class="pillbtn">${ICONS.houseGreen}<span>Home</span></div>
+              <div class="se__loc">
+                <div class="se__loc-main">
+                  <div class="se__loc-line1"><span class="pin">&#9679;</span> ${esc(demo.cityState)} &middot; ${esc(demo.district)}</div>
+                  <div class="se__loc-line2">${esc(demo.schoolsNearby)} schools nearby &middot; ${esc(demo.students)} students (public + private)</div>
+                </div>
+                <div class="btn-outline">Change address</div>
+              </div>
+            </div>
+
+            <div class="heading">
+              <div class="heading__bar"></div>
+              <div class="heading__text" style="font-size: 27px">Schools near you</div>
+              <div class="heading__right">
+                <span class="heading__count">12 of ${esc(demo.schoolsNearby)} nearest</span>
+                <span class="chip chip--dark">List</span>
+                <span class="chip">Map</span>
+              </div>
+            </div>
+
+            <div class="filters">
+              <div class="filters__group">
+                <span class="filters__label">Sort</span>
+                <span class="chip chip--on">Distance</span>
+                <span class="chip">Rating</span>
+              </div>
+              <div class="filters__group">
+                <span class="filters__label">Show</span>
+                <span class="chip chip--on">All</span>
+                <span class="chip">Public</span>
+                <span class="chip">Private</span>
+              </div>
+            </div>
+
+            <div class="schools">${rows}</div>
+          </div>`;
+      }
+
+      function neCard(spec) {
+        const demo = spec.demo;
+        const tabs = spec.tabs
+          .map((tab, index) => `<div class="ne__tab${index === 0 ? " ne__tab--on" : ""}">${esc(tab)}</div>`)
+          .join("");
+        const stats = spec.summary.stats
+          .map(
+            (stat) => `
+              <div class="stat">
+                <div class="stat__ic">${ICONS[stat.icon] || ICONS.home}</div>
+                <div><div class="stat__val">${esc(stat.value)}</div><div class="stat__lbl">${esc(stat.label)}</div></div>
+              </div>`
+          )
+          .join("");
+        const bars = spec.summary.bars
+          .map(
+            (bar) => `
+              <div class="bar">
+                <div class="bar__lbl">${esc(bar.label)}</div>
+                <div class="bar__track">
+                  <div class="bar__fill bar__fill--${esc(bar.tone)}" style="width: ${Number(bar.percent)}%">
+                    <span class="bar__pct">${Number(bar.percent)}%</span>
+                  </div>
+                </div>
+              </div>`
+          )
+          .join("");
+
+        return `
+          <div class="ne">
+            <div class="ne__tabs">${tabs}</div>
+            <div class="ne__body">
+              <div class="ne__map">
+                ${mapSvg()}
+                <div class="ne__search">
+                  <div class="ne__search-main">
+                    <div class="ne__search-lbl">Search location</div>
+                    <div class="ne__search-val">${esc(demo.searchLabel)}</div>
+                  </div>
+                  <div class="ne__search-x">&times;</div>
+                </div>
+                <div class="ne__result">
+                  <div class="ne__result-1">${esc(demo.addressLineOne)}</div>
+                  <div class="ne__result-2">${esc(demo.addressLineTwo)}</div>
+                </div>
+                <div class="ne__viewbtn">${ICONS.eye}<span>View Neighborhood Data</span></div>
+              </div>
+              <div class="ne__side">
+                <div class="ne__side-top">
+                  <div class="ne__place">${esc(demo.cityState)}</div>
+                  <div class="ne__about">${ICONS.info}<span>About the data</span></div>
+                </div>
+                <div class="ne__sub">Summary for selected area &#9432;</div>
+                <div class="ne__stats">${stats}</div>
+                <div class="bars">${bars}</div>
+                <div class="ne__foot">
+                  <div class="ne__foot-1">Neighborhood Explorer provided by ${esc(spec.company || "Dream Neighborhood")}</div>
+                  <div class="ne__foot-2">Dream Neighborhood &copy; ${esc(spec.year)}<a>Terms</a><a>Privacy</a><a>Data sources</a></div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      window.renderFrame = function renderFrame(spec) {
+        const stage = document.getElementById("stage");
+        const bg = document.getElementById("bg");
+
+        if (bg.getAttribute("src") !== spec.bg) bg.setAttribute("src", spec.bg);
+        bg.style.top = `${-(spec.bgOffset || 0)}px`;
+
+        document.querySelector("#caption h1").textContent = spec.caption.headline;
+        document.querySelector("#caption p").textContent = spec.caption.subline;
+
+        document.getElementById("tooltip").textContent = spec.tooltip || "";
+        document.getElementById("tooltip").style.display = spec.tooltip ? "" : "none";
+        document.getElementById("house").innerHTML = ICONS.house;
+        document.getElementById("popup").className = spec.tapping ? "is-tapping" : "";
+
+        stage.classList.toggle("is-placeholder", Boolean(spec.placeholder));
+        if (spec.placeholder) {
+          document.getElementById("placeholder-name").textContent = spec.placeholder.company || "";
+          document.getElementById("placeholder-sub").textContent = spec.placeholder.website || "";
+        }
+
+        const card = document.getElementById("card");
+        stage.classList.toggle("has-card", Boolean(spec.card));
+        stage.classList.toggle("hide-popup", Boolean(spec.hidePopup));
+        if (spec.card === "se") card.innerHTML = seCard(spec);
+        else if (spec.card === "ne") card.innerHTML = neCard(spec);
+        else card.innerHTML = "";
+
+        return new Promise((resolve) => {
+          if (bg.complete) requestAnimationFrame(() => requestAnimationFrame(resolve));
+          else bg.onload = bg.onerror = () => requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+      };
+    </script>
+  </body>
+</html>

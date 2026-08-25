@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Make a listing video - Dream Neighborhood (internal)</title>
+    <link rel="stylesheet" href="/tools/listing-video/static/tool.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__brand">
+        <span class="topbar__dot"></span>
+        Listing Video Maker
+      </div>
+      <div class="topbar__right">
+        <span class="tag">Internal tool &middot; staging</span>
+        <button type="button" id="signout" class="linkbtn" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- ================= sign in ================= -->
+      <section id="gate" class="panel" hidden>
+        <h1 class="h1">Sign in</h1>
+        <p class="lede">This tool is password protected so it is not a public form.</p>
+        <form id="gate-form" class="stack" autocomplete="off">
+          <label class="field">
+            <span class="label">Password</span>
+            <input class="input" type="password" id="gate-token" required autocomplete="current-password" />
+          </label>
+          <p class="error" id="gate-error" hidden></p>
+          <button class="btn btn--primary" type="submit">Sign in</button>
+        </form>
+      </section>
+
+      <!-- ================= the form ================= -->
+      <section id="app" hidden>
+        <h1 class="h1">Make a listing video</h1>
+        <p class="lede">
+          Fill this in, press <strong>Make video</strong>, and you get a link you can send to the customer.
+        </p>
+
+        <form id="form" class="stack" autocomplete="off">
+          <label class="field">
+            <span class="label">Customer first name</span>
+            <input class="input" id="firstName" name="firstName" placeholder="e.g. Vanessa" required />
+            <span class="hint">Used in the first line of the video and in the email.</span>
+          </label>
+
+          <label class="field">
+            <span class="label">Company name</span>
+            <input class="input" id="company" name="company" placeholder="e.g. DOMO Realty" required />
+          </label>
+
+          <label class="field">
+            <span class="label">Website URL</span>
+            <input class="input" id="websiteUrl" name="websiteUrl" placeholder="e.g. domorealty.com" required />
+            <span class="hint">Their realtor or brokerage site. We open it and find a live listing to film.</span>
+          </label>
+
+          <label class="field">
+            <span class="label">Customer email</span>
+            <input class="input" id="customerEmail" name="customerEmail" type="email" placeholder="e.g. vanessa@domorealty.com" required />
+          </label>
+
+          <!-- ===== video type: required, no default ===== -->
+          <fieldset class="field" id="videoTypeField">
+            <legend class="label">Which video?</legend>
+            <span class="hint hint--above">Pick one. This is required.</span>
+            <div class="choices choices--big" role="radiogroup" aria-required="true">
+              <label class="choice choice--big">
+                <input type="radio" name="videoType" value="school" />
+                <span class="choice__box">
+                  <span class="choice__mark" aria-hidden="true"></span>
+                  <span class="choice__text">
+                    <strong class="choice__title">School only</strong>
+                    <span class="choice__desc">School Explorer only. Neighborhood Explorer is never mentioned.</span>
+                  </span>
+                </span>
+              </label>
+              <label class="choice choice--big">
+                <input type="radio" name="videoType" value="school-neighborhood" />
+                <span class="choice__box">
+                  <span class="choice__mark" aria-hidden="true"></span>
+                  <span class="choice__text">
+                    <strong class="choice__title">School + Neighborhood</strong>
+                    <span class="choice__desc">School Explorer first, then the Neighborhood Explorer tabs.</span>
+                  </span>
+                </span>
+              </label>
+            </div>
+            <p class="pickfirst" id="videoTypePrompt">Pick a video type to turn on <strong>Make video</strong>.</p>
+          </fieldset>
+
+          <!-- ===== voice ===== -->
+          <fieldset class="field">
+            <legend class="label">Voice</legend>
+            <div class="choices" role="radiogroup">
+              <label class="choice">
+                <input type="radio" name="voiceMode" value="ai" checked />
+                <span class="choice__box">
+                  <span class="choice__mark" aria-hidden="true"></span>
+                  <span class="choice__text">
+                    <strong class="choice__title">AI voice</strong>
+                    <span class="choice__desc" id="aiVoiceNote">Professional female voice.</span>
+                  </span>
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="voiceMode" value="overdub" />
+                <span class="choice__box">
+                  <span class="choice__mark" aria-hidden="true"></span>
+                  <span class="choice__text">
+                    <strong class="choice__title">Overdub (your voice)</strong>
+                    <span class="choice__desc">Record here, or upload an mp3, wav or m4a.</span>
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div class="overdub" id="overdub" hidden>
+              <div class="overdub__row">
+                <button type="button" class="btn btn--dark" id="recBtn">Start recording</button>
+                <span class="overdub__timer" id="recTimer">0:00</span>
+                <span class="overdub__state" id="recState">Not recording</span>
+              </div>
+              <audio id="recPlayback" class="overdub__player" controls hidden></audio>
+              <div class="overdub__row">
+                <label class="btn btn--ghost">
+                  Upload a file
+                  <input type="file" id="audioFile" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a" hidden />
+                </label>
+                <span class="overdub__state" id="fileState">No file chosen</span>
+              </div>
+              <details class="teleprompter">
+                <summary>Read the script out loud</summary>
+                <p class="hint">Pick a video type first, then this shows the exact words to read.</p>
+                <pre id="scriptText" class="scriptbox">Pick a video type above.</pre>
+              </details>
+            </div>
+          </fieldset>
+
+          <!-- ===== send from ===== -->
+          <fieldset class="field">
+            <legend class="label">Send from</legend>
+            <div class="choices" role="radiogroup" id="fromChoices"></div>
+          </fieldset>
+
+          <p class="error" id="form-error" hidden></p>
+
+          <button class="btn btn--primary btn--big" type="submit" id="makeBtn" disabled>Make video</button>
+          <p class="hint hint--center" id="makeHint">Pick a video type to turn this on.</p>
+        </form>
+
+        <!-- ===== progress ===== -->
+        <section class="panel" id="progress" hidden>
+          <h2 class="h2">Working on it</h2>
+          <ul class="steps" id="steps"></ul>
+          <p class="hint">This usually takes a couple of minutes. You can leave this page open.</p>
+        </section>
+
+        <!-- ===== result ===== -->
+        <section class="panel" id="result" hidden>
+          <h2 class="h2">Your video is ready</h2>
+          <p class="lede" id="resultSummary"></p>
+          <video id="player" class="player" controls playsinline preload="metadata"></video>
+
+          <div class="share">
+            <span class="label">Shareable link</span>
+            <div class="share__row">
+              <input class="input" id="shareLink" readonly />
+              <button type="button" class="btn btn--dark" id="copyBtn">Copy link</button>
+            </div>
+            <p class="hint">Anyone with this link can play the video. No sign-in needed.</p>
+          </div>
+
+          <div class="share">
+            <span class="label">Send to the customer</span>
+            <div class="share__row">
+              <input class="input" id="emailTo" type="email" />
+              <select class="input input--select" id="emailFrom"></select>
+              <button type="button" class="btn btn--primary" id="sendBtn">Send email</button>
+            </div>
+            <p class="notice" id="mailNotice" hidden></p>
+            <p class="ok" id="sendOk" hidden></p>
+            <p class="error" id="sendError" hidden></p>
+            <details class="teleprompter" id="draftWrap" hidden>
+              <summary>Copy the email text instead</summary>
+              <pre class="scriptbox" id="draftText"></pre>
+              <button type="button" class="btn btn--ghost" id="copyDraft">Copy email text</button>
+            </details>
+          </div>
+
+          <button type="button" class="btn btn--ghost" id="againBtn">Make another video</button>
+        </section>
+
+        <!-- ===== failure ===== -->
+        <section class="panel panel--bad" id="failed" hidden>
+          <h2 class="h2">That did not finish</h2>
+          <p id="failedWhy"></p>
+          <button type="button" class="btn btn--ghost" id="retryBtn">Back to the form</button>
+        </section>
+      </section>
+    </main>
+
+    <script src="/tools/listing-video/static/tool.js"></script>
+  </body>
+</html>

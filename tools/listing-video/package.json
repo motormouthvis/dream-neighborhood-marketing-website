@@ -1,0 +1,20 @@
+{
+  "name": "dn-listing-video-maker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Staging-only internal tool for marketing: make a School Explorer / Neighborhood Explorer prospecting video from a realtor website URL.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.5",
+    "puppeteer-core": "^25.9.0"
+  }
+}

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Dream Neighborhood</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: Inter, -apple-system, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+        background: #12211b;
+        color: #f3f7f4;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 20px 26px;
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        font-weight: 800;
+        font-size: 19px;
+      }
+      .dot { width: 13px; height: 13px; border-radius: 50%; background: #63d19b; }
+      main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px 20px 40px; }
+      .card { width: 100%; max-width: 1120px; }
+      h1 { font-size: 31px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.2; }
+      .sub { color: #a9c3b6; margin-top: 10px; font-size: 17px; }
+      video {
+        width: 100%;
+        margin-top: 22px;
+        border-radius: 16px;
+        background: #000;
+        display: block;
+        box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+      }
+      .foot { margin-top: 24px; color: #8fae9f; font-size: 15px; }
+      .foot a { color: #9ee0bd; }
+      .missing { text-align: center; padding: 60px 0; }
+      @media (max-width: 560px) {
+        h1 { font-size: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header><span class="dot"></span> Dream Neighborhood</header>
+    <main>
+      <div class="card" id="card"></div>
+    </main>
+
+    <script>
+      var DATA = __WATCH_DATA__;
+      var card = document.getElementById("card");
+
+      if (!DATA.found) {
+        card.innerHTML =
+          '<div class="missing"><h1>This video is not available</h1>' +
+          '<p class="sub">The link may be wrong, or the video may have been removed.</p></div>';
+      } else {
+        var who = DATA.firstName ? DATA.firstName + ", " : "";
+        var company = DATA.company || "your website";
+        document.title = "A short video for " + company + " - Dream Neighborhood";
+        card.innerHTML =
+          "<h1>" +
+          escapeHtml(who) +
+          "here is a quick look at School Explorer on the " +
+          escapeHtml(company) +
+          " website</h1>" +
+          '<p class="sub">' + runtime(DATA.durationSeconds) + " Sound on.</p>" +
+          '<video controls playsinline preload="metadata" poster="' +
+          escapeHtml(DATA.posterUrl) +
+          '"><source src="' +
+          escapeHtml(DATA.videoUrl) +
+          '" type="video/mp4" />Your browser cannot play this video. ' +
+          '<a href="' +
+          escapeHtml(DATA.videoUrl) +
+          '">Download it instead</a>.</video>' +
+          '<p class="foot">From Dream Neighborhood &middot; ' +
+          '<a href="https://www.dreamneighborhood.com">dreamneighborhood.com</a></p>';
+      }
+
+      function runtime(seconds) {
+        if (!seconds) return "";
+        if (seconds < 60) return Math.round(seconds) + " seconds.";
+        var minutes = Math.floor(seconds / 60);
+        var rest = Math.round(seconds % 60);
+        return minutes + " minute" + (minutes === 1 ? "" : "s") + (rest ? " " + rest + " seconds" : "") + ".";
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+        });
+      }
+    </script>
+  </body>
+</html>
