@@ -1,101 +1,181 @@
 "use strict";
 
+const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const { launch } = require("./browser");
-const { captureSite, plainBackdrop } = require("./capture");
+const { captureListing } = require("./capture");
 const { renderFrames } = require("./frames");
-const { buildAiVoiceTrack, buildOverdubTrack } = require("./audio");
-const { buildVideo, buildPoster } = require("./video");
-const { buildScript, VIDEO_TYPE_LABELS } = require("./scripts");
+const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
+const { buildSilentVideo, buildVideo, buildPoster } = require("./video");
 const store = require("./store");
 
 /**
- * Run one job end to end: screenshot the customer's site, voice the script,
- * draw the scenes, and stitch the mp4.
+ * Phase one: the picture, silent.
+ *
+ * Screenshot a live listing on the customer's site, draw one still per beat,
+ * and stitch them at the template's suggested durations with no audio track at
+ * all. The user watches this back and records over it, so the words land on the
+ * right scenes.
  */
-async function renderJob(job) {
+async function renderSilent(job) {
   const dir = store.jobDir(job.id);
   const workDir = path.join(dir, "work");
   const log = (message) => store.logProgress(job, message);
 
-  job.status = "working";
+  job.status = "capturing";
+  job.error = null;
+  job.errorCode = null;
+  job.retryable = false;
   await store.persist(job);
-
-  const segments = buildScript(job.input.videoType, {
-    firstName: job.input.firstName,
-    company: job.input.company,
-  });
 
   let browser = null;
   try {
-    // Voice first: if the AI voice is missing, fail before spending time on capture.
-    const voiceTrack =
-      job.input.voiceMode === "overdub"
-        ? await buildOverdubTrack({ segments, uploadPath: job.input.overdubPath, workDir, log })
-        : await buildAiVoiceTrack({ segments, workDir, log });
-
+    await fsp.mkdir(workDir, { recursive: true });
     browser = await launch();
-    let capture;
-    try {
-      capture = await captureSite({ browser, url: job.input.websiteUrl, outDir: workDir, log });
-    } catch (error) {
-      log(`Could not open their website (${error.message}) - using a plain background instead`);
-      capture = await plainBackdrop(workDir, { company: job.input.company, url: job.input.websiteUrl });
-    }
 
-    log("Drawing the scenes");
-    const frames = await renderFrames({
+    const capture = await captureListing({
       browser,
-      segments,
-      screenshot: capture.screenshot,
-      address: capture.address,
-      company: job.input.company,
-      placeholder: capture.placeholder,
+      url: job.input.websiteUrl,
+      listingUrl: job.input.listingUrl || "",
       outDir: workDir,
       log,
     });
 
-    const videoPath = path.join(dir, "video.mp4");
-    const video = await buildVideo({
+    log("Drawing the scenes");
+    const frames = await renderFrames({
+      browser,
+      beats: job.beats,
+      screenshot: capture.screenshot,
+      address: capture.address,
+      company: job.input.company,
+      outDir: workDir,
+      log,
+    });
+
+    const silentPath = path.join(dir, "silent.mp4");
+    const silent = await buildSilentVideo({
       frames,
-      durations: voiceTrack.durations,
-      audioFile: voiceTrack.audioFile,
+      durations: job.beats.map((beat) => beat.seconds),
       workDir,
-      outFile: videoPath,
+      outFile: silentPath,
       log,
     });
 
     const posterPath = path.join(dir, "poster.jpg");
     await buildPoster({ frames, outFile: posterPath }).catch(() => null);
 
-    job.result = {
-      videoFile: videoPath,
+    job.silent = {
+      file: silentPath,
       posterFile: posterPath,
-      durationSeconds: Math.round(video.duration),
+      durationSeconds: Math.round(silent.duration * 10) / 10,
+      frames,
       capturedPageUrl: capture.pageUrl,
-      usedListingPage: capture.usedListingPage,
-      notes: capture.notes,
-      voice: voiceTrack.voice,
-      videoTypeLabel: VIDEO_TYPE_LABELS[job.input.videoType],
-      sceneCount: frames.length,
+      checkedPages: capture.checked,
+      notes: capture.notes || [],
     };
-    job.status = "ready";
-    log("Done - your video is ready");
+    job.status = "silent-ready";
+    log("Silent video ready - watch it and record your voice");
   } catch (error) {
     job.status = "failed";
     job.error = error.message || String(error);
+    job.errorCode = error.code || null;
+    job.retryable = Boolean(error.isCaptureRefusal);
     log(`Stopped: ${job.error}`);
   } finally {
     if (browser) await browser.close().catch(() => {});
     await store.persist(job);
-    // Frames and intermediate wavs are large and not needed once the mp4 exists.
-    if (job.status === "ready") {
-      await fsp.rm(workDir, { recursive: true, force: true }).catch(() => {});
-    }
   }
 
   return job;
 }
 
-module.exports = { renderJob };
+/**
+ * Phase two: lay a voice over the picture that was already approved.
+ *
+ * Runs again from scratch every time the take is replaced, so re-recording is
+ * always safe. The finished mp4 replaces the previous one and the review flag
+ * is cleared, because a new take has not been reviewed yet.
+ */
+async function attachAudio(job, { source, uploadPath }) {
+  const dir = store.jobDir(job.id);
+  const workDir = path.join(dir, "work");
+  const log = (message) => store.logProgress(job, message);
+
+  if (!job.silent || !Array.isArray(job.silent.frames) || job.silent.frames.length === 0) {
+    throw new Error("The silent video for this job is gone. Make the video again.");
+  }
+  for (const frame of job.silent.frames) {
+    if (!fs.existsSync(frame)) {
+      throw new Error("The scenes for this job are no longer on disk. Make the video again.");
+    }
+  }
+
+  job.status = "voicing";
+  job.error = null;
+  job.review = { reviewed: false, at: null, how: null };
+  await store.persist(job);
+
+  try {
+    const beats = job.beats;
+    let durations = beats.map((beat) => beat.seconds);
+    let track;
+
+    if (source === "ai") {
+      track = await buildAiVoiceTrack({ beats, workDir, log });
+      durations = track.durations;
+    } else {
+      track = await buildRecordedTrack({ uploadPath, workDir, log });
+    }
+
+    const videoPath = path.join(dir, "video.mp4");
+    const video = await buildVideo({
+      frames: job.silent.frames,
+      durations,
+      audioFile: track.audioFile,
+      workDir,
+      outFile: videoPath,
+      log,
+    });
+
+    job.result = {
+      videoFile: videoPath,
+      posterFile: job.silent.posterFile,
+      durationSeconds: Math.round(video.duration),
+      capturedPageUrl: job.silent.capturedPageUrl,
+      notes: job.silent.notes || [],
+      voice: track.voice,
+      templateName: job.template.name,
+      explorers: job.template.explorers,
+      sceneCount: job.silent.frames.length,
+    };
+    job.status = "ready";
+    log("Done - review it, then send it");
+  } catch (error) {
+    // The picture survives a bad take, so drop back to the review-and-record
+    // step rather than throwing the whole job away.
+    job.status = "silent-ready";
+    job.error = error.message || String(error);
+    log(`That audio did not work: ${job.error}`);
+  } finally {
+    await cleanTempAudio(workDir);
+    await store.persist(job);
+  }
+
+  return job;
+}
+
+/** Frames are kept for re-records; the wav scratch files are not. */
+async function cleanTempAudio(workDir) {
+  try {
+    for (const name of await fsp.readdir(workDir)) {
+      if (/\.(wav|mp3|webm|m4a|txt)$/i.test(name)) {
+        await fsp.rm(path.join(workDir, name), { force: true });
+      }
+    }
+  } catch (_) {
+    /* scratch cleanup is never worth failing a render over */
+  }
+}
+
+module.exports = { renderSilent, attachAudio };

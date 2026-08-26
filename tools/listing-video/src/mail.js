@@ -2,7 +2,6 @@
 
 const nodemailer = require("nodemailer");
 const config = require("./config");
-const { VIDEO_TYPES } = require("./scripts");
 
 function mailStatus() {
   if (!config.smtp.host) {
@@ -27,7 +26,9 @@ function fromAddress(fromId) {
 function buildEmail({ job, watchUrl }) {
   const firstName = job.input.firstName || "there";
   const company = job.input.company || "your website";
-  const bothProducts = job.input.videoType === VIDEO_TYPES.SCHOOL_AND_NEIGHBORHOOD;
+  // Only mention Neighborhood Explorer when the script the customer just
+  // watched actually covered it.
+  const bothProducts = Boolean(job.template && job.template.explorers === "se-ne");
 
   const subject = `${firstName}, I made you a short video about the ${company} website`;
 

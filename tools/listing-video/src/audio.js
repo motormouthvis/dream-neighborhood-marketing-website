@@ -193,35 +193,46 @@ async function speak(engineId, text, outFile, workDir) {
 }
 
 /**
- * AI voice: one wav per narration segment, so each scene lasts exactly as long
- * as its line. Returns the finished track plus per-segment scene durations.
+ * AI voice: one wav per beat, using a single engine for the whole script so two
+ * different voices are never spliced together. Scene lengths come from the
+ * template, stretched only when a line takes longer to say than the template
+ * allowed for.
  */
-async function buildAiVoiceTrack({ segments, workDir, log }) {
+async function buildAiVoiceTrack({ beats, workDir, log }) {
   const engines = availableVoiceEngines();
   if (engines.length === 0) {
     throw new Error(
-      "The AI voice is not connected on this server. Record or upload an overdub instead, or set up a voice (see tools/listing-video/README.md)."
+      "The AI voice is not connected on this server. Record your own voice over the silent video instead, or set up a voice (see tools/listing-video/README.md)."
     );
   }
 
   let lastError = null;
   for (const engine of engines) {
     try {
-      log(`Recording the voice track (${engine.label})`);
+      log(`Building the AI voice track (${engine.label})`);
       const pieces = [];
-      const gap = await makeSilence(SEGMENT_GAP_SECONDS, path.join(workDir, "gap.wav"));
       const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
       const durations = [];
 
       pieces.push(lead);
-      for (let index = 0; index < segments.length; index += 1) {
+      for (let index = 0; index < beats.length; index += 1) {
         const wav = path.join(workDir, `voice-${String(index).padStart(3, "0")}.wav`);
-        await speak(engine.id, segments[index].text, wav, workDir);
+        await speak(engine.id, beats[index].text, wav, workDir);
         const spoken = await probeDuration(wav);
-        pieces.push(wav, gap);
-        durations.push(spoken + SEGMENT_GAP_SECONDS + (index === 0 ? LEAD_SILENCE_SECONDS : 0));
-        if ((index + 1) % 4 === 0 || index === segments.length - 1) {
-          log(`Voiced ${index + 1} of ${segments.length} lines`);
+        // Keep the template's picture timing unless the line simply will not fit.
+        const budget = beats[index].seconds - (index === 0 ? LEAD_SILENCE_SECONDS : 0);
+        const scene = Math.max(beats[index].seconds, spoken + SEGMENT_GAP_SECONDS + (index === 0 ? LEAD_SILENCE_SECONDS : 0));
+        const padding = Math.max(0, scene - spoken - (index === 0 ? LEAD_SILENCE_SECONDS : 0));
+        pieces.push(wav);
+        if (padding > 0.01) {
+          pieces.push(await makeSilence(padding, path.join(workDir, `pad-${String(index).padStart(3, "0")}.wav`)));
+        }
+        durations.push(scene);
+        if (spoken > budget + 0.35) {
+          log(`Line ${index + 1} needs ${spoken.toFixed(1)}s but the template allows ${budget.toFixed(1)}s - that scene was stretched`);
+        }
+        if ((index + 1) % 4 === 0 || index === beats.length - 1) {
+          log(`Voiced ${index + 1} of ${beats.length} lines`);
         }
       }
 
@@ -242,28 +253,24 @@ async function buildAiVoiceTrack({ segments, workDir, log }) {
 }
 
 /**
- * Overdub: use Myles' own audio as-is. Scene lengths are spread across the take
- * in proportion to how much of the script each line is.
+ * A take recorded while watching the silent video, so it is already in time
+ * with the picture and nothing is re-stretched. Dead air is trimmed off the
+ * front and a known 0.6s of silence is put back, so the first word is never
+ * clipped by a player that starts slow.
  */
-async function buildOverdubTrack({ segments, uploadPath, workDir, log }) {
+async function buildRecordedTrack({ uploadPath, workDir, log }) {
   log("Preparing your recording");
-  const converted = await toWav(uploadPath, path.join(workDir, "overdub-raw.wav"));
-  const trimmed = await trimLeadingSilence(converted, path.join(workDir, "overdub-trimmed.wav"));
+  const converted = await toWav(uploadPath, path.join(workDir, "take-raw.wav"));
+  const trimmed = await trimLeadingSilence(converted, path.join(workDir, "take-trimmed.wav"));
   const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
   const tail = await makeSilence(0.5, path.join(workDir, "tail.wav"));
-  const joined = await concatWavs([lead, trimmed, tail], path.join(workDir, "overdub-joined.wav"), workDir);
+  const joined = await concatWavs([lead, trimmed, tail], path.join(workDir, "take-joined.wav"), workDir);
   const finalTrack = await normalizeLoudness(joined, path.join(workDir, "voice.wav"));
-  const totalDuration = await probeDuration(finalTrack);
-
-  const weights = segments.map((segment) => Math.max(12, segment.text.length));
-  const weightTotal = weights.reduce((sum, value) => sum + value, 0);
-  const durations = weights.map((weight) => (totalDuration * weight) / weightTotal);
 
   return {
     audioFile: finalTrack,
-    durations,
-    totalDuration,
-    voice: { mode: "overdub", engine: "overdub", label: "Your recorded voice" },
+    totalDuration: await probeDuration(finalTrack),
+    voice: { mode: "recorded", engine: "recorded", label: "Your recorded voice" },
   };
 }
 
@@ -271,6 +278,6 @@ module.exports = {
   LEAD_SILENCE_SECONDS,
   availableVoiceEngines,
   buildAiVoiceTrack,
-  buildOverdubTrack,
+  buildRecordedTrack,
   probeDuration,
 };
