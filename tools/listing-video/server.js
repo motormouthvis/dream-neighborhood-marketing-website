@@ -11,10 +11,10 @@ const config = require("./src/config");
 const auth = require("./src/auth");
 const store = require("./src/store");
 const mail = require("./src/mail");
-const { renderJob } = require("./src/render");
+const templates = require("./src/templates");
+const { renderSilent, attachAudio } = require("./src/render");
 const { availableVoiceEngines } = require("./src/audio");
 const { normalizeUrl } = require("./src/capture");
-const { VIDEO_TYPES, VIDEO_TYPE_LABELS, buildScript, scriptToText } = require("./src/scripts");
 
 const TOOL_PATH = "/tools/listing-video";
 const uploadsDir = path.join(config.dataDir, "uploads");
@@ -29,14 +29,14 @@ const upload = multer({
       cb(null, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}${ext}`);
     },
   }),
-  limits: { fileSize: 60 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 120 * 1024 * 1024, files: 1 },
 });
 
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use(cookieParser());
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "512kb" }));
 
 /* ---------------------------------------------------------------- */
 /* one render at a time - Chrome plus ffmpeg is heavy               */
@@ -55,6 +55,13 @@ function baseUrlFor(req) {
 
 function watchUrlFor(req, id) {
   return `${baseUrlFor(req)}/v/${id}`;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function fail(res, error) {
+  const status = error && error.status ? error.status : 500;
+  return res.status(status).json({ error: (error && error.message) || "Something went wrong." });
 }
 
 /* ---------------------------------------------------------------- */
@@ -86,104 +93,170 @@ app.get(`${TOOL_PATH}/api/session`, (req, res) => {
     mail: mail.mailStatus(),
     aiVoice: voices.length > 0 ? { available: true, label: voices[0].label } : { available: false },
     fromAddresses: config.fromAddresses,
-    videoTypes: Object.entries(VIDEO_TYPE_LABELS).map(([id, label]) => ({ id, label })),
+    scenes: templates.SCENES.map((id) => ({ id, label: templates.SCENE_LABELS[id] })),
+    explorerModes: templates.EXPLORER_MODES.map((id) => ({ id, label: templates.EXPLORER_MODE_LABELS[id] })),
   });
 });
 
 /* ---------------------------------------------------------------- */
-/* the script, so Myles can read along for an overdub               */
+/* script templates - editable, saved on disk under the data dir    */
 /* ---------------------------------------------------------------- */
-app.get(`${TOOL_PATH}/api/script`, auth.requireSession, (req, res) => {
-  const videoType = String(req.query.videoType || "").trim();
-  if (!Object.values(VIDEO_TYPES).includes(videoType)) {
-    return res.status(400).json({ error: "Pick a video type first." });
+app.get(`${TOOL_PATH}/api/templates`, auth.requireSession, async (req, res) => {
+  try {
+    const all = await templates.listTemplates();
+    return res.json({ templates: all.map(templates.summary) });
+  } catch (error) {
+    return fail(res, error);
   }
-  const segments = buildScript(videoType, {
-    firstName: String(req.query.firstName || "").trim(),
-    company: String(req.query.company || "").trim(),
-  });
-  return res.json({ videoType, text: scriptToText(segments), lines: segments.map((s) => s.text) });
+});
+
+app.get(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
+  try {
+    const template = await templates.getTemplate(req.params.id);
+    return res.json({ template, totalSeconds: templates.totalSeconds(template) });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+// The whole script as one block of words, for the teleprompter.
+app.get(`${TOOL_PATH}/api/templates/:id/script`, auth.requireSession, async (req, res) => {
+  try {
+    const template = await templates.getTemplate(req.params.id);
+    const beats = templates.renderBeats(template, {
+      firstName: String(req.query.firstName || "").trim(),
+      company: String(req.query.company || "").trim(),
+    });
+    return res.json({ id: template.id, name: template.name, text: templates.beatsToText(beats), beats });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+app.post(`${TOOL_PATH}/api/templates`, auth.requireSession, async (req, res) => {
+  try {
+    const saved = await templates.createTemplate(req.body || {});
+    return res.status(201).json({ template: saved });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+app.put(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
+  try {
+    const saved = await templates.updateTemplate(req.params.id, req.body || {});
+    return res.json({ template: saved });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+app.post(`${TOOL_PATH}/api/templates/:id/duplicate`, auth.requireSession, async (req, res) => {
+  try {
+    const saved = await templates.duplicateTemplate(req.params.id);
+    return res.status(201).json({ template: saved });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+app.delete(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
+  try {
+    const removed = await templates.deleteTemplate(req.params.id);
+    return res.json({ deleted: true, id: removed.id, name: removed.name });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+app.post(`${TOOL_PATH}/api/templates-restore-defaults`, auth.requireSession, async (req, res) => {
+  try {
+    const restored = await templates.restoreDefaults();
+    return res.json({ restored });
+  } catch (error) {
+    return fail(res, error);
+  }
 });
 
 /* ---------------------------------------------------------------- */
-/* make a video                                                     */
+/* step 1: make the silent picture                                  */
 /* ---------------------------------------------------------------- */
-app.post(
-  `${TOOL_PATH}/api/jobs`,
-  auth.requireSession,
-  (req, res, next) => {
-    upload.single("overdub")(req, res, (error) => {
-      if (error) return res.status(400).json({ error: `That audio file did not upload: ${error.message}` });
-      return next();
-    });
-  },
-  async (req, res) => {
-    const body = req.body || {};
-    const firstName = String(body.firstName || "").trim();
-    const company = String(body.company || "").trim();
-    const websiteRaw = String(body.websiteUrl || "").trim();
-    const customerEmail = String(body.customerEmail || "").trim();
-    // Bill's rule: the video type is always an explicit choice. Never guess one.
-    const videoType = String(body.videoType || "").trim();
-    const voiceMode = body.voiceMode === "overdub" ? "overdub" : "ai";
-    const fromId = config.fromAddresses.some((entry) => entry.id === body.fromId) ? body.fromId : "marketing";
+app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
+  const body = req.body || {};
+  const firstName = String(body.firstName || "").trim();
+  const company = String(body.company || "").trim();
+  const websiteRaw = String(body.websiteUrl || "").trim();
+  const listingRaw = String(body.listingUrl || "").trim();
+  const customerEmail = String(body.customerEmail || "").trim();
+  const templateId = String(body.templateId || "").trim();
+  const fromId = config.fromAddresses.some((entry) => entry.id === body.fromId) ? body.fromId : "marketing";
 
-    const problems = [];
-    if (!firstName) problems.push("Customer first name");
-    if (!company) problems.push("Company name");
-    if (!websiteRaw) problems.push("Website URL");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(customerEmail)) problems.push("Customer email");
-    if (problems.length) {
-      return res.status(400).json({ error: `Please fill in: ${problems.join(", ")}.` });
-    }
+  const problems = [];
+  if (!firstName) problems.push("Customer first name");
+  if (!company) problems.push("Company name");
+  if (!websiteRaw) problems.push("Website URL");
+  if (!EMAIL_RE.test(customerEmail)) problems.push("Customer email");
+  if (problems.length) {
+    return res.status(400).json({ error: `Please fill in: ${problems.join(", ")}.` });
+  }
+  if (!templateId) {
+    return res.status(400).json({ error: "Pick a script template first." });
+  }
 
-    if (!Object.values(VIDEO_TYPES).includes(videoType)) {
-      return res.status(400).json({
-        error: 'Pick a video type first: "School only" or "School + Neighborhood".',
-      });
-    }
+  let template;
+  try {
+    template = await templates.getTemplate(templateId);
+  } catch (error) {
+    return fail(res, error);
+  }
 
-    let websiteUrl;
+  let websiteUrl;
+  let listingUrl = "";
+  try {
+    websiteUrl = normalizeUrl(websiteRaw);
+    if (listingRaw) listingUrl = normalizeUrl(listingRaw);
+  } catch (error) {
+    return res.status(400).json({ error: `That website address does not look right: ${error.message}` });
+  }
+
+  const beats = templates.renderBeats(template, { firstName, company });
+
+  const job = await store.createJob({
+    input: { firstName, company, websiteUrl, listingUrl, customerEmail, templateId: template.id, fromId },
+    template,
+    beats,
+  });
+
+  store.logProgress(job, "Got it - looking for one of their live listings");
+  enqueue(() => renderSilent(job).catch(() => {}));
+
+  return res.status(202).json({ id: job.id });
+});
+
+// Retry the capture, usually with a listing URL pasted by hand after a refusal.
+app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "That video was not found." });
+  if (job.status === "capturing" || job.status === "voicing") {
+    return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
+  }
+
+  const listingRaw = String((req.body || {}).listingUrl || "").trim();
+  if (listingRaw) {
     try {
-      websiteUrl = normalizeUrl(websiteRaw);
+      job.input.listingUrl = normalizeUrl(listingRaw);
     } catch (error) {
-      return res.status(400).json({ error: `That website address does not look right: ${error.message}` });
+      return res.status(400).json({ error: `That listing address does not look right: ${error.message}` });
     }
-
-    if (voiceMode === "overdub" && !req.file) {
-      return res.status(400).json({ error: "Overdub is selected, so record or upload your voice first." });
-    }
-    if (voiceMode === "ai" && availableVoiceEngines().length === 0) {
-      return res.status(400).json({
-        error:
-          "The AI voice is not connected on this server yet. Choose Overdub and record your own voice, or ask an engineer to finish the voice setup.",
-      });
-    }
-
-    const job = await store.createJob({
-      firstName,
-      company,
-      websiteUrl,
-      customerEmail,
-      videoType,
-      voiceMode,
-      fromId,
-      overdubPath: null,
-    });
-
-    if (req.file) {
-      const kept = path.join(store.jobDir(job.id), `overdub${path.extname(req.file.filename) || ".webm"}`);
-      await fsp.rename(req.file.path, kept);
-      job.input.overdubPath = kept;
-      await store.persist(job);
-    }
-
-    store.logProgress(job, "Got it - starting on your video");
-    enqueue(() => renderJob(job).catch(() => {}));
-
-    return res.status(202).json({ id: job.id });
   }
-);
+
+  job.result = null;
+  job.review = { reviewed: false, at: null, how: null };
+  await store.persist(job);
+  store.logProgress(job, "Trying the capture again");
+  enqueue(() => renderSilent(job).catch(() => {}));
+  return res.status(202).json({ id: job.id });
+});
 
 app.get(`${TOOL_PATH}/api/jobs/:id`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
@@ -192,18 +265,89 @@ app.get(`${TOOL_PATH}/api/jobs/:id`, auth.requireSession, async (req, res) => {
 });
 
 /* ---------------------------------------------------------------- */
-/* email the customer                                               */
+/* step 2: the voice, laid over the picture that was already drawn   */
 /* ---------------------------------------------------------------- */
+app.post(
+  `${TOOL_PATH}/api/jobs/:id/audio`,
+  auth.requireSession,
+  (req, res, next) => {
+    upload.single("audio")(req, res, (error) => {
+      if (error) return res.status(400).json({ error: `That audio did not upload: ${error.message}` });
+      return next();
+    });
+  },
+  async (req, res) => {
+    const job = await store.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "That video was not found." });
+    if (!req.file) return res.status(400).json({ error: "No audio came through. Record a take and try again." });
+    if (job.status === "capturing" || job.status === "voicing") {
+      return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
+    }
+    if (!job.silent) {
+      return res.status(400).json({ error: "The silent video is not ready yet." });
+    }
+
+    const kept = path.join(store.jobDir(job.id), `take${path.extname(req.file.filename) || ".webm"}`);
+    await fsp.rename(req.file.path, kept);
+
+    store.logProgress(job, "Got your take - putting it on the video");
+    enqueue(() =>
+      attachAudio(job, { source: "recorded", uploadPath: kept })
+        .catch(() => {})
+        .finally(() => fsp.rm(kept, { force: true }).catch(() => {}))
+    );
+
+    return res.status(202).json({ id: job.id });
+  }
+);
+
+// The AI voice is the secondary path. It still lands in the same review step.
+app.post(`${TOOL_PATH}/api/jobs/:id/ai-voice`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "That video was not found." });
+  if (job.status === "capturing" || job.status === "voicing") {
+    return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
+  }
+  if (!job.silent) return res.status(400).json({ error: "The silent video is not ready yet." });
+  if (availableVoiceEngines().length === 0) {
+    return res.status(400).json({
+      error:
+        "The AI voice is not connected on this server. Record your own voice over the silent video, or ask an engineer to finish the voice setup.",
+    });
+  }
+
+  store.logProgress(job, "Building the AI voice track");
+  enqueue(() => attachAudio(job, { source: "ai" }).catch(() => {}));
+  return res.status(202).json({ id: job.id });
+});
+
+/* ---------------------------------------------------------------- */
+/* step 3: review, then and only then send                          */
+/* ---------------------------------------------------------------- */
+app.post(`${TOOL_PATH}/api/jobs/:id/reviewed`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "That video was not found." });
+  if (job.status !== "ready") return res.status(400).json({ error: "There is nothing to review yet." });
+  const how = (req.body || {}).how === "confirmed" ? "confirmed" : "played";
+  await store.markReviewed(job, how);
+  return res.json({ review: job.review });
+});
+
 app.post(`${TOOL_PATH}/api/jobs/:id/email`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "That video was not found." });
   if (job.status !== "ready") return res.status(400).json({ error: "The video is not finished yet." });
+  if (!job.review || !job.review.reviewed) {
+    return res.status(409).json({
+      error: "Watch the video with the sound on first, or tick \u201cI reviewed this\u201d. Nothing is sent before it is reviewed.",
+    });
+  }
 
   const fromId = config.fromAddresses.some((entry) => entry.id === (req.body || {}).fromId)
     ? req.body.fromId
     : job.input.fromId;
   const to = String((req.body || {}).to || job.input.customerEmail || "").trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) {
+  if (!EMAIL_RE.test(to)) {
     return res.status(400).json({ error: "That customer email does not look right." });
   }
 
@@ -215,12 +359,19 @@ app.post(`${TOOL_PATH}/api/jobs/:id/email`, auth.requireSession, async (req, res
     return res.json({ sent: true, to, from: sent.from });
   } catch (error) {
     const notConnected = error.code === "MAIL_NOT_CONNECTED";
-    job.email = { sent: false, at: new Date().toISOString(), to, from: mail.fromAddress(fromId).email, error: error.message };
+    job.email = {
+      sent: false,
+      at: new Date().toISOString(),
+      to,
+      from: mail.fromAddress(fromId).email,
+      error: error.message,
+    };
     await store.persist(job);
     return res.status(notConnected ? 503 : 502).json({
       sent: false,
       mailboxConnected: !notConnected,
       error: error.message,
+      watchUrl,
       draft: mail.buildEmail({ job, watchUrl }),
     });
   }
@@ -230,7 +381,49 @@ app.post(`${TOOL_PATH}/api/jobs/:id/email`, auth.requireSession, async (req, res
 app.get(`${TOOL_PATH}/api/jobs/:id/email-draft`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "That video was not found." });
-  return res.json({ ...mail.buildEmail({ job, watchUrl: watchUrlFor(req, job.id) }), to: job.input.customerEmail });
+  const watchUrl = watchUrlFor(req, job.id);
+  return res.json({ ...mail.buildEmail({ job, watchUrl }), to: job.input.customerEmail, watchUrl });
+});
+
+/* ---------------------------------------------------------------- */
+/* the internal players: silent cut and finished cut                */
+/* ---------------------------------------------------------------- */
+function sendVideoFile(res, file) {
+  if (!file || !fs.existsSync(file)) return res.status(404).send("Not found");
+  res.setHeader("Cache-Control", "no-store");
+  return res.sendFile(file);
+}
+
+app.get(`${TOOL_PATH}/api/jobs/:id/silent.mp4`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job || !job.silent) return res.status(404).send("Not found");
+  return sendVideoFile(res, job.silent.file);
+});
+
+app.get(`${TOOL_PATH}/api/jobs/:id/video.mp4`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job || !job.result) return res.status(404).send("Not found");
+  return sendVideoFile(res, job.result.videoFile);
+});
+
+/* ---------------------------------------------------------------- */
+/* the library                                                      */
+/* ---------------------------------------------------------------- */
+app.get(`${TOOL_PATH}/api/videos`, auth.requireSession, async (req, res) => {
+  const all = await store.listJobs();
+  return res.json({
+    videos: all.map((job) => ({ ...store.libraryView(job), watchUrl: watchUrlFor(req, job.id) })),
+  });
+});
+
+app.delete(`${TOOL_PATH}/api/videos/:id`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "That video was not found." });
+  if (job.status === "capturing" || job.status === "voicing") {
+    return res.status(409).json({ error: "That video is still being worked on. Wait for it to finish, then delete it." });
+  }
+  const deleted = await store.deleteJob(job.id);
+  return res.json({ deleted, id: job.id });
 });
 
 /* ---------------------------------------------------------------- */
@@ -251,19 +444,19 @@ app.get("/v/:id/poster.jpg", (req, res) => sendAsset(req, res, req.params.id, "p
 app.get(["/v/:id", `${TOOL_PATH}/v/:id`], async (req, res) => {
   const job = await store.getJob(req.params.id);
   const template = await fsp.readFile(path.join(config.root, "public", "watch.html"), "utf8");
-  const ready = Boolean(job && job.status === "ready" && job.result);
+  const ready = Boolean(job && job.status === "ready" && job.result && fs.existsSync(job.result.videoFile));
   const data = ready
     ? {
         found: true,
         id: job.id,
         firstName: job.input.firstName,
         company: job.input.company,
-        videoTypeLabel: job.result.videoTypeLabel,
         durationSeconds: job.result.durationSeconds,
         videoUrl: `/v/${job.id}/video.mp4`,
         posterUrl: `/v/${job.id}/poster.jpg`,
       }
     : { found: false };
+  if (!ready) res.status(404);
   res.type("html").send(template.replace("__WATCH_DATA__", JSON.stringify(data).replace(/</g, "\\u003c")));
 });
 
@@ -280,13 +473,21 @@ app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use((req, res) => res.status(404).send("Not found"));
 
 if (require.main === module) {
+  templates
+    .ensureSeeded()
+    .then((seeded) => {
+      if (seeded.length) console.log(`Seeded script templates: ${seeded.join(", ")}`);
+    })
+    .catch((error) => console.error(`Could not seed the script templates: ${error.message}`));
+
   app.listen(config.port, () => {
     const voices = availableVoiceEngines();
     console.log(`Listing video maker on http://localhost:${config.port}${TOOL_PATH}`);
     if (config.accessTokenIsGenerated) {
       console.log(`No LISTING_VIDEO_TOKEN was set. Temporary password for this run: ${config.accessToken}`);
     }
-    console.log(`AI voice: ${voices.length ? voices[0].label : "not connected (overdub only)"}`);
+    console.log(`Scripts and videos live in ${config.dataDir}`);
+    console.log(`AI voice: ${voices.length ? voices[0].label : "not connected (record your own voice)"}`);
     console.log(`Mailbox: ${mail.mailStatus().connected ? "connected" : "not connected"}`);
   });
 }
