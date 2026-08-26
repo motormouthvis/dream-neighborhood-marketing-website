@@ -90,11 +90,27 @@
     onTemplatePicked();
   }
 
+  var WEBSITE_HINTS = {
+    none: "Their realtor or brokerage site. Pick a script above and this will say which of their listings we go looking for.",
+    absent:
+      "We open it and look for one of their listing pages that does not already have School Explorer or Neighborhood Explorer on it, because this script is a before-and-after. If we cannot find one we stop and tell you - a search page or the homepage is never used as a stand-in.",
+    "prefer-present":
+      "We open it and look for one of their listing pages that already has School Explorer on it, because this script is the upgrade pitch. If none of them do, we use their best listing and show School Explorer added to it for the opening shot.",
+  };
+
   function onTemplatePicked() {
     var picked = D.selectedValue("templateId");
     el("makeBtn").disabled = !picked;
     D.show(el("templatePrompt"), !picked);
     D.show(el("makeHint"), !picked);
+
+    // Which of their listings we go hunting for depends on the script, so the
+    // hint under the website field has to follow the choice.
+    var template = D.state.templates.filter(function (entry) {
+      return entry.id === picked;
+    })[0];
+    var key = template ? template.listingExplorer || "absent" : "none";
+    D.setText(el("websiteHint"), WEBSITE_HINTS[key] || WEBSITE_HINTS.none);
   }
 
   function paintFromChoices() {
