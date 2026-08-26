@@ -571,10 +571,21 @@ async function open(page, url, timeout) {
 /**
  * Screenshot one live listing detail page on the customer's site.
  *
+ * explorerRule decides what to do about a listing that already has one of our
+ * Explorers on it:
+ *
+ *   "absent"         - refuse it. The video is a "before" shot, so a page that
+ *                      already has School Explorer is useless.
+ *   "prefer-present" - look for one, because the video is an upgrade pitch to a
+ *                      customer who already has School Explorer. A listing
+ *                      without one is still accepted, and the renderer draws
+ *                      School Explorer on it for the "what you have today" shot.
+ *
  * Throws a refusal (error.isCaptureRefusal) when there is nothing usable, so
  * the job can tell the user what to do next instead of shipping a search page.
  */
-async function captureListing({ browser, url, listingUrl, outDir, log }) {
+async function captureListing({ browser, url, listingUrl, outDir, log, explorerRule = "absent" }) {
+  const wantExplorer = explorerRule === "prefer-present";
   const home = normalizeUrl(url);
   const origin = new URL(home).origin;
   const start = listingUrl ? normalizeUrl(listingUrl) : home;
@@ -593,7 +604,8 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
 
   /**
    * Is the page we are on right now the one to film? Records why not, either
-   * way.
+   * way. "preferred" means it is exactly what this template wants; "ok" without
+   * "preferred" means it will do if nothing better turns up.
    */
   const assess = async (pageUrl) => {
     const facts = await collectPageFacts(page);
@@ -611,13 +623,13 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
     };
     checked.push(note);
     tally[verdict.kind] = (tally[verdict.kind] || 0) + 1;
+    if (verdict.kind === "detail" && explorer.found) tally.withExplorer += 1;
 
     if (verdict.kind !== "detail") {
       log(`Skipped ${verdict.kind === "search" ? "a search page" : "a page that is not a listing"}: ${note.why[0] || verdict.kind}`);
       return { ok: false, reason: verdict.kind, verdict, explorer, left };
     }
-    if (explorer.found) {
-      tally.withExplorer += 1;
+    if (explorer.found && !wantExplorer) {
       log("That listing already shows an Explorer - looking for another one");
       return { ok: false, reason: "explorer", verdict, explorer, left };
     }
@@ -626,7 +638,13 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
       log(`Something is still covering that page (${left[0].text || left[0].cls || left[0].tag}) - looking for another one`);
       return { ok: false, reason: "blocked", verdict, explorer, left };
     }
-    return { ok: true, verdict, explorer, left, facts };
+
+    if (wantExplorer && !explorer.found) {
+      log("That listing does not have School Explorer on it yet - holding it in reserve and looking for one that does");
+      return { ok: true, preferred: false, verdict, explorer, left, facts };
+    }
+    if (wantExplorer) log("That listing already has School Explorer on it - that is the one we want");
+    return { ok: true, preferred: true, verdict, explorer, left, facts };
   };
 
   const shoot = async (verdict, notes) => {
@@ -679,11 +697,20 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
       );
     }
 
+    // A listing that will do, kept in case nothing better turns up. Only ever
+    // set for the upgrade rule, where the ideal page already has School
+    // Explorer on it.
+    let reserve = null;
+    const fallbackNote = [
+      "This listing does not have School Explorer on it yet, so the opening shot shows School Explorer added to it.",
+    ];
+
     const first = await assess(page.url());
-    if (first.ok) {
+    if (first.ok && (first.preferred || startedOnListingUrl)) {
       log("That page is a single listing - using it");
-      return await shoot(first.verdict);
+      return await shoot(first.verdict, first.preferred ? [] : fallbackNote);
     }
+    if (first.ok) reserve = { url: page.url(), verdict: first.verdict };
 
     // A pasted listing with our own embed on it is a dead end. An embed on a
     // pasted search page is neither here nor there, so that case falls through
@@ -724,7 +751,8 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
         }
         if (status >= 400) continue;
         const verdict = await assess(candidate.href);
-        if (verdict.ok) return verdict;
+        if (verdict.ok && verdict.preferred) return verdict;
+        if (verdict.ok && !reserve) reserve = { url: candidate.href, verdict: verdict.verdict };
       }
       return null;
     };
@@ -751,10 +779,11 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
       if (indexStatus >= 400) continue;
       log(`Checking ${indexPath}`);
       const here = await assess(indexUrl);
-      if (here.ok) {
+      if (here.ok && here.preferred) {
         log("Found a listing page with nothing in the way");
         return await shoot(here.verdict);
       }
+      if (here.ok && !reserve) reserve = { url: indexUrl, verdict: here.verdict };
       const more = await collectListingLinks(page, origin);
       queue.push(...more.filter((entry) => !tried.has(entry.href)));
       found = await drain();
@@ -764,12 +793,28 @@ async function captureListing({ browser, url, listingUrl, outDir, log }) {
       }
     }
 
+    /* ---- no ideal page, but one we can work with ---- */
+    if (reserve) {
+      log("No listing with School Explorer already on it - using the best listing found and adding School Explorer to it");
+      const status = await open(page, reserve.url, 35000).catch(() => 0);
+      if (status && status < 400) {
+        const again = await assess(reserve.url);
+        if (again.ok) return await shoot(again.verdict, fallbackNote);
+      }
+    }
+
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
-    if (tally.withExplorer > 0 && tally.detail === tally.withExplorer) {
+    if (!wantExplorer && tally.withExplorer > 0 && tally.detail === tally.withExplorer) {
       throw captureError(
         "ALL_LISTINGS_HAVE_EXPLORER",
         `Every listing found on ${host} (${tally.withExplorer}) already has School Explorer or Neighborhood Explorer on it, so there is no \u201cbefore\u201d page to film. Paste a listing URL that does not have it yet, or pick a different customer.`
+      );
+    }
+    if (wantExplorer) {
+      throw captureError(
+        "NO_LISTING_FOUND",
+        `No listing page could be found on ${host} (${checked.length} pages checked), with or without School Explorer on it. This script is the upgrade pitch, so paste one of their listings - ideally one that already has School Explorer on it.`
       );
     }
     if (tally.blocked > 0) {

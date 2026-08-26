@@ -40,6 +40,9 @@ async function renderSilent(job) {
       listingUrl: job.input.listingUrl || "",
       outDir: workDir,
       log,
+      // The upgrade script wants a listing that already has School Explorer.
+      // Everything else wants one that has neither Explorer on it yet.
+      explorerRule: (job.template && job.template.listingExplorer) || "absent",
     });
 
     log("Drawing the scenes");

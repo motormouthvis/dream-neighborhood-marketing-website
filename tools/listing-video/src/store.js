@@ -37,6 +37,8 @@ async function createJob({ input, template, beats }) {
       id: template.id,
       name: template.name,
       explorers: template.explorers,
+      // What the listing behind the video needs to have on it already.
+      listingExplorer: template.listingExplorer || "absent",
       beatCount: template.beats.length,
     },
     beats,
