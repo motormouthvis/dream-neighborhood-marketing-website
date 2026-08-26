@@ -82,9 +82,12 @@ const config = {
     pass: process.env.SMTP_PASS || "",
   },
 
+  // Who the email is from and replied to. The mailbox it is actually sent
+  // through is SMTP_USER, which is a different address and does not change.
   fromAddresses: [
     { id: "marketing", email: "marketing@dreamneighborhood.com", label: "marketing@dreamneighborhood.com" },
     { id: "myles", email: "myles@dreamneighborhood.com", label: "myles@dreamneighborhood.com" },
+    { id: "bill", email: "bill@dreamneighborhood.com", label: "bill@dreamneighborhood.com" },
   ],
 
   callToActionPhone: process.env.LISTING_VIDEO_PHONE || "",
