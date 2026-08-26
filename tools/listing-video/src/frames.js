@@ -78,4 +78,4 @@ async function renderFrames({ browser, beats, screenshot, address, company, outD
   return frames;
 }
 
-module.exports = { renderFrames, tooltipFor };
+module.exports = { renderFrames, tooltipFor, specForBeat };

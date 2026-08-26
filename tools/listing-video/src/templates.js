@@ -12,12 +12,17 @@
  *   name       what shows in the picker
  *   explorers  "se"    - School Explorer only, no Neighborhood Explorer at all
  *              "se-ne" - School Explorer first, then the Neighborhood Explorer tabs
+ *   listingExplorer
+ *              "absent"         - film a listing that does NOT have an Explorer
+ *                                 on it yet. This is the "before" shot.
+ *              "prefer-present" - film a listing that ALREADY has School
+ *                                 Explorer, for an upgrade pitch. A listing
+ *                                 without one is accepted as a fallback.
  *   notes      free text for whoever edits it next
- *   beats[]    ordered list of { scene, seconds, text, caption }
+ *   beats[]    ordered list of { scene, seconds, text, caption, tab }
  *
- * The two shipped v11 templates are seeded on first run from
- * src/default-templates.js and can be edited, duplicated or deleted from there
- * like any other template.
+ * The shipped templates are seeded from src/default-templates.js and can be
+ * edited, duplicated or deleted from there like any other template.
  */
 
 const fs = require("fs");
@@ -38,6 +43,12 @@ const EXPLORER_MODES = ["se", "se-ne"];
 const EXPLORER_MODE_LABELS = {
   se: "School Explorer only",
   "se-ne": "School Explorer, then Neighborhood Explorer",
+};
+
+const LISTING_EXPLORER_MODES = ["absent", "prefer-present"];
+const LISTING_EXPLORER_LABELS = {
+  absent: "A listing with no Explorer on it yet (the before shot)",
+  "prefer-present": "A listing that already has School Explorer (an upgrade pitch)",
 };
 
 const MIN_BEAT_SECONDS = 0.5;
@@ -85,6 +96,43 @@ function cleanCaption(raw) {
   return headline || subline ? { headline, subline } : null;
 }
 
+/** "Housing and Market Trends" and "Housing & Market Trends" are the same tab. */
+function sameTabName(a, b) {
+  const flatten = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z]/g, "");
+  return flatten(a) === flatten(b);
+}
+
+/**
+ * Which Neighborhood Explorer tab a beat shows.
+ *
+ * Stored as the tab's name, so a script file read by a person says
+ * "Housing & Market Trends" rather than 3. Left empty, tabs are handed out in
+ * the order the beats appear, which is what the v11 script relies on.
+ */
+function cleanTab(raw, scene, where) {
+  if (scene !== "ne") return null;
+  const wanted = raw == null ? "" : String(raw).trim();
+  if (!wanted) return null;
+
+  if (/^\d+$/.test(wanted)) {
+    const index = Number(wanted);
+    if (index < 0 || index >= NE_TABS.length) {
+      throw badRequest(`${where} asks for tab ${index}, but there are only ${NE_TABS.length}.`);
+    }
+    return NE_TABS[index];
+  }
+
+  const match = NE_TABS.find((tab) => sameTabName(tab, wanted));
+  if (!match) {
+    throw badRequest(`${where} names a Neighborhood Explorer tab that does not exist: "${wanted}". The tabs are: ${NE_TABS.join(", ")}.`);
+  }
+  return match;
+}
+
 function cleanBeat(raw, position) {
   const where = `Beat ${position + 1}`;
   if (!raw || typeof raw !== "object") throw badRequest(`${where} is empty.`);
@@ -103,7 +151,13 @@ function cleanBeat(raw, position) {
     throw badRequest(`${where} needs a suggested duration between ${MIN_BEAT_SECONDS} and ${MAX_BEAT_SECONDS} seconds.`);
   }
 
-  return { scene, seconds: Math.round(seconds * 10) / 10, text, caption: cleanCaption(raw.caption) };
+  return {
+    scene,
+    seconds: Math.round(seconds * 10) / 10,
+    text,
+    caption: cleanCaption(raw.caption),
+    tab: cleanTab(raw.tab, scene, where),
+  };
 }
 
 function cleanTemplate(raw, { id } = {}) {
@@ -115,6 +169,12 @@ function cleanTemplate(raw, { id } = {}) {
   const explorers = String(raw.explorers || "").trim();
   if (!EXPLORER_MODES.includes(explorers)) {
     throw badRequest('Choose "School Explorer only" or "School Explorer, then Neighborhood Explorer".');
+  }
+
+  // Older script files predate this setting, and they were all before-shots.
+  const listingExplorer = String(raw.listingExplorer || "absent").trim();
+  if (!LISTING_EXPLORER_MODES.includes(listingExplorer)) {
+    throw badRequest("Choose what their listing should already have on it.");
   }
 
   const rawBeats = Array.isArray(raw.beats) ? raw.beats : [];
@@ -147,6 +207,7 @@ function cleanTemplate(raw, { id } = {}) {
     id: finalId,
     name,
     explorers,
+    listingExplorer,
     notes: String(raw.notes || "").trim().slice(0, 600),
     beats,
     builtIn: Boolean(raw.builtIn),
@@ -168,29 +229,47 @@ async function writeTemplate(template) {
 }
 
 /**
- * Put the two shipped templates on disk the first time this data dir is used.
- * A deleted default stays deleted: the marker records that seeding already
- * happened, so nothing reappears behind anyone's back.
+ * Put the shipped templates on disk.
+ *
+ * The marker records which ones have been offered before, one id at a time
+ * rather than a single "seeded" flag. So a data dir that already has the two
+ * v11 scripts picks up a newly shipped third one on the next boot, while a
+ * default that somebody deleted stays deleted.
  */
 async function ensureSeeded() {
   ensureDir();
   const marker = path.join(dir(), SEED_MARKER);
-  if (fs.existsSync(marker)) return [];
+
+  let offered = [];
+  try {
+    const parsed = JSON.parse(await fsp.readFile(marker, "utf8"));
+    if (Array.isArray(parsed.ids)) offered = parsed.ids.map(String);
+  } catch (_) {
+    offered = [];
+  }
+
   const seeded = [];
   for (const template of DEFAULT_TEMPLATES) {
-    if (fs.existsSync(fileFor(template.id))) continue;
-    await writeTemplate(stamp(cleanTemplate({ ...template, builtIn: true }, { id: template.id })));
-    seeded.push(template.id);
+    if (offered.includes(template.id)) continue;
+    if (!fs.existsSync(fileFor(template.id))) {
+      await writeTemplate(stamp(cleanTemplate({ ...template, builtIn: true }, { id: template.id })));
+      seeded.push(template.id);
+    }
+    offered.push(template.id);
   }
-  await fsp.writeFile(
-    marker,
-    `${JSON.stringify({ seededAt: new Date().toISOString(), ids: DEFAULT_TEMPLATE_IDS }, null, 2)}\n`,
-    "utf8"
-  );
+
+  const missing = DEFAULT_TEMPLATE_IDS.some((id) => !offered.includes(id));
+  if (seeded.length || missing || !fs.existsSync(marker)) {
+    await fsp.writeFile(
+      marker,
+      `${JSON.stringify({ seededAt: new Date().toISOString(), ids: offered }, null, 2)}\n`,
+      "utf8"
+    );
+  }
   return seeded;
 }
 
-/** Put the two shipped v11 templates back, exactly as they ship. */
+/** Put the shipped templates back, exactly as they ship. */
 async function restoreDefaults() {
   ensureDir();
   const restored = [];
@@ -311,9 +390,14 @@ function renderBeats(template, vars = {}) {
         ? { headline: fill(beat.caption.headline, vars), subline: fill(beat.caption.subline, vars) }
         : { headline: "", subline: "" },
       neTab: null,
+      neTabName: "",
     };
     if (beat.scene === "ne") {
-      rendered.neTab = Math.min(neSeen, NE_TABS.length - 1);
+      // A beat that names its own tab wins. That is how a script guarantees the
+      // Demographics tab is on screen while the voice says "Demographics".
+      const pinned = beat.tab ? NE_TABS.indexOf(beat.tab) : -1;
+      rendered.neTab = pinned >= 0 ? pinned : Math.min(neSeen, NE_TABS.length - 1);
+      rendered.neTabName = NE_TABS[rendered.neTab];
       neSeen += 1;
     }
     return rendered;
@@ -336,6 +420,8 @@ function summary(template) {
     name: template.name,
     explorers: template.explorers,
     explorersLabel: EXPLORER_MODE_LABELS[template.explorers],
+    listingExplorer: template.listingExplorer,
+    listingExplorerLabel: LISTING_EXPLORER_LABELS[template.listingExplorer],
     notes: template.notes,
     builtIn: template.builtIn,
     beatCount: template.beats.length,
@@ -349,6 +435,9 @@ module.exports = {
   SCENE_LABELS,
   EXPLORER_MODES,
   EXPLORER_MODE_LABELS,
+  LISTING_EXPLORER_MODES,
+  LISTING_EXPLORER_LABELS,
+  NE_TABS,
   MIN_BEAT_SECONDS,
   MAX_BEAT_SECONDS,
   dir,
