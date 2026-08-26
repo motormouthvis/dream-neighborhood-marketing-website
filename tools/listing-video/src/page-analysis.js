@@ -9,14 +9,21 @@
  *
  * Two jobs:
  *
- *   classifyPage  - is this a single listing detail page, or a search / map /
- *                   results page? A search page is not a usable backdrop: the
- *                   video is supposed to show one of their listings.
+ *   classifyPage    - is this ONE listing, or a homepage, a city landing page, a
+ *                     search, a map, a market report? Only one listing is worth
+ *                     filming, and everything else has to be refused.
  *
- *   extractAddress - the one street address the page is about. This has to be
- *                    strict. A loose match once produced the tooltip
- *                    "032 SQFT 4497 Chase Drive", which is the tail of
- *                    "1,032 SQFT" glued onto the next listing's address.
+ *   extractAddress  - the one street address the page is about.
+ *
+ * Both have been burnt before, so both are deliberately strict:
+ *
+ *   - A loose address match produced the tooltip "032 SQFT 4497 Chase Drive",
+ *     which was the tail of "1,032 SQFT" glued onto the next listing's address.
+ *   - A Fathom Realty city landing page got filmed because the words "bed" and
+ *     "bath" appeared somewhere in its marketing copy, it had a few photos, and
+ *     an address could be scraped out of the office details in its footer. So an
+ *     address only counts when the page itself declares it as its subject, and
+ *     photos and stray spec words no longer add up to a listing.
  */
 
 const STREET_TYPES = [
@@ -61,6 +68,7 @@ const NOISE_WORDS = new Set(
 
 const TYPE_GROUP = STREET_TYPES.join("|");
 const DIR_GROUP = DIRECTIONS.join("|");
+const STREET_TYPE_SET = new Set(STREET_TYPES.map((type) => type.toLowerCase()));
 
 /*
  * A house number, then one to four capitalised street-name words, then a street
@@ -135,18 +143,42 @@ function firstStreetIn(value) {
 function cityStateIn(value) {
   const match = tidy(value).match(CITY_STATE_RE);
   if (!match) return null;
-  return { cityState: `${match[1]}, ${match[2]}`, zip: match[3] };
+  // "2135 Bellflower Blvd Long Beach, CA" would otherwise report the city as
+  // "Bellflower Blvd Long Beach". Drop everything up to the street type.
+  const words = match[1].split(/\s+/);
+  let start = 0;
+  for (let index = 0; index < words.length; index += 1) {
+    if (STREET_TYPE_SET.has(words[index].toLowerCase().replace(/\.$/, ""))) start = index + 1;
+  }
+  const city = words.slice(start).join(" ") || match[1];
+  return { cityState: `${city}, ${match[2]}`, zip: match[3] };
 }
 
 const ADDRESS_TYPES = new Set(
   [
     "singlefamilyresidence", "house", "apartment", "condominium", "residence",
     "accommodation", "place", "product", "offer", "realestatelisting",
-    "realestateagent", "localbusiness", "home", "townhouse", "suite",
+    "home", "townhouse", "suite",
   ].map((type) => type.toLowerCase())
 );
 
-/** Walk any parsed JSON-LD looking for a PostalAddress with a street. */
+// An agent, an office or an organisation has an address too, and it is not the
+// listing's. Bill's video put "2135 Bellflower Blvd" - the Fathom office - on
+// the tooltip.
+const OFFICE_TYPES = new Set(
+  [
+    "realestateagent", "organization", "localbusiness", "corporation", "person",
+    "website", "webpage", "breadcrumblist", "postaladdress",
+  ].map((type) => type.toLowerCase())
+);
+
+function typesOf(node) {
+  return []
+    .concat(node["@type"] || [])
+    .map((type) => String(type).toLowerCase());
+}
+
+/** Walk any parsed JSON-LD looking for a residence with a street address. */
 function addressFromJsonLd(rawBlocks) {
   for (const raw of rawBlocks || []) {
     let parsed;
@@ -172,8 +204,11 @@ function walkForAddress(node, depth) {
   }
   if (typeof node !== "object") return null;
 
+  const types = typesOf(node);
+  const isOffice = types.some((type) => OFFICE_TYPES.has(type));
   const address = node.address;
-  if (address) {
+
+  if (address && !isOffice) {
     if (typeof address === "string" && looksLikeStreetAddress(firstStreetIn(address))) {
       const street = firstStreetIn(address);
       const place = cityStateIn(address);
@@ -194,9 +229,6 @@ function walkForAddress(node, depth) {
   }
 
   // Some feeds put the address in the name of a residence-ish thing.
-  const types = []
-    .concat(node["@type"] || [])
-    .map((type) => String(type).toLowerCase());
   if (types.some((type) => ADDRESS_TYPES.has(type))) {
     const street = firstStreetIn(node.name);
     if (street) {
@@ -213,64 +245,85 @@ function walkForAddress(node, depth) {
   return null;
 }
 
+// Where an address came from, and whether that makes it the page's subject.
+// Anything scraped out of running text is a guess, and a guess is not good
+// enough to call a page a listing.
+const SUBJECT_SOURCES = new Set(["json-ld", "microdata", "heading", "address-element"]);
+
 /**
- * The address the page is about, taken from the most trustworthy source that
- * has one. Structured data beats a heading, and a heading beats scraping the
- * body text, because body text is where the neighbouring listing's square
- * footage lives.
+ * The address the page is about.
+ *
+ * Structured data beats a heading, a heading beats an element marked up as an
+ * address, and all of those beat scraping the running text - which is only used
+ * as a last resort and never counts as the page's subject.
  */
 function extractAddress(facts) {
-  const empty = { street: "", cityState: "", zip: "", source: "none" };
+  const empty = { street: "", cityState: "", zip: "", source: "none", isSubject: false };
   if (!facts) return empty;
 
+  const finish = (found, source) => ({
+    street: found.street,
+    cityState: found.cityState || "",
+    zip: found.zip || "",
+    source,
+    isSubject: SUBJECT_SOURCES.has(source),
+  });
+
   const fromJsonLd = addressFromJsonLd(facts.jsonLd);
-  if (fromJsonLd) return { ...fromJsonLd, source: "json-ld" };
+  if (fromJsonLd) return finish(fromJsonLd, "json-ld");
 
   const micro = facts.microdata || {};
   if (looksLikeStreetAddress(micro.streetAddress)) {
     const locality = tidy(micro.addressLocality);
     const region = tidy(micro.addressRegion);
-    return {
-      street: tidy(micro.streetAddress),
-      cityState: locality && region ? `${locality}, ${region}` : locality || "",
-      zip: tidy(micro.postalCode),
-      source: "microdata",
-    };
+    return finish(
+      {
+        street: tidy(micro.streetAddress),
+        cityState: locality && region ? `${locality}, ${region}` : locality || "",
+        zip: tidy(micro.postalCode),
+      },
+      "microdata"
+    );
   }
 
-  const headings = [].concat(facts.h1s || [], facts.ogTitle || [], facts.title || []);
-  for (const heading of headings) {
-    const street = firstStreetIn(heading);
+  // Candidates the collector marked up, in order, skipping anything that sits
+  // in a footer or a contact block: that is the office, not the house.
+  const candidates = Array.isArray(facts.addressCandidates)
+    ? facts.addressCandidates
+    : [].concat(facts.h1s || [], facts.ogTitle || [], facts.title || []).map((text) => ({ text, where: "heading" }));
+
+  for (const candidate of candidates) {
+    if (!candidate || candidate.inFooter) continue;
+    const street = firstStreetIn(candidate.text);
     if (!street) continue;
-    const place = cityStateIn(heading) || cityStateIn(facts.bodyText);
-    return {
-      street,
-      cityState: place ? place.cityState : "",
-      zip: place ? place.zip : "",
-      source: "heading",
-    };
+    const place = cityStateIn(candidate.text) || cityStateIn(facts.mainText || facts.bodyText);
+    return finish(
+      { street, cityState: place ? place.cityState : "", zip: place ? place.zip : "" },
+      candidate.where === "address-element" ? "address-element" : "heading"
+    );
   }
 
-  const street = firstStreetIn(facts.bodyText);
+  // Last resort. Good enough to caption a tooltip, not good enough to decide
+  // that this page is a listing.
+  const street = firstStreetIn(facts.mainText || facts.bodyText);
   if (street) {
-    const place = cityStateIn(facts.bodyText);
-    return {
-      street,
-      cityState: place ? place.cityState : "",
-      zip: place ? place.zip : "",
-      source: "body-text",
-    };
+    const place = cityStateIn(facts.mainText || facts.bodyText);
+    return finish({ street, cityState: place ? place.cityState : "", zip: place ? place.zip : "" }, "body-text");
   }
 
   return empty;
 }
 
 /* ---------------------------------------------------------------- */
-/* is this one listing, or a search page?                           */
+/* what kind of page is this?                                       */
 /* ---------------------------------------------------------------- */
 
 const SEARCH_URL_RE =
   /(\/search|\/results|\/map\b|\/idx\/|advanced-?search|property-?search|\/browse\b|\/sold\b|[?&](q|query|search|keyword|city|zip|minprice|maxprice|beds|baths|sort)=)/i;
+
+// A whole path that is never one listing. The empty path is the homepage.
+const NEVER_LISTING_PATH_RE =
+  /^\/?(|index\.html?|home|blog|news|press|about|about-us|our-story|contact|contact-us|team|our-team|agents?|staff|testimonials?|reviews?|careers?|jobs|privacy|privacy-policy|terms|sitemap|faq|services|sell|sellers?|selling|buy|buyers?|buying|financing|mortgage|calculator|market-report|market-reports|market-update|home-value|home-valuation|whats-my-home-worth|cma|valuation|neighborhoods?|communities|areas?|cities|lifestyle|resources|guides?|login|register|dashboard)\/?$/i;
 
 // Phrases that belong to a search UI, not to one house.
 const SEARCH_PHRASES = [
@@ -282,92 +335,170 @@ const SEARCH_PHRASES = [
   "newest listings",
   "sort by",
   "hide map",
-  "draw",
-  "for sale / multiple types",
   "refine search",
   "clear filters",
   "reset filters",
   "results found",
   "properties found",
-  "homes for sale in",
   "no results",
-  "view all listings",
   "search results",
 ];
 
-const INDEX_PATH_RE = /^\/?(listings?|properties|homes|homes-for-sale|for-sale|our-listings|featured-listings)\/?$/i;
+// Buttons and links that belong on a landing page selling a search, not on one
+// house. These are Bill's page word for word: "Search Long Beach Homes",
+// "Long Beach Market Report", "Custom List Of Homes".
+const MARKETING_CTA_RE =
+  /(search\s+(all\s+)?[\w\s]{0,24}\bhomes?\b|search\s+(listings|properties)|market\s+report|custom\s+list\s+of\s+homes|home\s+valuation|what.?s\s+my\s+home\s+worth|free\s+home\s+value|browse\s+(all\s+)?(homes|listings|properties)|view\s+all\s+(homes|listings|properties)|find\s+(a\s+|your\s+)?(home|dream\s+home)|start\s+(your\s+)?search|get\s+pre-?approved|home\s+search|featured\s+(homes|listings)|new\s+listings|sell\s+my\s+home|list\s+my\s+home|request\s+a\s+(showing\s+)?list)/i;
+
+// Copy that only ever appears on a city or landing page.
+const MARKETING_COPY_RE =
+  /(real estate offers|popular\s+[\w\s]{0,30}home types|we help\s+[\w\s]{0,30}buyers|this guide gives you|updated daily from the mls|homes currently for sale|homes for sale in|real estate & homes for sale|real estate and homes for sale|welcome to our|meet the team|browse our|search our|our listings|why work with)/i;
+
+// Field labels that only a real listing page bothers to print.
+const DETAIL_LABELS = [
+  /year built/i,
+  /lot size/i,
+  /property type/i,
+  /days on (the )?market/i,
+  /\bmls\s*#/i,
+  /list price/i,
+  /\bhoa\b/i,
+  /\bapn\b/i,
+  /subdivision/i,
+  /parcel/i,
+  /property details/i,
+  /listing details/i,
+  /schedule a (tour|showing)/i,
+  /request (a )?(tour|showing|info)/i,
+];
+
+const INDEX_PATH_RE =
+  /^\/?(listings?|properties|homes|homes-for-sale|for-sale|our-listings|featured-listings|new-listings|open-houses)\/?$/i;
 
 function pathOf(url) {
   try {
     return new URL(url).pathname;
-    } catch (_) {
+  } catch (_) {
     return "";
   }
 }
 
+function countDetailLabels(text) {
+  return DETAIL_LABELS.filter((pattern) => pattern.test(text)).length;
+}
+
 /**
- * "detail"  - one listing, safe to film
- * "search"  - a search, map or results page
- * "index"   - a bare listing index, e.g. /listings
- * "other"   - anything else (homepage, about page, ...)
+ * "detail"    - one listing, safe to film
+ * "search"    - a search, map or results page
+ * "index"     - a bare listing index, e.g. /listings
+ * "marketing" - a homepage, city landing page, market report or other sales page
+ * "other"     - anything else
  */
 function classifyPage(facts) {
   if (!facts) return { kind: "other", reasons: ["nothing to look at"] };
 
-  const text = String(facts.bodyText || "").toLowerCase();
   const url = String(facts.url || "");
+  const path = pathOf(url);
+  const main = String(facts.mainText || facts.bodyText || "");
+  const mainLower = main.toLowerCase();
+  const address = extractAddress(facts);
+
+  /* ---- what makes this look like one listing ---- */
+  const structured = address.source === "json-ld" || address.source === "microdata";
+  const specRow = Boolean(facts.specRowText);
+  const detailLabelCount = countDetailLabels(main);
+  const prices = Number(facts.mainPriceCount == null ? facts.priceCount : facts.mainPriceCount) || 0;
+
+  const markers = [];
+  if (structured) markers.push(`the page's own data says it is a home at ${address.street}`);
+  if (specRow) markers.push(`beds, baths and size for one home ("${String(facts.specRowText).slice(0, 60)}")`);
+  if (facts.mlsId) markers.push(`an MLS number (${facts.mlsId})`);
+  if (detailLabelCount >= 2) markers.push(`${detailLabelCount} listing detail fields`);
+  if (prices >= 1 && facts.hasBeds && facts.hasBaths) markers.push("a price with beds and baths");
+  if (Number(facts.galleryImageCount || 0) >= 4 && specRow) markers.push("photos of one home");
+
+  // Structured data naming a home, plus a listing-only field, is about as sure
+  // as this gets. That outranks a map or a "similar homes" strip further down.
+  const stronglyDetail = structured && markers.length >= 2;
+
+  /* ---- what makes this NOT one listing ---- */
   const searchReasons = [];
-  const detailReasons = [];
-
   if (SEARCH_URL_RE.test(url)) searchReasons.push("the address looks like a search");
-
-  const phrases = SEARCH_PHRASES.filter((phrase) => text.includes(phrase));
+  const phrases = SEARCH_PHRASES.filter((phrase) => mainLower.includes(phrase));
   if (phrases.length >= 2) searchReasons.push(`search controls on the page (${phrases.slice(0, 3).join(", ")})`);
-
   if (Number(facts.searchInputCount || 0) >= 3) searchReasons.push("a search form with several filters");
   if (Number(facts.mapAreaFraction || 0) >= 0.2) searchReasons.push("a big map takes up the page");
-  if (Number(facts.priceCount || 0) >= 3) searchReasons.push(`${facts.priceCount} different prices on one page`);
+  if (prices >= 3) searchReasons.push(`${prices} different prices on one page`);
   if (Number(facts.listingLinkCount || 0) >= 8) searchReasons.push("a grid of links to other listings");
   if (Number(facts.addressCount || 0) >= 3) searchReasons.push(`${facts.addressCount} addresses on one page`);
 
-  const address = extractAddress(facts);
-  const structured = address.source === "json-ld" || address.source === "microdata";
+  const marketingReasons = [];
+  const ctas = (facts.ctaLabels || []).filter((label) => MARKETING_CTA_RE.test(label));
+  if (ctas.length) marketingReasons.push(`buttons selling a search (${ctas.slice(0, 3).join(", ")})`);
+  const copy = main.match(MARKETING_COPY_RE);
+  if (copy) marketingReasons.push(`landing page copy ("${copy[0]}")`);
+  if (facts.hasHeroBanner) marketingReasons.push("a big hero banner with buttons over it");
+  if (!address.isSubject && Number(facts.galleryImageCount || 0) >= 3 && !specRow) {
+    marketingReasons.push("photos but nothing that says which house this is");
+  }
 
-  if (structured) detailReasons.push(`the page says its address is ${address.street}`);
-  else if (address.street && address.source === "heading") detailReasons.push(`the heading is an address (${address.street})`);
-  if (facts.hasBeds && facts.hasBaths) detailReasons.push("beds and baths for one home");
-  if (Number(facts.priceCount || 0) === 1) detailReasons.push("a single price");
-  if (facts.mlsId) detailReasons.push(`an MLS number (${facts.mlsId})`);
-  if (Number(facts.galleryImageCount || 0) >= 3) detailReasons.push("a photo gallery");
-
-  // Structured data naming one address, with beds and baths, outranks a map or
-  // a "similar homes" strip further down the page.
-  const stronglyDetail = structured && facts.hasBeds && facts.hasBaths;
+  /* ---- the verdict ---- */
+  if (NEVER_LISTING_PATH_RE.test(path) && !stronglyDetail) {
+    const home = path === "" || path === "/" || /^\/?(index\.html?|home)\/?$/i.test(path);
+    return {
+      kind: "marketing",
+      reasons: [home ? "this is their homepage" : `this is their ${path.replace(/^\/|\/$/g, "")} page, not a listing`],
+      address,
+    };
+  }
 
   if (searchReasons.length >= 2 && !stronglyDetail) {
     return { kind: "search", reasons: searchReasons, address };
   }
-  if (INDEX_PATH_RE.test(pathOf(url)) && !stronglyDetail && detailReasons.length < 3) {
+  if (INDEX_PATH_RE.test(path) && !stronglyDetail) {
     return { kind: "index", reasons: ["this is their listings index, not one listing"], address };
   }
-  if (searchReasons.length === 1 && detailReasons.length < 2) {
+  if (marketingReasons.length >= 2 && !stronglyDetail) {
+    return { kind: "marketing", reasons: marketingReasons, address };
+  }
+  if (searchReasons.length === 1 && markers.length < 2) {
     return { kind: "search", reasons: searchReasons, address };
   }
 
-  // One listing needs an address plus real listing detail behind it.
-  if (address.street && detailReasons.length >= 2) {
-    return { kind: "detail", reasons: detailReasons, address };
+  // One listing needs the page to say which house it is about, and to carry at
+  // least two things only a listing page has. Photos and the words "bed" and
+  // "bath" somewhere in the copy are not enough - that is what filmed a city
+  // landing page.
+  if (!address.isSubject) {
+    return {
+      kind: marketingReasons.length ? "marketing" : "other",
+      reasons: [
+        address.street
+          ? `the only address here (${address.street}) is in the page text, not the page's subject - probably an office address`
+          : "no address that this page is about",
+      ].concat(marketingReasons.slice(0, 1)),
+      address,
+    };
+  }
+  if (markers.length < 2) {
+    return {
+      kind: "other",
+      reasons: [`${address.street} is named, but there is no price, beds, baths or MLS detail for it`],
+      address,
+    };
   }
 
-  return { kind: "other", reasons: detailReasons.length ? detailReasons : ["no listing detail found"], address };
+  return { kind: "detail", reasons: markers, address };
 }
 
 module.exports = {
   STREET_TYPES,
   NOISE_WORDS,
+  SUBJECT_SOURCES,
   classifyPage,
   extractAddress,
   looksLikeStreetAddress,
   firstStreetIn,
   cityStateIn,
+  countDetailLabels,
 };
