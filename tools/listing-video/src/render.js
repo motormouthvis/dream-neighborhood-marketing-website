@@ -128,15 +128,20 @@ async function attachAudio(job, { source, uploadPath }) {
       track = await buildRecordedTrack({ uploadPath, workDir, log });
     }
 
+    // Render beside the live file and swap at the end. A link already sent to a
+    // customer keeps playing the previous cut while a new take is being made,
+    // and never serves a half-written mp4.
     const videoPath = path.join(dir, "video.mp4");
+    const pendingPath = path.join(dir, "video.next.mp4");
     const video = await buildVideo({
       frames: job.silent.frames,
       durations,
       audioFile: track.audioFile,
       workDir,
-      outFile: videoPath,
+      outFile: pendingPath,
       log,
     });
+    await fsp.rename(pendingPath, videoPath);
 
     job.result = {
       videoFile: videoPath,
@@ -153,10 +158,12 @@ async function attachAudio(job, { source, uploadPath }) {
     log("Done - review it, then send it");
   } catch (error) {
     // The picture survives a bad take, so drop back to the review-and-record
-    // step rather than throwing the whole job away.
+    // step rather than throwing the whole job away. Any earlier finished cut is
+    // left alone, link and all.
     job.status = "silent-ready";
     job.error = error.message || String(error);
     log(`That audio did not work: ${job.error}`);
+    await fsp.rm(path.join(dir, "video.next.mp4"), { force: true }).catch(() => {});
   } finally {
     await cleanTempAudio(workDir);
     await store.persist(job);

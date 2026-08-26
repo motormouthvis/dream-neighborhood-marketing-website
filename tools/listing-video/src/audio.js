@@ -260,7 +260,16 @@ async function buildAiVoiceTrack({ beats, workDir, log }) {
  */
 async function buildRecordedTrack({ uploadPath, workDir, log }) {
   log("Preparing your recording");
-  const converted = await toWav(uploadPath, path.join(workDir, "take-raw.wav"));
+  let converted;
+  try {
+    converted = await toWav(uploadPath, path.join(workDir, "take-raw.wav"));
+  } catch (error) {
+    // ffmpeg's own words are no use to Myles here, so keep them in the log.
+    console.error(`Could not read the uploaded audio: ${error.message}`);
+    throw new Error(
+      "That audio could not be read. It may be empty, or not really an audio file. Record the take again, or upload an mp3, wav, m4a or webm."
+    );
+  }
   const trimmed = await trimLeadingSilence(converted, path.join(workDir, "take-trimmed.wav"));
   const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
   const tail = await makeSilence(0.5, path.join(workDir, "tail.wav"));

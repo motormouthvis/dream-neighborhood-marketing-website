@@ -162,7 +162,12 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .btn--small { font-size: 16px; padding: 10px 17px; border-radius: 10px; }
 .btn--danger { background: #fff; color: var(--red); border-color: #eec4bf; }
 .btn--danger:hover:not(:disabled) { background: #fdf3f2; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* A dimmed green button still reads as "press me", so a switched-off button
+   loses its colour entirely. */
+.btn:disabled {
+  cursor: not-allowed;
+  background: #eaeeec; color: #8d9c94; border-color: #e0e5e2;
+}
 
 /* ---------- watch and record ---------- */
 .recorder {

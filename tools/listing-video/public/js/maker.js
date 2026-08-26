@@ -456,10 +456,14 @@
 
   function applyReviewState() {
     var reviewed = mine.reviewMarked;
+    var connected = mailConnected();
     D.show(el("reviewGate"), !reviewed);
-    el("sendBtn").disabled = !reviewed || !mailConnected();
+    el("sendBtn").disabled = !reviewed || !connected;
+    // Say which of the two reasons is holding the button, so a switched-off
+    // button is never a mystery.
+    D.setText(el("sendBtn"), connected ? (reviewed ? "Send email" : "Review it first") : "Mailbox not connected");
 
-    if (!mailConnected()) {
+    if (!connected) {
       var reason = (D.state.session.mail && D.state.session.mail.reason) || "Mailbox not connected.";
       D.showMessage(el("mailNotice"), reason + " Copy the watch link and the email text below and send it yourself.");
       D.show(el("draftWrap"), true);
@@ -532,8 +536,7 @@
       to: el("emailTo").value.trim(),
       fromId: el("emailFrom").value,
     }).then(function (result) {
-      D.setText(el("sendBtn"), "Send email");
-      el("sendBtn").disabled = false;
+      applyReviewState();
       if (result.ok && result.body.sent) {
         D.showMessage(el("sendOk"), "Sent to " + result.body.to + " from " + result.body.from + ".");
         return;

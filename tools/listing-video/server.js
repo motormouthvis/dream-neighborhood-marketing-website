@@ -429,9 +429,11 @@ app.delete(`${TOOL_PATH}/api/videos/:id`, auth.requireSession, async (req, res) 
 /* ---------------------------------------------------------------- */
 /* public watch page - anyone with the link can play it             */
 /* ---------------------------------------------------------------- */
+// A finished cut stays playable for anyone holding the link even while a new
+// take is being recorded over it. Only deleting the video takes it down.
 async function sendAsset(req, res, id, kind) {
   const job = await store.getJob(id);
-  if (!job || job.status !== "ready" || !job.result) return res.status(404).send("Not found");
+  if (!job || !job.result) return res.status(404).send("Not found");
   const file = kind === "poster" ? job.result.posterFile : job.result.videoFile;
   if (!file || !fs.existsSync(file)) return res.status(404).send("Not found");
   res.setHeader("Cache-Control", "public, max-age=86400");
@@ -444,7 +446,7 @@ app.get("/v/:id/poster.jpg", (req, res) => sendAsset(req, res, req.params.id, "p
 app.get(["/v/:id", `${TOOL_PATH}/v/:id`], async (req, res) => {
   const job = await store.getJob(req.params.id);
   const template = await fsp.readFile(path.join(config.root, "public", "watch.html"), "utf8");
-  const ready = Boolean(job && job.status === "ready" && job.result && fs.existsSync(job.result.videoFile));
+  const ready = Boolean(job && job.result && fs.existsSync(job.result.videoFile));
   const data = ready
     ? {
         found: true,
