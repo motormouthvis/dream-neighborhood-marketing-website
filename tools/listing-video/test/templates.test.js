@@ -15,13 +15,14 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const templates = require("../src/templates");
 
-test("first run seeds the two shipped v11 templates", async () => {
+test("first run seeds all three shipped templates", async () => {
   const seeded = await templates.ensureSeeded();
-  assert.deepEqual(seeded.sort(), ["vanessa-se-ne-v11", "vanessa-se-only-v11"]);
+  assert.deepEqual(seeded.sort(), ["se-to-ne-upgrade", "vanessa-se-ne-v11", "vanessa-se-only-v11"]);
   assert.ok(fs.existsSync(path.join(dataDir, "templates", "vanessa-se-only-v11.json")));
+  assert.ok(fs.existsSync(path.join(dataDir, "templates", "se-to-ne-upgrade.json")));
 
   const list = await templates.listTemplates();
-  assert.equal(list.length, 2);
+  assert.equal(list.length, 3);
   assert.ok(list.every((template) => template.builtIn));
 });
 
@@ -104,21 +105,122 @@ test("a third custom script can be created, edited, duplicated and deleted", asy
   assert.equal(copy.id, "quick-cut-renamed-copy");
   assert.equal(copy.name, "Quick cut, renamed copy");
 
-  assert.equal((await templates.listTemplates()).length, 4);
+  assert.equal((await templates.listTemplates()).length, 5);
 
   await templates.deleteTemplate(copy.id);
   await templates.deleteTemplate("quick-20-second-cut");
-  assert.equal((await templates.listTemplates()).length, 2);
+  assert.equal((await templates.listTemplates()).length, 3);
   assert.ok(!fs.existsSync(path.join(dataDir, "templates", "quick-20-second-cut.json")));
 });
 
-test("a deleted shipped template stays deleted until it is asked for back", async () => {
+test("a deleted shipped template stays deleted, even across another boot", async () => {
   await templates.deleteTemplate("vanessa-se-only-v11");
-  assert.equal((await templates.listTemplates()).length, 1);
+  assert.equal((await templates.listTemplates()).length, 2);
+
+  // Booting again must not quietly put it back.
+  assert.deepEqual(await templates.ensureSeeded(), []);
+  assert.equal((await templates.listTemplates()).length, 2);
 
   const restored = await templates.restoreDefaults();
-  assert.deepEqual(restored.sort(), ["vanessa-se-ne-v11", "vanessa-se-only-v11"]);
-  assert.equal((await templates.listTemplates()).length, 2);
+  assert.deepEqual(restored.sort(), ["se-to-ne-upgrade", "vanessa-se-ne-v11", "vanessa-se-only-v11"]);
+  assert.equal((await templates.listTemplates()).length, 3);
+});
+
+test("the upgrade script opens on School Explorer, then walks every tab in order", async () => {
+  const template = await templates.getTemplate("se-to-ne-upgrade");
+  assert.equal(template.explorers, "se-ne");
+  // This one is pitched at customers who already have School Explorer, so the
+  // listing it films is allowed to have it.
+  assert.equal(template.listingExplorer, "prefer-present");
+  assert.equal(templates.totalSeconds(template), 60);
+
+  const beats = templates.renderBeats(template, { firstName: "Patty", company: "Patty Realty" });
+
+  // School Explorer is what they have today, so it is on screen first.
+  const firstExplorer = beats.find((beat) => beat.scene === "se" || beat.scene === "ne");
+  assert.equal(firstExplorer.scene, "se");
+
+  const spoken = templates.beatsToText(beats);
+  assert.ok(spoken.startsWith("Hey Patty, Claire from Dream Neighborhood. I was looking at Patty Realty."));
+  assert.ok(spoken.includes("You already have School Explorer on your listings."));
+  assert.ok(spoken.includes("the same button upgrades to Neighborhood Explorer. No new install."));
+  assert.ok(spoken.includes("Become not just the school expert, but the neighborhood expert as well. Give us a call!"));
+
+  // Every tab gets a beat, in the official order.
+  const tabBeats = beats.filter((beat) => beat.scene === "ne");
+  const walked = tabBeats.slice(0, 7);
+  assert.deepEqual(walked.map((beat) => beat.neTabName), [
+    "Map and Summary",
+    "Demographics",
+    "Schools",
+    "Housing & Market Trends",
+    "Commutes",
+    "Mobility",
+    "Points of Interest",
+  ]);
+  assert.deepEqual(walked.map((beat) => beat.neTab), [0, 1, 2, 3, 4, 5, 6]);
+  assert.ok(walked.every((beat) => beat.seconds >= 2.5 && beat.seconds <= 3.5));
+
+  // The words name the tab that is on screen while they are said.
+  for (const beat of walked) {
+    const spokenTab = beat.text.split(":")[0].replace(/&/g, "and");
+    assert.equal(
+      spokenTab.toLowerCase(),
+      beat.neTabName.replace(/&/g, "and").toLowerCase(),
+      `beat "${beat.text}" should be showing ${beat.neTabName}`
+    );
+  }
+
+  // The closing beats stay on the last tab rather than jumping somewhere new.
+  assert.ok(tabBeats.slice(7).every((beat) => beat.neTabName === "Points of Interest"));
+});
+
+test("a beat can pin its Neighborhood Explorer tab, and the v11 script still runs in order", async () => {
+  const pinned = await templates.createTemplate({
+    name: "Tabs out of order",
+    explorers: "se-ne",
+    beats: [
+      { scene: "se", seconds: 3, text: "Schools first." },
+      { scene: "ne", seconds: 3, text: "Commutes.", tab: "Commutes" },
+      { scene: "ne", seconds: 3, text: "Housing and market trends.", tab: "Housing and Market Trends" },
+      { scene: "ne", seconds: 3, text: "Back to the map." },
+    ],
+  });
+  // "and" instead of "&" is accepted and stored as the official tab name.
+  assert.equal(pinned.beats[2].tab, "Housing & Market Trends");
+
+  const beats = templates.renderBeats(pinned, {});
+  assert.deepEqual(
+    beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName),
+    // The pinned ones win; the unpinned one falls back to its place in the order.
+    ["Commutes", "Housing & Market Trends", "Schools"]
+  );
+
+  // A tab on a beat that is not a Neighborhood Explorer beat is meaningless.
+  assert.equal(beats[0].neTab, null);
+  await templates.deleteTemplate(pinned.id);
+
+  const v11 = await templates.getTemplate("vanessa-se-ne-v11");
+  assert.ok(v11.beats.filter((beat) => beat.scene === "ne").every((beat) => beat.tab === null));
+  assert.deepEqual(
+    templates.renderBeats(v11, {}).filter((beat) => beat.scene === "ne").map((beat) => beat.neTab),
+    [0, 1, 2, 3, 4, 5, 6]
+  );
+});
+
+test("a tab that does not exist is refused by name", async () => {
+  await assert.rejects(
+    () =>
+      templates.createTemplate({
+        name: "Made up tab",
+        explorers: "se-ne",
+        beats: [
+          { scene: "se", seconds: 3, text: "Schools." },
+          { scene: "ne", seconds: 3, text: "Crime scores.", tab: "Crime" },
+        ],
+      }),
+    /names a Neighborhood Explorer tab that does not exist/
+  );
 });
 
 test("bad templates are refused with a message a person can act on", async () => {

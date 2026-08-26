@@ -113,6 +113,35 @@ test("with no SMTP set, sending refuses instead of pretending", async () => {
   );
 });
 
+test("there are three from-addresses, and the mailbox login is not one of them", () => {
+  const config = require("../src/config");
+  assert.deepEqual(
+    config.fromAddresses.map((entry) => entry.id),
+    ["marketing", "myles", "bill"]
+  );
+  assert.deepEqual(
+    config.fromAddresses.map((entry) => entry.email),
+    [
+      "marketing@dreamneighborhood.com",
+      "myles@dreamneighborhood.com",
+      "bill@dreamneighborhood.com",
+    ]
+  );
+  // The label is what shows on the picker.
+  assert.ok(config.fromAddresses.every((entry) => entry.label === entry.email));
+  // Choosing a from-address must not change which mailbox sends it.
+  assert.equal(mail.fromAddress("bill").email, "bill@dreamneighborhood.com");
+  assert.equal(mail.fromAddress("nonsense").email, "marketing@dreamneighborhood.com");
+});
+
+test("the upgrade script is filmed on a listing that already has School Explorer", async () => {
+  const job = await makeJob({ templateId: "se-to-ne-upgrade" });
+  assert.equal(job.template.listingExplorer, "prefer-present");
+  // The two before-and-after scripts still need a clean listing.
+  const before = await makeJob({ templateId: "vanessa-se-ne-v11" });
+  assert.equal(before.template.listingExplorer, "absent");
+});
+
 test("website addresses are tidied up, and rubbish is rejected", () => {
   assert.equal(normalizeUrl("domorealty.com"), "https://domorealty.com/");
   assert.equal(normalizeUrl(" http://domorealty.com/listings "), "http://domorealty.com/listings");
