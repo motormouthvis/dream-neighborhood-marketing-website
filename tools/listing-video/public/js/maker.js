@@ -2,8 +2,12 @@
  * The make-a-video flow:
  *   1. pick a script and fill in the customer
  *   2. we draw a silent video from that script's suggested durations
- *   3. the user records their voice while the silent video plays
- *   4. they review the muxed video, and only then can they send it
+ *   3. the user records their voice while the silent video plays, and can play
+ *      the silent video and the take together to hear the timing. The take is
+ *      only a local recording at this point - nothing has been burned in, so
+ *      re-recording is free
+ *   4. when they keep a take, the server burns the audio onto the pictures
+ *   5. they review that finished file, and only then can they send it
  */
 (function () {
   "use strict";
@@ -18,6 +22,9 @@
     recorder: null,
     stream: null,
     take: null,
+    takeName: "take.webm",
+    takeUrl: null,
+    together: false,
     ticker: null,
     tickerStart: 0,
     beats: [],
@@ -34,13 +41,11 @@
     failed: "step-failed",
   };
 
-  var FLOW_FOR_STEP = { form: "form", progress: "silent", record: "record", review: "review", failed: "form" };
-
-  function step(name) {
+  function step(name, flowKey) {
     Object.keys(STEP_PANELS).forEach(function (key) {
       D.show(el(STEP_PANELS[key]), key === name);
     });
-    var active = FLOW_FOR_STEP[name];
+    var active = flowKey || (name === "failed" ? "form" : name);
     Array.prototype.forEach.call(document.querySelectorAll("#flow li"), function (item) {
       item.classList.toggle("is-on", item.getAttribute("data-step") === active);
     });
@@ -139,8 +144,8 @@
         return;
       }
       mine.jobId = result.body.id;
-      D.setText(el("progressTitle"), "Finding a live listing and drawing the scenes");
-      step("progress");
+      D.setText(el("progressTitle"), "Finding one of their listing pages and drawing the scenes");
+      step("progress", "silent");
       startPolling();
     });
   });
@@ -179,13 +184,13 @@
     paintSteps(job.progress || []);
 
     if (job.status === "queued" || job.status === "capturing") {
-      D.setText(el("progressTitle"), "Finding a live listing and drawing the scenes");
-      step("progress");
+      D.setText(el("progressTitle"), "Finding one of their listing pages and drawing the scenes");
+      step("progress", "silent");
       return;
     }
     if (job.status === "voicing") {
-      D.setText(el("progressTitle"), "Putting the voice on the video");
-      step("progress");
+      D.setText(el("progressTitle"), "Adding the audio to the video");
+      step("progress", "audio");
       return;
     }
     if (job.status === "failed") {
@@ -214,7 +219,8 @@
 
     var bits = [job.template.name, mine.beats.length + " scenes"];
     if (job.silent) bits.push(D.runtime(job.silent.durationSeconds) + " of silent picture");
-    if (job.silent && job.silent.capturedPageUrl) bits.push("filmed on " + job.silent.capturedPageUrl);
+    if (job.silent && job.silent.capturedAddress) bits.push("filmed on their listing for " + job.silent.capturedAddress);
+    if (job.silent && job.silent.capturedPageUrl) bits.push(job.silent.capturedPageUrl);
     D.setText(el("silentSummary"), bits.join(" \u00b7 ") + ".");
 
     var notes = (job.silent && job.silent.notes) || [];
@@ -273,16 +279,41 @@
     });
   });
 
+  /* ---- the take: a local recording, nothing burned in yet ---- */
+
+  function dropTake() {
+    stopTogether();
+    if (mine.takeUrl) URL.revokeObjectURL(mine.takeUrl);
+    mine.takeUrl = null;
+    mine.take = null;
+    el("takePlayback").removeAttribute("src");
+    D.show(el("takeWrap"), false);
+  }
+
   function resetTake() {
     stopTicker();
-    mine.take = null;
-    D.show(el("takeWrap"), false);
+    dropTake();
     D.setText(el("recBtn"), "Record while it plays");
     el("recBtn").disabled = false;
     D.setText(el("recTimer"), "0:00");
     D.setText(el("recState"), "Press record. The video restarts from the beginning and you talk along with it.");
     D.showMessage(el("recError"), "");
     D.setText(el("fileState"), "");
+    D.setText(el("syncState"), "");
+    el("keepTakeBtn").disabled = false;
+    D.setText(el("keepTakeBtn"), "Keep this take and add the audio to the video");
+  }
+
+  function holdTake(blob, name, how) {
+    dropTake();
+    mine.take = blob;
+    mine.takeName = name;
+    mine.takeUrl = URL.createObjectURL(blob);
+    el("takePlayback").src = mine.takeUrl;
+    D.show(el("takeWrap"), true);
+    D.setText(el("syncState"), "");
+    D.setText(el("recState"), how);
+    el("takeWrap").scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   function stopTicker() {
@@ -290,12 +321,12 @@
     mine.ticker = null;
   }
 
-  el("recBtn").addEventListener("click", function () {
-    if (mine.recorder && mine.recorder.state === "recording") {
-      mine.recorder.stop();
-      return;
-    }
+  /* ---- recording ---- */
+
+  function startRecording() {
     D.showMessage(el("recError"), "");
+    stopTogether();
+    dropTake();
 
     if (!navigator.mediaDevices || !window.MediaRecorder) {
       D.showMessage(el("recError"), "This browser cannot record. Upload an audio file instead.");
@@ -318,23 +349,23 @@
           stream.getTracks().forEach(function (track) {
             track.stop();
           });
-          var player = el("silentPlayer");
-          player.pause();
-          mine.take = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-          el("takePlayback").src = URL.createObjectURL(mine.take);
-          D.show(el("takeWrap"), true);
+          el("silentPlayer").pause();
           D.setText(el("recBtn"), "Record while it plays");
-          D.setText(el("recState"), "Take recorded. Play it back, then use it or record again.");
+          holdTake(
+            new Blob(chunks, { type: recorder.mimeType || "audio/webm" }),
+            "take.webm",
+            "Take recorded. Play it against the pictures, then keep it or record again."
+          );
         };
 
         var player = el("silentPlayer");
+        player.muted = true;
         player.currentTime = 0;
         // The microphone only opens once the picture is actually moving, so the
         // words land on the right scenes.
-        var playing = player.play();
-        Promise.resolve(playing)
+        Promise.resolve(player.play())
           .catch(function () {
-            /* autoplay of a muted, user-initiated video is allowed; ignore */
+            /* a muted, user-initiated video is allowed to autoplay; ignore */
           })
           .then(function () {
             recorder.start();
@@ -354,29 +385,94 @@
       .catch(function () {
         D.showMessage(el("recError"), "No microphone permission. Upload an audio file instead.");
       });
+  }
+
+  el("recBtn").addEventListener("click", function () {
+    if (mine.recorder && mine.recorder.state === "recording") {
+      mine.recorder.stop();
+      return;
+    }
+    startRecording();
   });
 
-  el("againTakeBtn").addEventListener("click", resetTake);
+  /* ---- hearing the take against the pictures, before anything is muxed ---- */
 
-  el("useTakeBtn").addEventListener("click", function () {
+  function stopTogether() {
+    mine.together = false;
+    var video = el("silentPlayer");
+    var audio = el("takePlayback");
+    video.pause();
+    audio.pause();
+    D.setText(el("playBothBtn"), "Play the video and this take together");
+  }
+
+  el("playBothBtn").addEventListener("click", function () {
+    if (mine.together) {
+      stopTogether();
+      return;
+    }
     if (!mine.take) return;
-    uploadAudio(mine.take, "take.webm");
+    if (mine.recorder && mine.recorder.state === "recording") mine.recorder.stop();
+
+    var video = el("silentPlayer");
+    var audio = el("takePlayback");
+    video.muted = true;
+    video.currentTime = 0;
+    audio.currentTime = 0;
+    mine.together = true;
+    D.setText(el("playBothBtn"), "Stop");
+    D.setText(el("syncState"), "Playing the pictures and your take together.");
+
+    Promise.all([Promise.resolve(video.play()), Promise.resolve(audio.play())]).catch(function () {
+      mine.together = false;
+      D.setText(el("playBothBtn"), "Play the video and this take together");
+      D.showMessage(el("recError"), "The browser would not start both at once. Press play on each one instead.");
+    });
+  });
+
+  el("stopBothBtn").addEventListener("click", stopTogether);
+
+  // Keep the take lined up with the picture while they play together. Browsers
+  // drift a little, and the whole point of this screen is judging the timing.
+  el("silentPlayer").addEventListener("timeupdate", function () {
+    if (!mine.together) return;
+    var video = el("silentPlayer");
+    var audio = el("takePlayback");
+    if (audio.duration && Math.abs(audio.currentTime - video.currentTime) > 0.3) {
+      audio.currentTime = Math.min(video.currentTime, audio.duration - 0.05);
+    }
+  });
+
+  el("silentPlayer").addEventListener("ended", function () {
+    if (mine.together) stopTogether();
+  });
+
+  el("againTakeBtn").addEventListener("click", function () {
+    startRecording();
+  });
+
+  el("dropTakeBtn").addEventListener("click", function () {
+    resetTake();
   });
 
   el("audioFile").addEventListener("change", function (event) {
     var file = event.target.files && event.target.files[0];
     if (!file) return;
     D.setText(el("fileState"), "Using " + file.name);
-    uploadAudio(file, file.name);
+    holdTake(file, file.name, "Using your uploaded file as the take. Play it against the pictures before you keep it.");
   });
 
-  function uploadAudio(blob, name) {
+  /* ---- keeping a take: this is the only thing that muxes ---- */
+
+  el("keepTakeBtn").addEventListener("click", function () {
+    if (!mine.take) return;
+    stopTogether();
     D.showMessage(el("recError"), "");
-    el("useTakeBtn").disabled = true;
-    D.setText(el("useTakeBtn"), "Uploading...");
+    el("keepTakeBtn").disabled = true;
+    D.setText(el("keepTakeBtn"), "Uploading the take...");
 
     var data = new FormData();
-    data.append("audio", blob, name);
+    data.append("audio", mine.take, mine.takeName);
     fetch(API + "/jobs/" + mine.jobId + "/audio", { method: "POST", body: data, credentials: "same-origin" })
       .then(function (response) {
         return response.json().then(function (body) {
@@ -384,32 +480,33 @@
         });
       })
       .then(function (result) {
-        el("useTakeBtn").disabled = false;
-        D.setText(el("useTakeBtn"), "Use this take");
+        el("keepTakeBtn").disabled = false;
+        D.setText(el("keepTakeBtn"), "Keep this take and add the audio to the video");
         if (!result.ok) {
           D.showMessage(el("recError"), D.errorFrom(result, "That audio did not go through."));
           return;
         }
-        D.setText(el("progressTitle"), "Putting the voice on the video");
-        step("progress");
+        D.setText(el("progressTitle"), "Adding your audio to the video");
+        step("progress", "audio");
         startPolling();
       })
       .catch(function () {
-        el("useTakeBtn").disabled = false;
-        D.setText(el("useTakeBtn"), "Use this take");
+        el("keepTakeBtn").disabled = false;
+        D.setText(el("keepTakeBtn"), "Keep this take and add the audio to the video");
         D.showMessage(el("recError"), "That audio did not go through. Try again.");
       });
-  }
+  });
 
   el("aiBtn").addEventListener("click", function () {
     D.showMessage(el("recError"), "");
+    stopTogether();
     D.send("POST", API + "/jobs/" + mine.jobId + "/ai-voice").then(function (result) {
       if (!result.ok) {
         D.showMessage(el("recError"), D.errorFrom(result, "The AI voice could not be used."));
         return;
       }
-      D.setText(el("progressTitle"), "Building the AI voice track");
-      step("progress");
+      D.setText(el("progressTitle"), "Building the AI voice and adding it to the video");
+      step("progress", "audio");
       startPolling();
     });
   });
@@ -424,7 +521,8 @@
 
     var bits = [job.template.name, job.result.voice.label, D.runtime(job.result.durationSeconds)];
     var text = bits.join(" \u00b7 ") + ".";
-    if (job.result.capturedPageUrl) text += " Filmed on " + job.result.capturedPageUrl + ".";
+    if (job.result.capturedAddress) text += " Filmed on their listing for " + job.result.capturedAddress + ".";
+    if (job.result.capturedPageUrl) text += " " + job.result.capturedPageUrl;
     if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");
     D.setText(el("reviewSummary"), text);
 
@@ -557,13 +655,14 @@
         return;
       }
       D.setText(el("progressTitle"), "Trying that listing");
-      step("progress");
+      step("progress", "silent");
       startPolling();
     });
   });
 
   function backToForm() {
     stopPolling();
+    resetTake();
     mine.jobId = null;
     step("form");
   }

@@ -50,8 +50,9 @@
         <ol class="flow" id="flow">
           <li data-step="form" class="is-on">1. Script and customer</li>
           <li data-step="silent">2. Silent video</li>
-          <li data-step="record">3. Record while it plays</li>
-          <li data-step="review">4. Review, then send</li>
+          <li data-step="record">3. Record and try it</li>
+          <li data-step="audio">4. Add audio to video</li>
+          <li data-step="review">5. Review, then send</li>
         </ol>
 
         <!-- ---------- step 1 ---------- -->
@@ -148,12 +149,30 @@
               clipped.
             </p>
 
-            <div id="takeWrap" hidden>
-              <audio id="takePlayback" class="recorder__player" controls></audio>
+            <div id="takeWrap" class="take" hidden>
+              <h3 class="take__title">Your take</h3>
+              <p class="hint hint--above" id="takeAbout">
+                Nothing is burned into the video yet. Play the two together to hear whether your words land on the right
+                pictures, and record again as many times as you like.
+              </p>
               <div class="recorder__row">
-                <button type="button" class="btn btn--primary" id="useTakeBtn">Use this take</button>
-                <button type="button" class="btn btn--ghost" id="againTakeBtn">Record again</button>
+                <button type="button" class="btn btn--dark" id="playBothBtn">Play the video and this take together</button>
+                <button type="button" class="btn btn--ghost" id="stopBothBtn">Stop</button>
+                <span class="recorder__state" id="syncState"></span>
               </div>
+              <label class="take__label">The take on its own</label>
+              <audio id="takePlayback" class="recorder__player" controls></audio>
+              <div class="recorder__row recorder__row--wrap">
+                <button type="button" class="btn btn--ghost" id="againTakeBtn">Record again</button>
+                <button type="button" class="btn btn--ghost" id="dropTakeBtn">Throw this take away</button>
+              </div>
+              <hr class="take__rule" />
+              <p class="hint hint--above">
+                Happy with it? This is the point where the voice gets burned onto the pictures.
+              </p>
+              <button type="button" class="btn btn--primary btn--big" id="keepTakeBtn">
+                Keep this take and add the audio to the video
+              </button>
             </div>
 
             <details class="teleprompter" id="promptWrap" open>
@@ -176,6 +195,10 @@
                 <button type="button" class="btn btn--ghost" id="aiBtn">Use the AI voice instead</button>
                 <span class="recorder__state" id="fileState"></span>
               </div>
+              <p class="hint">
+                An uploaded file becomes a take like any other, so you can play it against the pictures before you
+                commit to it. The AI voice skips straight to adding the audio, and still has to pass the final review.
+              </p>
               <p class="hint" id="aiNote"></p>
             </details>
 
@@ -183,15 +206,16 @@
           </div>
         </section>
 
-        <!-- ---------- step 4: review then send ---------- -->
+        <!-- ---------- step 5: final review of the muxed file, then send ---------- -->
         <section class="panel" id="step-review" hidden>
-          <h2 class="h2">Review it with the sound on</h2>
+          <h2 class="h2">Final review: picture and voice as one video</h2>
           <p class="lede" id="reviewSummary"></p>
 
           <video id="reviewPlayer" class="player" controls playsinline preload="metadata"></video>
 
           <p class="notice" id="reviewGate">
-            Watch it through, or tick the box below. <strong>Send stays off until you have reviewed it.</strong>
+            This is the finished file, exactly what the customer will see. Watch it through, or tick the box below.
+            <strong>Send stays off until you have reviewed it.</strong>
           </p>
           <label class="check">
             <input type="checkbox" id="reviewedBox" />
@@ -199,7 +223,7 @@
           </label>
 
           <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
-            <button type="button" class="btn btn--ghost" id="redoAudioBtn">Record the voice again</button>
+            <button type="button" class="btn btn--ghost" id="redoAudioBtn">Back to recording</button>
           </div>
 
           <div class="share">

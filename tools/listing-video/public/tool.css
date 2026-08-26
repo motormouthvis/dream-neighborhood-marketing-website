@@ -180,6 +180,16 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .recorder__state { font-size: 15px; color: var(--ink-soft); flex: 1 1 200px; }
 .recorder__player { width: 100%; margin-bottom: 12px; }
 
+/* the take: a local recording, not burned into anything yet */
+.take {
+  border: 2px solid var(--green); background: #f2fbf6; border-radius: 13px;
+  padding: 18px; display: flex; flex-direction: column; gap: 12px;
+}
+.take__title { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+.take__label { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.take__rule { border: 0; border-top: 1px solid #cfe4d8; margin: 4px 0; }
+.take .btn--big { font-size: 19px; padding: 16px 24px; }
+
 /* the words, with the picture length beside them */
 .beats { list-style: none; max-height: 320px; overflow: auto; margin-top: 12px; }
 .beat {
