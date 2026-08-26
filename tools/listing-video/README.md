@@ -1,8 +1,9 @@
 # Listing Video Maker (internal, staging only)
 
 An internal tool for marketing. Bill and Myles pick a script, fill in the
-customer, record their own voice over a silent video, review it, and send a
-shareable link.
+customer, record their own voice over a silent video, hear it against the
+pictures, add it to the video, review the finished file, and send a shareable
+link.
 
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
@@ -31,21 +32,56 @@ by default, matching the approved v11 videos:
 First name, company, website URL, customer email. There is also an optional
 **Listing page URL** for when you already know the exact listing you want.
 
-### 3. The tool finds a live listing
+### 3. The tool finds a listing detail page
 
-It opens their site and looks for a live listing page that does **not** already
-have School Explorer or Neighborhood Explorer on it. It checks the entry page,
-the listings it links to, and a few likely index paths such as `/listings` and
-`/properties`.
+It has to be a listing **detail** page: one address, beds and baths, a price and
+photos. Not a search page, not a map, not a results grid, not the homepage.
 
-If it cannot find one it **stops and says so**. The homepage is never used as a
-stand-in. You get a message and a box to paste one listing URL and try again.
-The last DOMO listing that worked was 4697 Wehunt Commons Drive SE, Smyrna, GA
-30082, at a DOMO listing URL rather than their homepage.
+Every page it opens is classified first. It is treated as a search or index page,
+and skipped, if it has search controls on it, a big map, three or more different
+prices, a grid of links to other listings, or a URL that reads like a search. A
+page's result rows often contain something street-like, so looking street-like is
+not enough to make it a listing.
+
+It checks the entry page, the listings it links to, and a few likely index paths
+such as `/listings` and `/properties`. If you paste a search URL it crawls from
+there rather than filming it.
+
+If it cannot find a clean listing it **stops and says so**, with a box to paste
+one listing URL and try again. The homepage and a search page are never used as
+a stand-in. The last DOMO listing that worked was 4697 Wehunt Commons Drive SE,
+Smyrna, GA 30082, at a DOMO listing URL rather than their homepage.
 
 A page with our script, iframe or `data-dn-*` attribute on it is refused
 outright. A page that only *mentions* School Explorer in its copy is skipped
 during the search, but allowed with a warning if you pasted that URL yourself.
+
+#### Nothing may cover the page
+
+A finished video once went out with the site's own "Microphone access denied"
+voice-command panel sitting in the middle of frame. Three things stop that now:
+
+- Speech recognition and `navigator.mediaDevices` are removed before the page
+  loads, so a voice widget never starts and never asks for anything.
+- Chrome answers any microphone request with a fake device rather than a denial,
+  so a site that asks anyway gets a yes instead of drawing an error panel.
+- Whatever is left — cookie bars, chat bubbles, newsletter popups, consent
+  dialogs — is dismissed by clicking its own close control and then force-hidden.
+
+The screenshot is only taken once nothing is floating over the middle of the
+page or over the bottom strip where the house button goes. A page that cannot be
+cleared is skipped rather than filmed.
+
+#### The address
+
+The tooltip on the house button uses the address of the page being filmed, and
+that address once read "032 SQFT 4497 Chase Drive" — the tail of "1,032 SQFT"
+glued onto the next listing's street. The address is now read from the page's own
+structured data first, then a heading, and only then the body text, and any
+candidate is thrown away if it has a leading-zero house number, a thousands
+separator, a price, or a listing-spec word such as SQFT, BEDS or BATHS inside the
+street name. If no address can be read the tooltip just says "explore this
+neighborhood" rather than guessing.
 
 ### 4. The silent video is rendered first
 
@@ -61,37 +97,54 @@ audio track at all**:
 - Between Neighborhood Explorer beats only the highlighted tab moves. The card
   body stays the real Map and Summary view; no per-tab screens are invented.
 
-### 5. Record while it plays
+### 5. Record and try it, on one screen
 
 Press **Record while it plays**. The silent video restarts from the beginning and
 the microphone opens once the picture is moving, so the words land on the right
 scenes. The words and each picture's length are listed beside the player and the
 current beat is highlighted as it plays.
 
-Play the take back, then **Use this take** or **Record again**. Dead air is
-trimmed off the front of a take and a known 0.6s of silence is put back, so the
-first word is never clipped.
+When you stop, the take appears on the same screen. **Nothing is burned into the
+video yet.** From here you can:
 
-You can also upload an mp3, wav, m4a or webm instead.
+- **Play the video and this take together** — the picture and your take run at
+  the same time, from two separate players, so you can hear whether your words
+  land on the right pictures. They are kept in step as they play.
+- Play the take on its own.
+- **Record again**, which throws the old take away and starts a new one.
+- **Throw this take away** and start from the top.
 
-### 6. Review, then send
+Dead air is trimmed off the front of a take and a known 0.6s of silence is put
+back, so the first word is never clipped.
 
-The muxed video plays with sound. **Send stays switched off** until you have
-watched it through or ticked *I reviewed this*. The server refuses the send
-either way, so there is no silent fake send. Re-recording the voice clears the
-review, because a new take has not been reviewed.
+You can also upload an mp3, wav, m4a or webm. That becomes a take like any
+other, so it can be tried against the pictures before you commit to it.
+
+### 6. Add the audio to the video
+
+**Keep this take and add the audio to the video** is the only thing that burns
+the voice onto the pictures. Nothing is muxed while you are still trying takes,
+so re-recording is free and does not cost a render.
+
+### 7. Final review, then send
+
+The finished file plays with sound: picture and voice as one video, exactly what
+the customer will see. **Send stays switched off** until you have watched it
+through or ticked *I reviewed this*. The server refuses the send either way, so
+there is no silent fake send. Going back and keeping another take clears the
+review, because the new file has not been reviewed.
 
 If SMTP is not configured the UI says **"Mailbox not connected"**, the send
 button stays off, and you get the watch link plus the whole email text to copy
 and send yourself. It never reports a send that did not happen.
 
-### 7. Hosting
+### 8. Hosting
 
 Every finished video gets a public watch page at `/v/{id}`. Anyone with the link
 can play it, no sign-in and no Loom. Once a video is deleted, that page and its
 mp4 return 404.
 
-### 8. Library
+### 9. Library
 
 The **Library** tab lists every video on the box: customer, company, script,
 date, status and watch link. Play it, copy the link, open it to send it, or
@@ -131,13 +184,15 @@ they ship.
 ## Voice
 
 Recording over the silent video is the default and the recommended path, because
-it is the only one where the words are guaranteed to land on the pictures.
+it is the only one where you get to hear the words against the pictures before
+anything is committed.
 
 The AI voice is optional and secondary. When a voice is connected it appears
-under *Other ways to add the voice*, it uses one engine for the whole script so
-two voices are never spliced together, and it still has to go through the same
-review step before anything can be sent. Engines are tried in this order and the
-tool always reports which one it used:
+under *Other ways to add the voice*. It goes straight to adding the audio, since
+there is no take to try first, and it still has to pass the same final review
+before anything can be sent. It uses one engine for the whole script, so two
+voices are never spliced together. Engines are tried in this order and the tool
+always reports which one it used:
 
 1. ElevenLabs, if `ELEVENLABS_API_KEY` is set
 2. OpenAI, if `OPENAI_API_KEY` is set
@@ -158,7 +213,7 @@ when the script the customer just watched covered it.
 ```bash
 cd tools/listing-video
 npm install
-npm test                             # template load/save/duplicate/delete, job delete
+npm test                             # scripts, job delete, address reading, page classification
 bash scripts/setup-voice.sh          # optional: installs the built-in AI voice
 LISTING_VIDEO_TOKEN=pick-a-password npm start
 ```
@@ -226,7 +281,8 @@ No `/popup/{address}` routes are added, and no product code is changed.
 server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
 src/default-templates.js     the two shipped v11 scripts
-src/capture.js               finds a live listing with no Explorer on it, or refuses
+src/capture.js               opens their site, clears overlays, screenshots a listing
+src/page-analysis.js         is this one listing or a search page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
 src/audio.js                 recorded takes, the optional AI voice, 0.6s lead silence

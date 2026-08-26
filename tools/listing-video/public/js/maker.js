@@ -397,6 +397,8 @@
 
   /* ---- hearing the take against the pictures, before anything is muxed ---- */
 
+  // One button, two states. A separate Stop button next to it just read as a
+  // second "Stop" and left people guessing which one to press.
   function stopTogether() {
     mine.together = false;
     var video = el("silentPlayer");
@@ -404,6 +406,7 @@
     video.pause();
     audio.pause();
     D.setText(el("playBothBtn"), "Play the video and this take together");
+    D.setText(el("syncState"), "");
   }
 
   el("playBothBtn").addEventListener("click", function () {
@@ -420,7 +423,7 @@
     video.currentTime = 0;
     audio.currentTime = 0;
     mine.together = true;
-    D.setText(el("playBothBtn"), "Stop");
+    D.setText(el("playBothBtn"), "Stop them both");
     D.setText(el("syncState"), "Playing the pictures and your take together.");
 
     Promise.all([Promise.resolve(video.play()), Promise.resolve(audio.play())]).catch(function () {
@@ -429,8 +432,6 @@
       D.showMessage(el("recError"), "The browser would not start both at once. Press play on each one instead.");
     });
   });
-
-  el("stopBothBtn").addEventListener("click", stopTogether);
 
   // Keep the take lined up with the picture while they play together. Browsers
   // drift a little, and the whole point of this screen is judging the timing.
