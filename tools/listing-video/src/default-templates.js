@@ -1,13 +1,14 @@
 "use strict";
 
 /**
- * The two shipped script templates, matching the approved v11 videos.
+ * The shipped script templates: the two approved v11 videos, and the upgrade
+ * pitch for customers who already have School Explorer.
  *
- * These are seeded onto disk on first run so Bill and Myles can edit them from
- * the Scripts page. The copy here is the approved sales copy - do not reword a
- * spoken line, do not add a product claim, price or integration that is not
- * already in one of these two scripts, and never mention Neighborhood Explorer
- * in the school-only template.
+ * These are seeded onto disk so Bill and Myles can edit them from the Scripts
+ * page. The copy here is the approved sales copy - do not reword a spoken line,
+ * do not add a product claim, price or integration that is not already in one of
+ * these scripts, and never mention Neighborhood Explorer in the school-only
+ * template.
  *
  * "seconds" on each beat is the suggested picture length from the v11 cut. The
  * group totals it was split from are noted above each template, so anyone
@@ -18,6 +19,9 @@
  *   "listing-tap" - the same page with the house button highlighted
  *   "se"          - School Explorer card
  *   "ne"          - Neighborhood Explorer card (se-ne templates only)
+ *
+ * A "ne" beat can name the tab it shows. Left unnamed, tabs are handed out in
+ * the order the beats appear.
  */
 
 /*
@@ -201,7 +205,121 @@ const SCHOOL_AND_NEIGHBORHOOD = {
   ],
 };
 
-const DEFAULT_TEMPLATES = [SCHOOL_ONLY, SCHOOL_AND_NEIGHBORHOOD];
+/*
+ * se-to-ne-upgrade: for a customer who ALREADY has the free School Explorer.
+ *
+ * The picture opens on their listing with School Explorer on it - that is what
+ * they have today, not a "before" shot - and then the same popup becomes
+ * Neighborhood Explorer and walks every tab in the official order. Each tab beat
+ * names its own tab, so the tab on screen is always the one being spoken.
+ *
+ * Group totals Bill asked for: 8s already have SE | 8s tap the house and today's
+ * School Explorer | 7s the same button upgrades | seven tab beats at 3s | 10s
+ * SEO, dwell time, showings and cost | 6s close. Total 60s.
+ */
+const SE_TO_NE_UPGRADE = {
+  id: "se-to-ne-upgrade",
+  name: "SE to NE upgrade",
+  explorers: "se-ne",
+  listingExplorer: "prefer-present",
+  notes:
+    "For customers who already have the free School Explorer. Films a listing that already has it where possible, then walks every Neighborhood Explorer tab in order.",
+  beats: [
+    {
+      scene: "listing",
+      seconds: 8,
+      text:
+        "Hey {firstName}, Claire from Dream Neighborhood. I was looking at {company}. You already have School Explorer on your listings. It looks really good.",
+      caption: { headline: "You already have School Explorer.", subline: "It looks really good." },
+    },
+    {
+      scene: "listing-tap",
+      seconds: 2.5,
+      text: "A mom taps the house,",
+      caption: { headline: "She taps the little house.", subline: "The same button you have today." },
+    },
+    {
+      scene: "se",
+      seconds: 5.5,
+      text: "and the schools come up right on your site. She never left. That is the free School Explorer you have today.",
+      caption: { headline: "School Explorer, on your site.", subline: "This is what you have today." },
+    },
+    {
+      scene: "se",
+      seconds: 7,
+      text:
+        "When you are ready, the same button upgrades to Neighborhood Explorer. No new install. Same house icon. It just does more.",
+      caption: { headline: "The same button upgrades.", subline: "No new install. Same house icon." },
+    },
+    {
+      scene: "ne",
+      tab: "Map and Summary",
+      seconds: 3,
+      text: "Map and Summary: she sees the neighborhood at a glance.",
+      caption: { headline: "Map and Summary.", subline: "The neighborhood at a glance." },
+    },
+    {
+      scene: "ne",
+      tab: "Demographics",
+      seconds: 3,
+      text: "Demographics: who lives here, income, age, households.",
+      caption: { headline: "Demographics.", subline: "Who lives here, income, age, households." },
+    },
+    {
+      scene: "ne",
+      tab: "Schools",
+      seconds: 3,
+      text: "Schools: the same school data she already trusts, still right there.",
+      caption: { headline: "Schools.", subline: "The same school data she already trusts." },
+    },
+    {
+      scene: "ne",
+      tab: "Housing & Market Trends",
+      seconds: 3,
+      text: "Housing and Market Trends: prices, inventory, how the market is moving.",
+      caption: { headline: "Housing & Market Trends.", subline: "Prices, inventory, how the market is moving." },
+    },
+    {
+      scene: "ne",
+      tab: "Commutes",
+      seconds: 3,
+      text: "Commutes: where people work and how long it takes.",
+      caption: { headline: "Commutes.", subline: "Where people work and how long it takes." },
+    },
+    {
+      scene: "ne",
+      tab: "Mobility",
+      seconds: 3,
+      text: "Mobility: walk, bike, transit, how easy it is to get around.",
+      caption: { headline: "Mobility.", subline: "Walk, bike, transit." },
+    },
+    {
+      scene: "ne",
+      tab: "Points of Interest",
+      seconds: 3,
+      text:
+        "Points of Interest: grocery, parks, restaurants, the everyday stuff that makes her want the house.",
+      caption: { headline: "Points of Interest.", subline: "Grocery, parks, restaurants." },
+    },
+    {
+      scene: "ne",
+      tab: "Points of Interest",
+      seconds: 10,
+      text:
+        "That extra time on your page helps SEO and dwell time. Buyers show up already sold on the neighborhood, so you can cut showings per closing. And it is cost effective: one upgrade, same button, on every listing.",
+      caption: { headline: "More time on your page.", subline: "Fewer showings per closing. One upgrade, every listing." },
+    },
+    {
+      scene: "ne",
+      tab: "Points of Interest",
+      seconds: 6,
+      text: "Become not just the school expert, but the neighborhood expert as well. Give us a call!",
+      caption: { headline: "Become the neighborhood expert too.", subline: "Give us a call." },
+    },
+  ],
+};
+
+const DEFAULT_TEMPLATES = [SCHOOL_ONLY, SCHOOL_AND_NEIGHBORHOOD, SE_TO_NE_UPGRADE];
 const DEFAULT_TEMPLATE_IDS = DEFAULT_TEMPLATES.map((template) => template.id);
 
 module.exports = { DEFAULT_TEMPLATES, DEFAULT_TEMPLATE_IDS };
