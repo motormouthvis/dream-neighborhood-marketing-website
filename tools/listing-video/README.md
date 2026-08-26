@@ -19,13 +19,19 @@ Three tabs: **Make a video**, **Library**, **Scripts**.
 
 ### 1. Pick a script
 
-Every script is a file on this box, editable from the **Scripts** tab. Two ship
-by default, matching the approved v11 videos:
+Every script is a file on this box, editable from the **Scripts** tab. Three ship
+by default:
 
-| Script | What is in it |
-| --- | --- |
-| `vanessa-se-only-v11` | School Explorer only. Neighborhood Explorer is never mentioned. |
-| `vanessa-se-ne-v11` | School Explorer first, then the seven Neighborhood Explorer tabs. |
+| Script | Who it is for | What is in it |
+| --- | --- | --- |
+| `vanessa-se-only-v11` | A new customer | School Explorer only. Neighborhood Explorer is never mentioned. |
+| `vanessa-se-ne-v11` | A new customer | School Explorer first, then the seven Neighborhood Explorer tabs. |
+| `se-to-ne-upgrade` | Somebody who **already has** the free School Explorer | Opens on their listing with School Explorer on it, then the same button becomes Neighborhood Explorer and walks every tab in order. |
+
+The first two are the approved v11 videos and are a before-and-after: they need a
+listing with nothing on it yet. The upgrade script is the opposite — it wants a
+listing that already has School Explorer, because that is the customer it is
+talking to. Each script says which it needs, and capture obeys it.
 
 ### 2. Fill in the customer
 
@@ -36,6 +42,13 @@ First name, company, website URL, customer email. There is also an optional
 
 It has to be a listing **detail** page: one address, beds and baths, a price and
 photos. Not a search page, not a map, not a results grid, not the homepage.
+
+What it does about an Explorer already being on the page depends on the script:
+
+| The script needs | What capture does |
+| --- | --- |
+| a listing with no Explorer on it yet | Skips any listing that already has one. If they all have one, it refuses and says so. |
+| a listing that already has School Explorer | Prefers one that has it. A clean listing is kept in reserve and used if none turns up, and the video says School Explorer was added to it for the opening shot. |
 
 Every page it opens is classified first. It is treated as a search or index page,
 and skipped, if it has search controls on it, a big map, three or more different
@@ -163,9 +176,19 @@ A script is a list of **beats**. Each beat has:
 | Scene | `listing`, `listing-tap`, `se` or `ne`. These four are the only scenes. |
 | Suggested seconds | How long that picture is held. Editable per beat. |
 | Top caption | Two optional lines for the top bar. |
+| Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
 
-Plus a name, a notes field, and whether the script is *School Explorer only* or
-*School Explorer, then Neighborhood Explorer*.
+Plus a name, a notes field, whether the script is *School Explorer only* or
+*School Explorer, then Neighborhood Explorer*, and what their listing should
+already have on it.
+
+**The tab field** is how a script guarantees the Demographics tab is on screen
+while the voice is saying "Demographics". Name the tab and it is pinned; leave it
+empty and the tabs are handed out in the order the `ne` beats appear, which is
+what the v11 script does. `Housing and Market Trends` and
+`Housing & Market Trends` are the same tab. The seven tabs, in the official
+order, are the only ones there are: Map and Summary, Demographics, Schools,
+Housing & Market Trends, Commutes, Mobility, Points of Interest.
 
 The Scripts tab can create, edit, save, duplicate and delete. Making an "other
 video" means writing a new script here and saving it; it shows up in the picker
@@ -176,10 +199,13 @@ Bad edits are refused with a message you can act on: a Neighborhood Explorer
 beat in a school-only script, a Neighborhood Explorer beat before School
 Explorer, an unknown scene, or a duration outside 0.5-120s.
 
-Scripts live in `<data dir>/templates/*.json`, one file per script. The two
-shipped scripts are seeded on first run. A deleted default stays deleted;
-**Put the two v11 scripts back** on the Scripts tab restores them exactly as
-they ship.
+Scripts live in `<data dir>/templates/*.json`, one file per script. The shipped
+scripts are seeded on boot, one id at a time: a data dir that already has the two
+v11 scripts picks up a newly shipped third one the next time the server starts,
+and the startup log says which ones it added. A default that somebody deleted
+stays deleted, because the marker records what has already been offered.
+**Put the shipped scripts back** on the Scripts tab restores all of them exactly
+as they ship.
 
 ## Voice
 
@@ -202,9 +228,19 @@ If none are available the AI button is switched off and says so.
 
 ## Email
 
-Sends from `marketing@dreamneighborhood.com` or
-`myles@dreamneighborhood.com`. The email only mentions Neighborhood Explorer
-when the script the customer just watched covered it.
+The send picker offers three from-addresses:
+
+- `marketing@dreamneighborhood.com`
+- `myles@dreamneighborhood.com`
+- `bill@dreamneighborhood.com`
+
+Whichever is picked becomes the From and the Reply-To. It does **not** change
+which mailbox the message is sent through: that is always `SMTP_USER`, which is
+a different address. If a mailbox refuses to send as an address it does not own,
+that is an SMTP-side setting, not something this tool decides.
+
+The email only mentions Neighborhood Explorer when the script the customer just
+watched covered it.
 
 ---
 
@@ -280,7 +316,7 @@ No `/popup/{address}` routes are added, and no product code is changed.
 ```
 server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
-src/default-templates.js     the two shipped v11 scripts
+src/default-templates.js     the three shipped scripts
 src/capture.js               opens their site, clears overlays, screenshots a listing
 src/page-analysis.js         is this one listing or a search page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
