@@ -141,6 +141,8 @@ function publicView(job) {
       ? {
           durationSeconds: job.silent.durationSeconds,
           capturedPageUrl: job.silent.capturedPageUrl,
+          // Shown on the record screen so it is obvious which house was filmed.
+          capturedAddress: job.silent.capturedAddress ? job.silent.capturedAddress.street : "",
           notes: job.silent.notes || [],
           pagesChecked: (job.silent.checkedPages || []).length,
         }
@@ -149,6 +151,7 @@ function publicView(job) {
       ? {
           durationSeconds: job.result.durationSeconds,
           capturedPageUrl: job.result.capturedPageUrl,
+          capturedAddress: job.result.capturedAddress || "",
           notes: job.result.notes || [],
           voice: job.result.voice,
           templateName: job.result.templateName,

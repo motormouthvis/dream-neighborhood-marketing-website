@@ -71,6 +71,7 @@ async function renderSilent(job) {
       durationSeconds: Math.round(silent.duration * 10) / 10,
       frames,
       capturedPageUrl: capture.pageUrl,
+      capturedAddress: capture.address || null,
       checkedPages: capture.checked,
       notes: capture.notes || [],
     };
@@ -148,6 +149,7 @@ async function attachAudio(job, { source, uploadPath }) {
       posterFile: job.silent.posterFile,
       durationSeconds: Math.round(video.duration),
       capturedPageUrl: job.silent.capturedPageUrl,
+      capturedAddress: job.silent.capturedAddress ? job.silent.capturedAddress.street : "",
       notes: job.silent.notes || [],
       voice: track.voice,
       templateName: job.template.name,
