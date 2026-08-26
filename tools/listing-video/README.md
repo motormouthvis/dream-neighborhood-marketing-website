@@ -40,8 +40,37 @@ First name, company, website URL, customer email. There is also an optional
 
 ### 3. The tool finds a listing detail page
 
-It has to be a listing **detail** page: one address, beds and baths, a price and
-photos. Not a search page, not a map, not a results grid, not the homepage.
+It has to be a listing **detail** page: one property, with its street address,
+price, beds, baths and photos of that house. The hero is the house, not a city
+skyline with "Search Homes" buttons over it.
+
+These are never filmed, whatever else is on them:
+
+- the homepage
+- a city or neighbourhood landing page
+- a market report or home-valuation page
+- a blog, about, contact, agents or team page
+- a search form, a map or a results grid
+- a bare listings index
+
+Getting this wrong is what produced two bad videos, so the bar is deliberately
+high. A page only counts as one listing when **both** of these hold:
+
+1. **The page says which house it is about.** The address has to come from the
+   page's own structured data, a heading, or an element marked up as the
+   listing's address. An address merely found somewhere in the running text does
+   not count, because that is usually the office address in the footer — that is
+   where "2135 Bellflower Blvd" on Bill's video came from. An address belonging
+   to an agent or an organisation in structured data is ignored for the same
+   reason.
+2. **It carries at least two things only a listing page has.** Structured data
+   describing a home at that address; beds, baths and a price or size together in
+   one block; an MLS number; two or more listing detail fields such as Year
+   Built, Lot Size, Property Type or Days on Market; a price alongside beds and
+   baths. Photos only count when there is a spec row beside them.
+
+Photos plus the words "bed" and "bath" somewhere in the copy used to be enough.
+It is not: a city landing page has both.
 
 What it does about an Explorer already being on the page depends on the script:
 
@@ -50,26 +79,45 @@ What it does about an Explorer already being on the page depends on the script:
 | a listing with no Explorer on it yet | Skips any listing that already has one. If they all have one, it refuses and says so. |
 | a listing that already has School Explorer | Prefers one that has it. A clean listing is kept in reserve and used if none turns up, and the video says School Explorer was added to it for the opening shot. |
 
-Every page it opens is classified first. It is treated as a search or index page,
-and skipped, if it has search controls on it, a big map, three or more different
-prices, a grid of links to other listings, or a URL that reads like a search. A
-page's result rows often contain something street-like, so looking street-like is
-not enough to make it a listing.
+The walk is up to three clicks: their site, then a listings or homes page, then
+the house. Links are ranked, so a concrete listing URL like
+`/listings/123-main-st` on a card showing a price, beds and baths and a photo is
+tried before a link to another index. Pages that are not listings still get
+harvested for links, because that is how you get from a homepage to a listing —
+missing that hop is what left capture stuck on the homepage.
 
-It checks the entry page, the listings it links to, and a few likely index paths
-such as `/listings` and `/properties`. If you paste a search URL it crawls from
-there rather than filming it.
+If you paste a URL it is used when it is a listing, and crawled from when it is
+not, so pasting a homepage or a search page still gets you a listing.
 
-If it cannot find a clean listing it **stops and says so**, with a box to paste
-one listing URL and try again. The homepage and a search page are never used as
-a stand-in. The last DOMO listing that worked was 4697 Wehunt Commons Drive SE,
-Smyrna, GA 30082, at a DOMO listing URL rather than their homepage.
+If it cannot open a clean listing detail page it **stops and says so**, naming
+what it found instead, with a box to paste one listing URL and try again. The
+last DOMO listing that worked was 4697 Wehunt Commons Drive SE, Smyrna, GA
+30082, at a DOMO listing URL rather than their homepage.
 
 A page with our script, iframe or `data-dn-*` attribute on it is refused
 outright. A page that only *mentions* School Explorer in its copy is skipped
 during the search, but allowed with a warning if you pasted that URL yourself.
 
-#### Nothing may cover the page
+#### Cookie banners
+
+Every page gets its cookie banner accepted before anything is judged or
+photographed. In order:
+
+1. The accept button of the consent tools that actually turn up on realtor sites,
+   by name: OneTrust, Cookiebot, Quantcast, Osano, CookieYes, Iubenda, Complianz,
+   HubSpot, Didomi, TrustArc and friends. Consent dialogs in their own iframe are
+   included.
+2. Failing that, the banner is found by its wording and the **Accept** button
+   inside it is pressed. Never Reject and never Manage settings, because those
+   either leave the banner up or bring it straight back.
+3. Then it waits and checks the banner is actually **gone**, not merely clicked.
+   That is retried a few times, since some tools show a second banner.
+4. If it still will not go, the banner is taken off the page.
+5. The screenshot is only taken when nothing cookie-shaped is left. If a banner
+   survives even being hidden, the capture is refused rather than filmed — a
+   cookie bar in the frame is a failed capture, not a video.
+
+#### Nothing else may cover the page either
 
 A finished video once went out with the site's own "Microphone access denied"
 voice-command panel sitting in the middle of frame. Three things stop that now:
@@ -87,13 +135,23 @@ cleared is skipped rather than filmed.
 
 #### The address
 
-The tooltip on the house button uses the address of the page being filmed, and
-that address once read "032 SQFT 4497 Chase Drive" — the tail of "1,032 SQFT"
-glued onto the next listing's street. The address is now read from the page's own
-structured data first, then a heading, and only then the body text, and any
-candidate is thrown away if it has a leading-zero house number, a thousands
+The tooltip on the house button uses the address of the page being filmed. It has
+been wrong twice: once reading "032 SQFT 4497 Chase Drive" — the tail of
+"1,032 SQFT" glued onto the next listing's street — and once reading
+"2135 Bellflower Blvd", the office address out of a footer.
+
+So the address is read in this order, and the footer is skipped entirely:
+
+1. the page's own structured data, ignoring any address that belongs to an agent,
+   an office or an organisation
+2. an element marked up as the listing's address, outside the footer
+3. a heading: `h1`, `og:title`, the page title, then `h2`
+4. the running text, as a last resort — good enough to caption a tooltip, but
+   never good enough to decide the page is a listing
+
+Any candidate is thrown away if it has a leading-zero house number, a thousands
 separator, a price, or a listing-spec word such as SQFT, BEDS or BATHS inside the
-street name. If no address can be read the tooltip just says "explore this
+street name. If no address can be read, the tooltip says "explore this
 neighborhood" rather than guessing.
 
 ### 4. The silent video is rendered first
@@ -249,7 +307,8 @@ watched covered it.
 ```bash
 cd tools/listing-video
 npm install
-npm test                             # scripts, job delete, address reading, page classification
+npm test                             # scripts, job delete, address reading, page classification,
+                                     # and a real capture against test/fixture-site.js
 bash scripts/setup-voice.sh          # optional: installs the built-in AI voice
 LISTING_VIDEO_TOKEN=pick-a-password npm start
 ```
@@ -259,6 +318,18 @@ Then open <http://localhost:8788/tools/listing-video>.
 Needs Node 20+, `ffmpeg`/`ffprobe`, and Google Chrome or Chromium on the box.
 Recording in the browser needs a microphone and a secure context, so use
 `localhost` or https.
+
+`npm test` includes a real capture run in Chrome against `test/fixture-site.js`,
+whose homepage is the marketing page that got filmed by mistake: a hero photo,
+"Search Long Beach Homes" and "Market Report" buttons, the office address in the
+footer, and a cookie banner that only closes when Accept is pressed. Starting
+from that homepage, capture has to end up on `/listings/123-main-st` with the
+banner gone. Those tests skip themselves with a message if there is no Chrome.
+To poke at the fixture by hand:
+
+```bash
+node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
+```
 
 ### Settings
 
@@ -317,8 +388,8 @@ No `/popup/{address}` routes are added, and no product code is changed.
 server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
 src/default-templates.js     the three shipped scripts
-src/capture.js               opens their site, clears overlays, screenshots a listing
-src/page-analysis.js         is this one listing or a search page, and what address
+src/capture.js               opens their site, accepts cookies, walks to a listing
+src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
 src/audio.js                 recorded takes, the optional AI voice, 0.6s lead silence
@@ -329,4 +400,5 @@ src/demo-data.js             the demo neighborhood shown inside the SE and NE ca
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
+test/fixture-site.js         a stand-in realtor site built from the pages that broke
 ```
