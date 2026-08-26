@@ -77,6 +77,9 @@
         template.beatCount +
         " beats &middot; about " +
         D.runtime(template.totalSeconds) +
+        (template.listingExplorer === "prefer-present"
+          ? '<br /><strong>For customers who already have School Explorer.</strong>'
+          : "") +
         (template.notes ? "<br />" + D.escapeHtml(template.notes) : "") +
         "</span></span></span>";
       wrap.appendChild(label);

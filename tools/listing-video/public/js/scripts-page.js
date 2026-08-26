@@ -19,6 +19,14 @@
     return (D.state.session && D.state.session.explorerModes) || [];
   }
 
+  function listingExplorerModes() {
+    return (D.state.session && D.state.session.listingExplorerModes) || [];
+  }
+
+  function neTabs() {
+    return (D.state.session && D.state.session.neTabs) || [];
+  }
+
   /* ------------------------------------------------------------ */
   /* the list                                                      */
   /* ------------------------------------------------------------ */
@@ -54,6 +62,8 @@
         " beats &middot; about " +
         D.runtime(template.totalSeconds) +
         (template.updatedAt ? " &middot; saved " + D.escapeHtml(D.when(template.updatedAt)) : "") +
+        "<br />Films: " +
+        D.escapeHtml(template.listingExplorerLabel || "") +
         "</p></div>" +
         (template.builtIn ? '<span class="pill">Shipped default</span>' : "") +
         "</div>" +
@@ -151,7 +161,7 @@
     D.setText(el("editorSub"), "Saved on this box as soon as you press Save script.");
     el("tplName").value = "";
     el("tplNotes").value = "";
-    paintExplorerChoices("se");
+    paintExplorerChoices("se", "absent");
     paintBeats();
     D.showMessage(el("editorError"), "");
     D.show(el("editorOk"), false);
@@ -181,12 +191,12 @@
       D.setText(
         el("editorSub"),
         template.builtIn
-          ? "This is one of the two shipped v11 scripts. Editing it is fine - you can always put the originals back from the list."
+          ? "This is one of the shipped scripts. Editing it is fine - you can always put the originals back from the list."
           : "Saved on this box."
       );
       el("tplName").value = template.name;
       el("tplNotes").value = template.notes || "";
-      paintExplorerChoices(template.explorers);
+      paintExplorerChoices(template.explorers, template.listingExplorer);
       paintBeats();
       D.showMessage(el("editorError"), "");
       D.show(el("editorOk"), false);
@@ -194,14 +204,16 @@
     });
   }
 
-  function paintExplorerChoices(selected) {
-    var wrap = el("tplExplorers");
+  function paintRadioGroup(wrapId, name, modes, selected) {
+    var wrap = el(wrapId);
     wrap.innerHTML = "";
-    explorerModes().forEach(function (mode) {
+    modes.forEach(function (mode) {
       var label = document.createElement("label");
       label.className = "choice";
       label.innerHTML =
-        '<input type="radio" name="tplExplorers" value="' +
+        '<input type="radio" name="' +
+        name +
+        '" value="' +
         D.escapeHtml(mode.id) +
         '"' +
         (mode.id === selected ? " checked" : "") +
@@ -211,6 +223,11 @@
         "</strong></span></span>";
       wrap.appendChild(label);
     });
+  }
+
+  function paintExplorerChoices(explorers, listingExplorer) {
+    paintRadioGroup("tplExplorers", "tplExplorers", explorerModes(), explorers);
+    paintRadioGroup("tplListingExplorer", "tplListingExplorer", listingExplorerModes(), listingExplorer || "absent");
   }
 
   function paintBeats() {
@@ -240,6 +257,22 @@
       })
       .join("");
 
+    var tabOptions =
+      '<option value="">In tab order (the next one along)</option>' +
+      neTabs()
+        .map(function (tab) {
+          return (
+            '<option value="' +
+            D.escapeHtml(tab) +
+            '"' +
+            (tab === beat.tab ? " selected" : "") +
+            ">" +
+            D.escapeHtml(tab) +
+            "</option>"
+          );
+        })
+        .join("");
+
     row.innerHTML =
       '<div class="beatrow__head"><span class="beatrow__n">Beat ' +
       (index + 1) +
@@ -254,6 +287,10 @@
       '<label class="beatrow__field"><span class="beatrow__lbl">Suggested seconds</span>' +
       '<input class="input" type="number" min="0.5" max="120" step="0.1" data-role="seconds" /></label>' +
       "</div>" +
+      '<label class="beatrow__field" data-role="tabField"><span class="beatrow__lbl">Which Neighborhood Explorer tab is showing?</span>' +
+      '<select class="input" data-role="tab">' +
+      tabOptions +
+      '</select><span class="hint">Name the tab so it is on screen while these words are spoken.</span></label>' +
       '<div class="beatrow__grid">' +
       '<label class="beatrow__field"><span class="beatrow__lbl">Top caption, line 1 <span class="opt">optional</span></span>' +
       '<input class="input" data-role="headline" /></label>' +
@@ -266,17 +303,30 @@
     var seconds = row.querySelector('[data-role="seconds"]');
     var headline = row.querySelector('[data-role="headline"]');
     var subline = row.querySelector('[data-role="subline"]');
+    var tab = row.querySelector('[data-role="tab"]');
+    var tabField = row.querySelector('[data-role="tabField"]');
 
     text.value = beat.text || "";
     seconds.value = beat.seconds;
     headline.value = (beat.caption && beat.caption.headline) || "";
     subline.value = (beat.caption && beat.caption.subline) || "";
 
+    // The tab only means anything on a Neighborhood Explorer beat.
+    var syncTabField = function () {
+      D.show(tabField, scene.value === "ne");
+    };
+    syncTabField();
+
     text.addEventListener("input", function () {
       beat.text = text.value;
     });
+    tab.addEventListener("change", function () {
+      beat.tab = tab.value;
+    });
     scene.addEventListener("change", function () {
       beat.scene = scene.value;
+      if (scene.value !== "ne") beat.tab = "";
+      syncTabField();
     });
     seconds.addEventListener("input", function () {
       beat.seconds = Number(seconds.value);
@@ -348,6 +398,7 @@
     var payload = {
       name: el("tplName").value.trim(),
       explorers: D.selectedValue("tplExplorers"),
+      listingExplorer: D.selectedValue("tplListingExplorer"),
       notes: el("tplNotes").value.trim(),
       beats: editing.beats.map(function (beat) {
         return {
@@ -355,6 +406,7 @@
           seconds: Number(beat.seconds),
           text: beat.text,
           caption: beat.caption || null,
+          tab: beat.scene === "ne" ? beat.tab || "" : "",
         };
       }),
     };

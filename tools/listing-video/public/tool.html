@@ -295,7 +295,7 @@
           </p>
           <div class="recorder__row recorder__row--wrap" style="margin-top: 22px">
             <button type="button" class="btn btn--primary" id="newTemplateBtn">New script</button>
-            <button type="button" class="btn btn--ghost" id="restoreDefaultsBtn">Put the two v11 scripts back</button>
+            <button type="button" class="btn btn--ghost" id="restoreDefaultsBtn">Put the shipped scripts back</button>
           </div>
           <p class="error" id="scriptsError" hidden></p>
           <p class="ok" id="scriptsOk" hidden></p>
@@ -319,6 +319,15 @@
               <span class="hint">
                 School Explorer is always the first explorer on screen. Neighborhood Explorer beats are only allowed in
                 the second option, and only after School Explorer.
+              </span>
+            </fieldset>
+
+            <fieldset class="field">
+              <legend class="label">What should their listing already have on it?</legend>
+              <div class="choices" id="tplListingExplorer" role="radiogroup"></div>
+              <span class="hint">
+                This decides which of their listings gets filmed. A before-and-after pitch needs a listing with nothing
+                on it yet; an upgrade pitch wants one that already has School Explorer.
               </span>
             </fieldset>
 

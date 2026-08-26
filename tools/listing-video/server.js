@@ -95,6 +95,11 @@ app.get(`${TOOL_PATH}/api/session`, (req, res) => {
     fromAddresses: config.fromAddresses,
     scenes: templates.SCENES.map((id) => ({ id, label: templates.SCENE_LABELS[id] })),
     explorerModes: templates.EXPLORER_MODES.map((id) => ({ id, label: templates.EXPLORER_MODE_LABELS[id] })),
+    listingExplorerModes: templates.LISTING_EXPLORER_MODES.map((id) => ({
+      id,
+      label: templates.LISTING_EXPLORER_LABELS[id],
+    })),
+    neTabs: templates.NE_TABS,
   });
 });
 
