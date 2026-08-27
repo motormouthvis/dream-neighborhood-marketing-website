@@ -17,6 +17,7 @@ const {
   firstStreetIn,
   urlNamesTheSameHouse,
   looksLikeRegistrationWall,
+  REGISTRATION_GATE_RE,
 } = require("../src/page-analysis");
 
 /* ---------------------------------------------------------------- */
@@ -409,70 +410,82 @@ test("a condo building page with a search and many addresses is still refused", 
 /* the IDX account wall                                            */
 /* ---------------------------------------------------------------- */
 
-test("register-to-view copy is recognised as an account wall", () => {
-  const walls = [
-    "You have viewed 3 of 3 free listings. Please register to continue.",
-    "Create an account to see the rest of the photos",
-    "Register to view more listings in this area",
+test("a gate is decided by a box covering the page, not by wording alone", () => {
+  // A box carrying gate wording, over the page, with a way to register in it.
+  assert.equal(
+    looksLikeRegistrationWall({ registrationGate: { blocking: true, wholePage: false } }),
+    true
+  );
+  // The page IS the registration form.
+  assert.equal(
+    looksLikeRegistrationWall({ registrationGate: { blocking: false, wholePage: true } }),
+    true
+  );
+
+  // Wording somewhere on the page proves nothing on its own. This is the case
+  // Bill checked in a clean profile: the listing is fully visible and the only
+  // account link is an optional "Sign In" in the header.
+  assert.equal(
+    looksLikeRegistrationWall({
+      registrationGate: { blocking: false, wholePage: false },
+      mainText: "7092 Island Village Drive Long Beach CA 90803 $995,000 4 bed 3 bath. Sign In",
+    }),
+    false
+  );
+  assert.equal(looksLikeRegistrationWall({}), false);
+  assert.equal(looksLikeRegistrationWall(null), false);
+});
+
+test("gate wording is the narrow list, not every mention of an account", () => {
+  const gates = [
+    "You have viewed 3 of 3 free listings",
+    "Please register to continue",
+    "Register to view this listing",
     "Sign in to see the full property details",
-    "Sign up to view more listings",
-    "Become a member to unlock this listing",
-    "A free account is required to view this property",
+    "Sign up to view more photos",
+    "Become a member",
+    "A free account to view this property is required",
   ];
-  for (const text of walls) {
-    assert.equal(looksLikeRegistrationWall({ mainText: text }), true, `should be a wall: ${text}`);
+  for (const text of gates) {
+    assert.ok(REGISTRATION_GATE_RE.test(text), `should read as a gate: ${text}`);
   }
 
-  const notWalls = [
-    "123 Main St, Long Beach, CA. 4 beds, 3 baths. Schedule a tour.",
+  // Marketing, a newsletter and an optional header link are not locked doors.
+  const notGates = [
+    "Sign In",
+    "Sign up",
+    "Create an account",
+    "Create Your Free Account - get instant access to new inventory",
     "Sign up for our newsletter for market updates",
-    "Contact us to sell your home",
-    "",
+    "Save your search",
+    "123 Main St, 4 beds, 3 baths. Schedule a tour.",
   ];
-  for (const text of notWalls) {
-    assert.equal(looksLikeRegistrationWall({ mainText: text }), false, `should not be a wall: ${text}`);
+  for (const text of notGates) {
+    assert.equal(REGISTRATION_GATE_RE.test(text), false, `should not read as a gate: ${text}`);
   }
 });
 
-test("a wall is spotted even after the overlay pass has hidden it", () => {
-  // The overlay pass hides "create an account" boxes, so the wording is read
-  // before anything is cleared and carried through as wallText. Without that,
-  // a hidden wall would look like an ordinary empty page.
+test("an optional Sign In link in the header does not stop a listing being filmed", () => {
   const verdict = classifyPage({
-    url: "https://patty.test/listings/123-main-st",
-    h1s: [],
+    url: "https://www.redwagonteam.com/properties/listing/CRMLS/PW26184619/7092-Island-Village-Drive-Long-Beach-CA-90803/",
+    h1s: ["7092 Island Village Drive Long Beach, CA 90803"],
     jsonLd: [],
-    addressCandidates: [],
-    mainText: "Fathom Realty. All rights reserved.",
-    wallText: "Register to view more listings. Please register to continue viewing property details.",
-  });
-  assert.equal(verdict.kind, "wall");
-  assert.match(verdict.reasons[0], /wants an account/i);
-});
-
-test("a readable listing with a dismissible account promo is still a listing", () => {
-  // Bill's way out of a wall is to paste a listing URL, so a page that really
-  // does show the listing must not be refused just for floating a promo.
-  const verdict = classifyPage({
-    url: "https://patty.test/listings/123-main-st",
-    h1s: ["123 Main St"],
-    jsonLd: [
-      JSON.stringify({
-        "@type": "SingleFamilyResidence",
-        address: { "@type": "PostalAddress", streetAddress: "123 Main St", addressLocality: "Long Beach", addressRegion: "CA" },
-      }),
+    addressCandidates: [
+      { text: "7092 Island Village Drive Long Beach, CA 90803", where: "heading", inFooter: false },
     ],
-    addressCandidates: [{ text: "123 Main St", where: "heading", inFooter: false }],
-    mainText: "123 Main St $925,000 4 beds 3 baths 2,410 sq ft MLS # PW24118845 Year Built 1962 Lot Size",
-    wallText: "Create an account to save this search",
-    specRowText: "4 beds 3 baths 2,410 sq ft",
-    mlsId: "PW24118845",
+    // Exactly what a clean profile sees on that URL.
+    mainText: "7092 Island Village Drive Long Beach, CA 90803 $995,000 4 bed 3 bath Sign In",
+    registrationGate: { blocking: false, wholePage: false },
+    specRowText: "",
     mainPriceCount: 1,
     hasBeds: true,
     hasBaths: true,
-    galleryImageCount: 4,
+    galleryImageCount: 5,
+    searchInputCount: 4,
+    ctaLabels: [],
   });
   assert.equal(verdict.kind, "detail");
+  assert.equal(verdict.address.street, "7092 Island Village Drive");
 });
 
 test("market report, blog and contact pages are never listings", () => {

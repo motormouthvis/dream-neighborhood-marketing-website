@@ -221,7 +221,7 @@ test("an account wall stops the capture instead of being worked around", options
   const walls = shot.checked.filter((entry) => entry.kind === "wall");
   assert.equal(walls.length, 1, `opened ${walls.length} walled pages; one is enough to know`);
   assert.ok(
-    shot.messages.some((message) => /wants an account/i.test(message)),
+    shot.messages.some((message) => /without an account/i.test(message)),
     `expected the log to say so:\n${shot.messages.join("\n")}`
   );
 });
@@ -287,6 +287,44 @@ test("progress keeps moving while it looks", options, async () => {
   // Something to read every few seconds, not one line for the whole minute.
   assert.ok(shot.messages.length >= 5, `only ${shot.messages.length} progress lines`);
   assert.ok(shot.tookSeconds <= 60, `capture reported ${shot.tookSeconds}s`);
+});
+
+test("every job gets a browser that has never been anywhere", options, async () => {
+  // IDX sites count listing views in a cookie, so a profile carried over from a
+  // previous job would start part-used. Bill's account wall turned out to be
+  // exactly that: the same listing URL in a clean profile shows the house.
+  // A real http origin, because a data: URL is not allowed to set cookies.
+  const { server, origin } = await fixture.listen(fixture.ROUTES);
+  const first = await launch();
+  const profiles = [];
+  try {
+    const page = await first.newPage();
+    await page.goto(`${origin}/listings/123-main-st`, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      document.cookie = "idx_views=3; path=/";
+      localStorage.setItem("idx_views", "3");
+    });
+    const stored = await page.evaluate(() => `${document.cookie}|${localStorage.getItem("idx_views")}`);
+    assert.match(stored, /idx_views=3/, "the fixture needs the view counter to have been set");
+
+    const profile = first.__lvmUserDataDir;
+    assert.ok(profile && fs.existsSync(profile), "a throwaway profile directory of its own");
+    await closeBrowser(first);
+    assert.equal(fs.existsSync(profile), false, "the profile is removed, so nothing can survive it");
+
+    const second = await launch();
+    profiles.push(second.__lvmUserDataDir);
+    assert.notEqual(second.__lvmUserDataDir, profile, "a different profile every time");
+    const fresh = await second.newPage();
+    await fresh.goto(`${origin}/listings/123-main-st`, { waitUntil: "domcontentloaded" });
+    const carried = await fresh.evaluate(() => `${document.cookie}|${localStorage.getItem("idx_views")}`);
+    assert.equal(carried, "|null", `a view counter was carried over: ${carried}`);
+    await closeBrowser(second);
+  } finally {
+    await closeBrowser(first).catch(() => {});
+    for (const dir of profiles) fs.rmSync(dir, { recursive: true, force: true });
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("a browser that will not close is killed", async () => {
