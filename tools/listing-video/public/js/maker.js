@@ -27,6 +27,8 @@
     together: false,
     ticker: null,
     tickerStart: 0,
+    pollErrors: 0,
+    startedAt: 0,
     beats: [],
     watched: 0,
     lastTime: 0,
@@ -172,13 +174,44 @@
   /* ------------------------------------------------------------ */
   /* polling                                                       */
   /* ------------------------------------------------------------ */
+  /*
+   * A job can stop existing. The staging box has an ephemeral disk, so if the
+   * dyno restarts mid-render the job folder goes with it and every poll from
+   * then on is a 404. This used to be ignored, so the page sat on "Working on
+   * it" forever. A missing job is now the end of the road, and a run of server
+   * errors is too.
+   */
+  var GONE_MESSAGE =
+    "The server restarted while making this video, so it was lost. Try again. If it keeps happening, paste a listing URL on the form so there is less work to do.";
+  var UNREACHABLE_MESSAGE =
+    "The server stopped answering while making this video. Try again, and paste a listing URL if it keeps happening.";
+  var MAX_POLL_ERRORS = 3;
+
   function startPolling() {
     stopPolling();
+    mine.pollErrors = 0;
+    mine.startedAt = Date.now();
     var check = function () {
-      D.json(API + "/jobs/" + mine.jobId).then(function (result) {
-        if (!result.ok) return;
-        paintJob(result.body);
-      });
+      D.json(API + "/jobs/" + mine.jobId).then(
+        function (result) {
+          if (result.status === 404) return giveUp(GONE_MESSAGE, false);
+          if (result.status === 401) {
+            return giveUp("You were signed out while this was running. Sign in again and check the Library.", false);
+          }
+          if (!result.ok) {
+            mine.pollErrors += 1;
+            if (mine.pollErrors >= MAX_POLL_ERRORS) return giveUp(UNREACHABLE_MESSAGE, false);
+            return undefined;
+          }
+          mine.pollErrors = 0;
+          return paintJob(result.body);
+        },
+        function () {
+          mine.pollErrors += 1;
+          if (mine.pollErrors >= MAX_POLL_ERRORS) giveUp(UNREACHABLE_MESSAGE, false);
+        }
+      );
+      tickElapsed();
     };
     check();
     mine.poll = setInterval(check, 2500);
@@ -187,6 +220,19 @@
   function stopPolling() {
     if (mine.poll) clearInterval(mine.poll);
     mine.poll = null;
+  }
+
+  /** Stop waiting and say why. Never leaves the page spinning. */
+  function giveUp(message, retryable) {
+    stopPolling();
+    D.setText(el("failedWhy"), message);
+    D.show(el("retryListing"), Boolean(retryable));
+    step("failed");
+  }
+
+  function tickElapsed() {
+    if (!mine.startedAt) return;
+    D.setText(el("progressElapsed"), "Running for " + D.clock((Date.now() - mine.startedAt) / 1000) + ".");
   }
 
   function paintSteps(messages) {
@@ -701,13 +747,20 @@
   function openJob(id) {
     mine.jobId = id;
     D.goTo("make");
-    D.json(API + "/jobs/" + id).then(function (result) {
-      if (!result.ok) return;
-      paintJob(result.body);
-      if (result.body.status === "queued" || result.body.status === "capturing" || result.body.status === "voicing") {
-        startPolling();
+    D.json(API + "/jobs/" + id).then(
+      function (result) {
+        if (result.status === 404) return giveUp(GONE_MESSAGE, false);
+        if (!result.ok) return giveUp(D.errorFrom(result, UNREACHABLE_MESSAGE), false);
+        paintJob(result.body);
+        if (result.body.status === "queued" || result.body.status === "capturing" || result.body.status === "voicing") {
+          startPolling();
+        }
+        return undefined;
+      },
+      function () {
+        giveUp(UNREACHABLE_MESSAGE, false);
       }
-    });
+    );
   }
 
   D.registerView("make", function () {
