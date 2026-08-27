@@ -154,11 +154,18 @@ function cityStateIn(value) {
   return { cityState: `${city}, ${match[2]}`, zip: match[3] };
 }
 
+/**
+ * Structured-data types whose address is a home.
+ *
+ * Deliberately narrow. "Place" used to be in here, and every WordPress SEO
+ * plugin emits a site-wide Place for the agent's office, so a condo page on
+ * redwagonteam.com reported its address as 2135 Bellflower Blvd - the office.
+ */
 const ADDRESS_TYPES = new Set(
   [
     "singlefamilyresidence", "house", "apartment", "condominium", "residence",
-    "accommodation", "place", "product", "offer", "realestatelisting",
-    "home", "townhouse", "suite",
+    "accommodation", "realestatelisting", "home", "townhouse", "suite",
+    "singlefamilyhome",
   ].map((type) => type.toLowerCase())
 );
 
@@ -168,9 +175,15 @@ const ADDRESS_TYPES = new Set(
 const OFFICE_TYPES = new Set(
   [
     "realestateagent", "organization", "localbusiness", "corporation", "person",
-    "website", "webpage", "breadcrumblist", "postaladdress",
+    "website", "webpage", "breadcrumblist", "postaladdress", "place",
+    "collectionpage", "itempage", "searchresultspage", "aboutpage",
+    "contactpage", "profilepage", "imageobject", "product", "offer",
   ].map((type) => type.toLowerCase())
 );
+
+// SEO plugins hang the site-wide business off ids like "#place" and
+// "#organization". Those are never the listing.
+const SITE_WIDE_ID_RE = /#(place|organization|website|localbusiness|person|logo|breadcrumb|schema-)/i;
 
 function typesOf(node) {
   return []
@@ -205,10 +218,14 @@ function walkForAddress(node, depth) {
   if (typeof node !== "object") return null;
 
   const types = typesOf(node);
-  const isOffice = types.some((type) => OFFICE_TYPES.has(type));
+  const isOffice =
+    types.some((type) => OFFICE_TYPES.has(type)) || SITE_WIDE_ID_RE.test(String(node["@id"] || ""));
+  const isResidence = types.some((type) => ADDRESS_TYPES.has(type));
   const address = node.address;
 
-  if (address && !isOffice) {
+  // Only a node that says it is a home gets to name the address. An untyped
+  // node with an address is as likely to be the office as the house.
+  if (address && isResidence && !isOffice) {
     if (typeof address === "string" && looksLikeStreetAddress(firstStreetIn(address))) {
       const street = firstStreetIn(address);
       const place = cityStateIn(address);
@@ -229,7 +246,7 @@ function walkForAddress(node, depth) {
   }
 
   // Some feeds put the address in the name of a residence-ish thing.
-  if (types.some((type) => ADDRESS_TYPES.has(type))) {
+  if (isResidence && !isOffice) {
     const street = firstStreetIn(node.name);
     if (street) {
       const place = cityStateIn(node.name) || cityStateIn(node.description);
@@ -387,6 +404,39 @@ function countDetailLabels(text) {
   return DETAIL_LABELS.filter((pattern) => pattern.test(text)).length;
 }
 
+// A path segment that says "this is one property", not a section of the site.
+const LISTING_URL_SEGMENT_RE = /\/(listing|listings|property|properties|home|homes|mls|idx)\//i;
+
+/**
+ * Does the URL itself name the same house the page says it is about?
+ *
+ * A URL like /properties/listing/CRMLS/OC26141010/850-E-Ocean-Boulevard-B3-Long-Beach-CA-90802/
+ * is about as clear as evidence gets, and it matters because some IDX systems
+ * draw the price, beds and baths client-side, so a real listing page can look
+ * bare at the moment it is read. A homepage or a market report can never have a
+ * street address in its path, so this cannot let one of those through.
+ */
+function urlNamesTheSameHouse(url, street) {
+  if (!street) return false;
+  let path;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch (_) {
+    return false;
+  }
+  if (!LISTING_URL_SEGMENT_RE.test(path)) return false;
+
+  const fromUrl = firstStreetIn(path.replace(/[/_+]/g, " ").replace(/-/g, " "));
+  if (!fromUrl) return false;
+
+  // Same house number and same first word of the street name.
+  const key = (value) => {
+    const parts = tidy(value).split(/\s+/);
+    return `${parts[0]} ${(parts[1] || "").toLowerCase()}`;
+  };
+  return key(fromUrl) === key(street);
+}
+
 /**
  * "detail"    - one listing, safe to film
  * "search"    - a search, map or results page
@@ -416,6 +466,9 @@ function classifyPage(facts) {
   if (detailLabelCount >= 2) markers.push(`${detailLabelCount} listing detail fields`);
   if (prices >= 1 && facts.hasBeds && facts.hasBaths) markers.push("a price with beds and baths");
   if (Number(facts.galleryImageCount || 0) >= 4 && specRow) markers.push("photos of one home");
+
+  const urlNamesHouse = address.isSubject && urlNamesTheSameHouse(url, address.street);
+  if (urlNamesHouse) markers.push(`the address is in both the page's URL and its heading (${address.street})`);
 
   // Structured data naming a home, plus a listing-only field, is about as sure
   // as this gets. That outranks a map or a "similar homes" strip further down.
@@ -461,7 +514,9 @@ function classifyPage(facts) {
   if (marketingReasons.length >= 2 && !stronglyDetail) {
     return { kind: "marketing", reasons: marketingReasons, address };
   }
-  if (searchReasons.length === 1 && markers.length < 2) {
+  // One search-ish signal on its own is not much: a site-wide search widget sits
+  // in the header of plenty of real listing pages.
+  if (searchReasons.length === 1 && markers.length < 2 && !urlNamesHouse) {
     return { kind: "search", reasons: searchReasons, address };
   }
 
@@ -480,7 +535,9 @@ function classifyPage(facts) {
       address,
     };
   }
-  if (markers.length < 2) {
+  // Two listing markers, or one that is the URL and the heading naming the same
+  // house, which no landing page can manage.
+  if (markers.length < 2 && !urlNamesHouse) {
     return {
       kind: "other",
       reasons: [`${address.street} is named, but there is no price, beds, baths or MLS detail for it`],
@@ -501,4 +558,5 @@ module.exports = {
   firstStreetIn,
   cityStateIn,
   countDetailLabels,
+  urlNamesTheSameHouse,
 };
