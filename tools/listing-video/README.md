@@ -94,10 +94,10 @@ contains "team", and testing the whole URL against the exclusion list threw away
 every link on that site.
 
 **One listing, and a minute.** Exactly **one listing detail page** is opened per
-video. IDX sites count how many listings a visitor has looked at and put up a
-"create an account to view more listings" wall after a few, so this does not go
-poking through three or eight of them. Homepages, listings indexes and search
-pages are not listing views and do not count against that one.
+video. IDX sites count how many listings a visitor has looked at and stop showing
+them after a few, so this does not go poking through three or eight of them.
+Homepages, listings indexes and search pages are not listing views and do not
+count against that one.
 
 The whole search is capped at 60 seconds. When the budget runs out it refuses and
 asks for a listing URL rather than wandering. Progress lines say which page is
@@ -106,29 +106,49 @@ being checked and how long is left, so a wait is never a silent hang.
 If you paste a listing URL, that one page is opened and nothing else: cookies
 accepted, screenshot, done. No other listing links are followed from it.
 
+#### A brand-new browser every time
+
+IDX sites count listing views in a cookie and stop showing listings after a few.
+That counter is why an account wall appears at all: open the same listing URL in
+a clean profile and the whole house is there, with nothing but an optional
+"Sign In" link in the header.
+
+So every job gets **its own throwaway Chrome profile**, running incognito on top
+of that, and the profile directory is deleted when the browser closes. Nothing is
+ever carried over from a previous job and no view counter starts part-used. There
+is a test that sets a view-counter cookie, closes the browser, opens a new one and
+checks it came back empty.
+
 #### The account wall
 
-Some sites stop showing listings and ask you to register. **We do not get past
-that, and we do not try.** No accounts are created, no registration form is ever
-filled in or submitted, and nothing is clicked that could be a step in one —
-"Continue", "Next", "Submit", "Sign up" and the like are excluded from every
-button this tool presses, and nothing inside a box containing an email or
-password field is touched at all.
+Some sites really do gate a listing behind an account. **We do not get past that,
+and we do not try.** No accounts are created, no registration form is ever filled
+in or submitted, and nothing is clicked that could be a step in one — "Continue",
+"Next", "Submit" and "Sign up" are excluded from every button this tool presses,
+and nothing inside a box containing an email or password field is touched at all.
+That last one matters because a registration form's small print mentions cookies
+and privacy, so it can otherwise look like a consent banner.
 
-When a page asks for an account, capture stops there and says:
+When a page gates the listing, capture stops there and says:
 
 > This site asks for an account after a few listing views. Paste a listing URL.
 
-It is spotted by its copy — "create an account", "register to continue",
-"register to view", "sign in to see", "sign up to view more listings", "please
-register", "become a member" and similar. The wording is read **before** the
-overlay pass runs, because a wall that has been hidden is still a wall.
+A gate is decided by **structure, not wording**:
 
-One distinction, because it matters and it is a judgement call: a page that
-really does show the listing, and merely floats a dismissible "create an account"
-promo over it, is treated as a listing and filmed. Pasting a listing URL is the
-way out of a wall, so that has to keep working. A page where the listing is not
-readable is a wall and is refused.
+- a box carrying gate wording, with a way to register in it, that covers a good
+  part of the page or sits over the middle of it, or
+- a page that *is* the registration form, with no listing on it.
+
+Both are looked for **before** the overlay pass runs, because that pass hides
+exactly these boxes and a gate we have hidden is still a gate.
+
+Wording on its own is never enough. The phrases that count are the narrow set
+that say you must register to see *this* — "register to view", "register to
+continue", "sign in to see", "sign up to view", "please register", "become a
+member", "you have viewed 3 of 3". An optional "Sign In" link in a header cannot
+match one, and neither can a "Create Your Free Account — get instant access"
+marketing promo, which is dismissed like any other popup rather than treated as a
+locked door.
 
 **One page at a time.** Each page is closed before the next is opened, so a
 renderer's memory goes back rather than piling up. Images, fonts, analytics and
