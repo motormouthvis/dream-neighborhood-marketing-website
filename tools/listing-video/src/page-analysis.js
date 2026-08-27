@@ -404,6 +404,26 @@ function countDetailLabels(text) {
   return DETAIL_LABELS.filter((pattern) => pattern.test(text)).length;
 }
 
+/**
+ * Copy that means the site wants an account before it will show any more
+ * listings. IDX sites put this up after a handful of views.
+ *
+ * We do not get past this, and we do not try: no accounts, no forms, no carrying
+ * on to the next listing. Seeing it is a reason to stop and ask for a listing
+ * URL instead.
+ */
+const REGISTRATION_WALL_RE =
+  /(create an account|create your free account|create a free account|register to continue|register to view|register to see|register for free|please register|registration is required|sign in to see|sign in to view|sign in to continue|sign up to see|sign up to view|sign up to continue|sign up for free to|log in to see|log in to view|log in to continue|become a member|membership is required|view more listings|see more listings|more photos are available|unlock this listing|unlock all photos|free account to view|account is required)/i;
+
+/** Is the site asking for an account before it will show the listing? */
+function looksLikeRegistrationWall(facts) {
+  if (!facts) return false;
+  // Read the wording the page had before anything was cleared off it, since a
+  // wall that has been hidden is still a wall.
+  const text = `${facts.wallText || ""} ${facts.mainText || facts.bodyText || ""}`;
+  return REGISTRATION_WALL_RE.test(text);
+}
+
 // A path segment that says "this is one property", not a section of the site.
 const LISTING_URL_SEGMENT_RE = /\/(listing|listings|property|properties|home|homes|mls|idx)\//i;
 
@@ -439,6 +459,7 @@ function urlNamesTheSameHouse(url, street) {
 
 /**
  * "detail"    - one listing, safe to film
+ * "wall"      - the site wants an account before it will show the listing
  * "search"    - a search, map or results page
  * "index"     - a bare listing index, e.g. /listings
  * "marketing" - a homepage, city landing page, market report or other sales page
@@ -505,6 +526,24 @@ function classifyPage(facts) {
     };
   }
 
+  /*
+   * A registration wall.
+   *
+   * Checked before search and marketing, because "they want an account" is the
+   * useful thing to say. But a page that IS a readable listing is not a wall:
+   * plenty of IDX sites float a dismissible "create an account" promo over a
+   * fully rendered listing, and Bill's own way out of a wall is to paste a
+   * listing URL, so that has to keep working.
+   */
+  const readableListing = address.isSubject && (markers.length >= 2 || urlNamesHouse);
+  if (looksLikeRegistrationWall(facts) && !readableListing) {
+    return {
+      kind: "wall",
+      reasons: ["the site wants an account before it will show more listings"],
+      address,
+    };
+  }
+
   if (searchReasons.length >= 2 && !stronglyDetail) {
     return { kind: "search", reasons: searchReasons, address };
   }
@@ -559,4 +598,6 @@ module.exports = {
   cityStateIn,
   countDetailLabels,
   urlNamesTheSameHouse,
+  looksLikeRegistrationWall,
+  REGISTRATION_WALL_RE,
 };
