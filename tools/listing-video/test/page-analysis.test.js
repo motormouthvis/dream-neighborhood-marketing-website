@@ -16,6 +16,7 @@ const {
   looksLikeStreetAddress,
   firstStreetIn,
   urlNamesTheSameHouse,
+  looksLikeRegistrationWall,
 } = require("../src/page-analysis");
 
 /* ---------------------------------------------------------------- */
@@ -402,6 +403,76 @@ test("a condo building page with a search and many addresses is still refused", 
     ctaLabels: [],
   });
   assert.notEqual(verdict.kind, "detail");
+});
+
+/* ---------------------------------------------------------------- */
+/* the IDX account wall                                            */
+/* ---------------------------------------------------------------- */
+
+test("register-to-view copy is recognised as an account wall", () => {
+  const walls = [
+    "You have viewed 3 of 3 free listings. Please register to continue.",
+    "Create an account to see the rest of the photos",
+    "Register to view more listings in this area",
+    "Sign in to see the full property details",
+    "Sign up to view more listings",
+    "Become a member to unlock this listing",
+    "A free account is required to view this property",
+  ];
+  for (const text of walls) {
+    assert.equal(looksLikeRegistrationWall({ mainText: text }), true, `should be a wall: ${text}`);
+  }
+
+  const notWalls = [
+    "123 Main St, Long Beach, CA. 4 beds, 3 baths. Schedule a tour.",
+    "Sign up for our newsletter for market updates",
+    "Contact us to sell your home",
+    "",
+  ];
+  for (const text of notWalls) {
+    assert.equal(looksLikeRegistrationWall({ mainText: text }), false, `should not be a wall: ${text}`);
+  }
+});
+
+test("a wall is spotted even after the overlay pass has hidden it", () => {
+  // The overlay pass hides "create an account" boxes, so the wording is read
+  // before anything is cleared and carried through as wallText. Without that,
+  // a hidden wall would look like an ordinary empty page.
+  const verdict = classifyPage({
+    url: "https://patty.test/listings/123-main-st",
+    h1s: [],
+    jsonLd: [],
+    addressCandidates: [],
+    mainText: "Fathom Realty. All rights reserved.",
+    wallText: "Register to view more listings. Please register to continue viewing property details.",
+  });
+  assert.equal(verdict.kind, "wall");
+  assert.match(verdict.reasons[0], /wants an account/i);
+});
+
+test("a readable listing with a dismissible account promo is still a listing", () => {
+  // Bill's way out of a wall is to paste a listing URL, so a page that really
+  // does show the listing must not be refused just for floating a promo.
+  const verdict = classifyPage({
+    url: "https://patty.test/listings/123-main-st",
+    h1s: ["123 Main St"],
+    jsonLd: [
+      JSON.stringify({
+        "@type": "SingleFamilyResidence",
+        address: { "@type": "PostalAddress", streetAddress: "123 Main St", addressLocality: "Long Beach", addressRegion: "CA" },
+      }),
+    ],
+    addressCandidates: [{ text: "123 Main St", where: "heading", inFooter: false }],
+    mainText: "123 Main St $925,000 4 beds 3 baths 2,410 sq ft MLS # PW24118845 Year Built 1962 Lot Size",
+    wallText: "Create an account to save this search",
+    specRowText: "4 beds 3 baths 2,410 sq ft",
+    mlsId: "PW24118845",
+    mainPriceCount: 1,
+    hasBeds: true,
+    hasBaths: true,
+    galleryImageCount: 4,
+  });
+  assert.equal(verdict.kind, "detail");
 });
 
 test("market report, blog and contact pages are never listings", () => {

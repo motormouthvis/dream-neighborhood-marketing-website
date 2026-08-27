@@ -327,6 +327,42 @@ const LEAD_CAPTURE = {
 };
 
 /**
+ * The IDX account wall: after a few listing views the site stops showing
+ * listings and asks you to register. We do not get past this and we do not try.
+ */
+const REGISTRATION_WALL_PAGE = page(
+  "Register to view more listings - Fathom Realty",
+  `<div class="wrap">
+     <h1>Register to view more listings</h1>
+     <p>You have viewed 3 of 3 free listings. Please register to continue viewing
+     property details, photos and pricing.</p>
+     <form>
+       <input placeholder="Full Name" /><input type="email" placeholder="Email" />
+       <input type="password" placeholder="Password" />
+       <button type="submit">Create an account</button>
+     </form>
+     <p>Already have an account? Sign in to see the rest.</p>
+   </div>`
+);
+
+const WALLED_SITE = {
+  ...ROUTES,
+  // Every listing on this site is behind the wall.
+  "/listings/123-main-st": REGISTRATION_WALL_PAGE,
+  "/listings/88-ocean-view": REGISTRATION_WALL_PAGE,
+  "/listings/456-pine-ave": REGISTRATION_WALL_PAGE,
+};
+
+/**
+ * A wall that is drawn over the listing rather than instead of it, which is what
+ * some IDX systems do. The listing is not readable, so this is still a wall.
+ */
+const WALL_OVER_LISTING = {
+  ...ROUTES,
+  "/listings/123-main-st": REGISTRATION_WALL_PAGE,
+};
+
+/**
  * A site where every candidate page is slow, so the capture budget is what stops
  * it rather than a page count. Values are functions, so the server can delay.
  */
@@ -395,6 +431,8 @@ module.exports = {
   NO_LISTINGS,
   UNCLOSEABLE_COOKIES,
   LEAD_CAPTURE,
+  WALLED_SITE,
+  WALL_OVER_LISTING,
   SLOW_SITE,
   createServer,
   listen,

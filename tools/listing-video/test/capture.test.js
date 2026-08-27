@@ -26,7 +26,7 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const config = require("../src/config");
 const { launch, closeBrowser } = require("../src/browser");
-const { captureListing, CAPTURE_BUDGET_MS, MAX_CANDIDATE_VISITS, JUNK_HOSTS } = require("../src/capture");
+const { captureListing, CAPTURE_BUDGET_MS, MAX_LISTING_VIEWS, JUNK_HOSTS, DISMISS_LABELS } = require("../src/capture");
 const { run } = require("../src/exec");
 const fixture = require("./fixture-site");
 
@@ -53,7 +53,8 @@ async function capture(routes, { listingUrl = "", explorerRule = "absent", budge
     });
     return { ...result, origin, hits, messages, error: null, elapsedMs: Date.now() - startedAt };
   } catch (error) {
-    return { origin, hits, messages, error, elapsedMs: Date.now() - startedAt };
+    // A refusal carries what it looked at, so a test can check it stopped early.
+    return { origin, hits, messages, error, checked: error.checked || [], elapsedMs: Date.now() - startedAt };
   } finally {
     if (browser) await closeBrowser(browser);
     await new Promise((resolve) => server.close(resolve));
@@ -168,20 +169,88 @@ test("the before-and-after scripts skip a listing that already has an Explorer",
   assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
 });
 
-test("the upgrade script prefers the listing that already has School Explorer", options, async () => {
+test("the upgrade script takes the one listing it opens and adds School Explorer", options, async () => {
+  // It used to hunt for a listing that already had School Explorer on it, which
+  // meant opening several. Only one listing may be opened now, so it takes that
+  // one and says School Explorer was drawn on for the opening shot.
   const shot = await capture(fixture.ROUTES, { explorerRule: "prefer-present" });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.checked.filter((entry) => entry.kind === "detail").length, 1);
+  assert.ok(shot.address.street, "it still knows which house it filmed");
+  assert.ok(
+    shot.notes.join(" ").includes("does not have School Explorer on it yet") || shot.pageUrl.includes("88-ocean-view"),
+    `expected either the listing with School Explorer, or a note that it was added: ${JSON.stringify(shot.notes)}`
+  );
+});
+
+test("a pasted listing that already has School Explorer suits the upgrade script", options, async () => {
+  const shot = await capture(fixture.ROUTES, {
+    explorerRule: "prefer-present",
+    listingUrl: "/listings/88-ocean-view",
+  });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
   assert.equal(new URL(shot.pageUrl).pathname, "/listings/88-ocean-view");
-  assert.equal(shot.address.street, "88 Ocean View Dr");
+  assert.deepEqual(shot.notes, [], "nothing was added; that listing already has it");
 });
 
 /* ---------------------------------------------------------------- */
 /* the budget, and letting go of Chrome                             */
 /* ---------------------------------------------------------------- */
 
-test("the capture budget is a minute, and at most three candidates are opened", () => {
+test("the capture budget is a minute, and only one listing is ever opened", () => {
   assert.equal(CAPTURE_BUDGET_MS, 60000);
-  assert.equal(MAX_CANDIDATE_VISITS, 3);
+  // The number that matters: IDX sites count listing views and put up an
+  // account wall after a few.
+  assert.equal(MAX_LISTING_VIEWS, 1);
+});
+
+/* ---------------------------------------------------------------- */
+/* the IDX account wall                                             */
+/* ---------------------------------------------------------------- */
+
+test("an account wall stops the capture instead of being worked around", options, async () => {
+  const shot = await capture(fixture.WALLED_SITE);
+  assert.ok(shot.error, "a registration wall has to stop the capture");
+  assert.equal(shot.error.code, "REGISTRATION_WALL");
+  assert.equal(
+    shot.error.message,
+    "This site asks for an account after a few listing views. Paste a listing URL."
+  );
+
+  // It stopped at the wall rather than trying the next listing.
+  const walls = shot.checked.filter((entry) => entry.kind === "wall");
+  assert.equal(walls.length, 1, `opened ${walls.length} walled pages; one is enough to know`);
+  assert.ok(
+    shot.messages.some((message) => /wants an account/i.test(message)),
+    `expected the log to say so:\n${shot.messages.join("\n")}`
+  );
+});
+
+test("a pasted URL that is behind the wall is refused, not filled in", options, async () => {
+  const shot = await capture(fixture.WALL_OVER_LISTING, { listingUrl: "/listings/123-main-st" });
+  assert.ok(shot.error);
+  assert.equal(shot.error.code, "REGISTRATION_WALL");
+});
+
+test("only one listing is opened when starting from the homepage", options, async () => {
+  const shot = await capture(fixture.ROUTES);
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+
+  const listings = shot.checked.filter((entry) => entry.kind === "detail");
+  assert.equal(listings.length, 1, `opened ${listings.length} listings: ${JSON.stringify(listings.map((l) => l.url))}`);
+});
+
+test("a pasted listing is filmed without following any more listing links", options, async () => {
+  const shot = await capture(fixture.ROUTES, { listingUrl: "/listings/123-main-st" });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, "/listings/123-main-st");
+
+  // One page opened, full stop. No index, no second listing.
+  assert.equal(shot.checked.length, 1, `checked ${JSON.stringify(shot.checked.map((c) => c.url))}`);
+  const pagesFetched = Object.keys(shot.hits).filter(
+    (path) => path !== "/photo.svg" && path !== "/favicon.ico"
+  );
+  assert.deepEqual(pagesFetched, ["/listings/123-main-st"]);
 });
 
 test("a slow site runs out of budget and is refused, not waited on forever", options, async () => {
@@ -272,6 +341,29 @@ test("photos are not downloaded while hunting, only for the shot", options, asyn
   // And the classifier still saw the photos, even with them blocked.
   const listing = shot.checked.find((entry) => new URL(entry.url).pathname === "/listings/123-main-st");
   assert.equal(listing.kind, "detail");
+});
+
+test("nothing we click could advance a registration form", () => {
+  // We do not create accounts and we do not fill forms in, so no label we press
+  // may be a step in one. "Continue" was in this list and is now not.
+  for (const label of [
+    "Continue",
+    "Next",
+    "Submit",
+    "Create an account",
+    "Create Account",
+    "Sign up",
+    "Sign in",
+    "Register",
+    "Log in",
+    "Yes, create my account",
+  ]) {
+    assert.equal(DISMISS_LABELS.test(label), false, `"${label}" must never be clicked`);
+  }
+  // The ones that genuinely close things still work.
+  for (const label of ["Accept all cookies", "Close", "No thanks", "Dismiss", "Not now", "Got it"]) {
+    assert.equal(DISMISS_LABELS.test(label), true, `"${label}" should still be pressed`);
+  }
 });
 
 test("analytics and session recording are blocked, consent tools are not", () => {
