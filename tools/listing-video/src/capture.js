@@ -104,8 +104,22 @@ const OVERLAY_SELECTORS = [
 const OVERLAY_TEXT =
   /(microphone access|microphone is blocked|allow microphone|voice command|voice search|available voice commands|speech recognition|we use cookies|this site uses cookies|accept cookies|cookie policy|your privacy choices|subscribe to our newsletter|sign up for our newsletter|join our mailing list|enable notifications|create your free account|create an account|get instant access|sign up to (see|view|save)|register to (see|view|continue)|log in to (see|view|continue)|save your search|unlock (this|all) (listing|photo|home)|see all photos.{0,20}sign|enter your email|already have an account)/i;
 
+/*
+ * Buttons that make an overlay go away.
+ *
+ * Deliberately does NOT include "continue", "next", "submit" or anything that
+ * could be a step in a registration form. We do not create accounts and we do
+ * not fill forms in, so nothing here may advance one.
+ */
 const DISMISS_LABELS =
-  /^(accept|accept all|accept all cookies|accept cookies|allow all|i agree|agree|understood|got it|ok|okay|continue|close|dismiss|no thanks|no, thanks|not now|maybe later|later|reject all|reject|decline|deny|skip|skip for now|x|\u00d7|\u2715)$/i;
+  /^(accept|accept all|accept all cookies|accept cookies|allow all|i agree|agree|understood|got it|ok|okay|close|dismiss|no thanks|no, thanks|not now|maybe later|later|reject all|reject|decline|deny|skip|skip for now|x|\u00d7|\u2715)$/i;
+
+/**
+ * Copy that means a box is asking for an account. Used to keep our hands off it:
+ * nothing inside one of these is clicked, whatever its label says.
+ */
+const SIGNUP_FORM_TEXT =
+  /(create an account|create your free account|create a free account|register to|please register|sign up|sign in|log in|become a member|already have an account|password)/i;
 
 /* ---------------------------------------------------------------- */
 /* cookie banners                                                   */
@@ -199,9 +213,17 @@ const COOKIE_ACCEPT_LABEL =
  * Returns what it pressed, so the caller can say so in the log and can tell the
  * difference between "there was nothing to accept" and "I pressed it".
  */
-function clickCookieAccept(acceptSelectors, containerSelectors, cookieTextSource, acceptLabelSource) {
+function clickCookieAccept(acceptSelectors, containerSelectors, cookieTextSource, acceptLabelSource, signupTextSource) {
   const cookieText = new RegExp(cookieTextSource, "i");
   const acceptLabel = new RegExp(acceptLabelSource, "i");
+  // A registration form's small print mentions cookies and privacy, so it can
+  // look like a consent banner. Nothing inside one gets clicked.
+  const signupText = new RegExp(signupTextSource, "i");
+  const isSignupForm = (el) => {
+    const text = el.innerText || "";
+    if (!signupText.test(text)) return false;
+    return Boolean(el.querySelector("input[type=email], input[type=password], input[name*=email i], form"));
+  };
 
   const visible = (el) => {
     if (!el) return false;
@@ -265,6 +287,7 @@ function clickCookieAccept(acceptSelectors, containerSelectors, cookieTextSource
   }
 
   for (const container of containers) {
+    if (isSignupForm(container)) continue;
     const buttons = Array.from(container.querySelectorAll("button, a, [role='button'], input[type='submit']"));
     for (const button of buttons) {
       const label = (button.innerText || button.value || button.getAttribute("aria-label") || "").trim();
@@ -405,7 +428,8 @@ async function acceptCookies(page, log) {
           COOKIE_ACCEPT_SELECTORS,
           COOKIE_CONTAINER_SELECTORS,
           COOKIE_TEXT.source,
-          COOKIE_ACCEPT_LABEL.source
+          COOKIE_ACCEPT_LABEL.source,
+          SIGNUP_FORM_TEXT.source
         );
         if (result && result.pressed) break;
       } catch (_) {
@@ -440,13 +464,20 @@ const CAPTURE_BUDGET_MS = 60000;
 const GOTO_TIMEOUT_MS = 12000;
 const IDLE_TIMEOUT_MS = 4000;
 
-// Three candidate URLs, not fourteen. If a listing is not in the first few
-// links, wandering further costs more than it finds.
-const MAX_CANDIDATE_VISITS = 3;
+/*
+ * Exactly one listing detail page per capture.
+ *
+ * IDX sites count how many listings a visitor has looked at and put up a
+ * "create an account to view more listings" wall after a few. We are not going
+ * to trip that counter, and we are certainly not going to get past it, so one
+ * listing is opened and that is the one that gets filmed.
+ */
+const MAX_LISTING_VIEWS = 1;
 // Pages opened purely to get at their links - a listings index, a search page.
-// Counted separately, because spending the candidate budget on navigation left
-// nothing to follow the listing cards with.
+// These are not listing views and do not count against the one above.
 const MAX_NAV_VISITS = 3;
+// A backstop on opening candidates that turn out not to be listings at all.
+const MAX_CANDIDATE_OPENS = 4;
 // Homepage, then their listings page, then the house. Three hops is enough.
 const MAX_CRAWL_DEPTH = 3;
 const VIEWPORT = { width: 1920, height: 1080 };
@@ -493,6 +524,17 @@ function captureError(code, message) {
   error.code = code;
   error.isCaptureRefusal = true;
   return error;
+}
+
+/**
+ * The site wants an account. Bill's words, because this is the one refusal where
+ * the person reading it can fix the problem in five seconds.
+ */
+function registrationWallError() {
+  return captureError(
+    "REGISTRATION_WALL",
+    "This site asks for an account after a few listing views. Paste a listing URL."
+  );
 }
 
 /** One refusal for "something is over the page", naming a cookie bar as such. */
@@ -598,7 +640,20 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
     return Number(style.opacity || 1) > 0.05;
   };
 
-  // 1. Click the obvious "go away" controls.
+  // 1. Click the obvious "go away" controls, but never one that sits inside a
+  //    form asking for an account.
+  const signupText = /(create an account|create your free account|register to|please register|sign up|sign in|log in|become a member|already have an account|password)/i;
+  const inSignupForm = (el) => {
+    let node = el;
+    for (let up = 0; node && up < 6; up += 1) {
+      if (node.querySelector && node.querySelector("input[type=email], input[type=password]")) {
+        if (signupText.test(node.innerText || "")) return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  };
+
   const clickable = document.querySelectorAll(
     "button, a, [role=button], input[type=button], input[type=submit], [aria-label]"
   );
@@ -606,6 +661,7 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
     const label = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
     if (!label || label.length > 30) continue;
     if (!dismissLabel.test(label)) continue;
+    if (inSignupForm(el)) continue;
     try {
       el.click();
     } catch (_) {
@@ -1158,18 +1214,30 @@ async function open(page, url, timeout, log = () => {}) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout });
   const status = response ? response.status() : 0;
   // No point cleaning up a 404; the caller skips it.
-  if (status >= 400) return status;
+  if (status >= 400) return { status, wallText: "" };
   await page.waitForNetworkIdle({ idleTime: 500, timeout: IDLE_TIMEOUT_MS }).catch(() => {});
 
   // Cookies first, and on every page, because the banner has to be gone before
   // anything is judged or photographed.
   await acceptCookies(page, log);
+
+  /*
+   * Read the page's wording BEFORE anything is cleared off it.
+   *
+   * A "register to view more listings" wall is exactly the sort of box the
+   * overlay pass hides, and a wall we have hidden is still a wall. So its text
+   * is taken first and carried through to the verdict.
+   */
+  const wallText = await page
+    .evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 8000))
+    .catch(() => "");
+
   await clearOverlays(page);
   await settle(page);
   // Consent tools and popups often only appear a second or two after load.
   await acceptCookies(page, log);
   await clearOverlays(page);
-  return status;
+  return { status, wallText };
 }
 
 /* ---------------------------------------------------------------- */
@@ -1215,17 +1283,31 @@ async function captureListing({
   // One page at a time. The previous one is closed before the next opens, so
   // the renderer's memory goes back rather than piling up.
   let page = null;
+  let wallText = "";
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
     page = null;
+    wallText = "";
     if (outOfTime()) return 0;
     page = await preparePage(browser, { heavy });
-    return open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
+    const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
+    wallText = opened.wallText || "";
+    return opened.status;
   };
 
+  /*
+   * How many listing DETAIL pages have been opened.
+   *
+   * IDX sites count listing views and put up a "create an account" wall after a
+   * few, so exactly one is opened per capture. Homepages, listings indexes and
+   * search pages are not listing views and do not count.
+   */
+  let listingViews = 0;
+
   const checked = [];
-  const tally = { detail: 0, search: 0, index: 0, marketing: 0, other: 0, withExplorer: 0, blocked: 0 };
+  const tally = { detail: 0, wall: 0, search: 0, index: 0, marketing: 0, other: 0, withExplorer: 0, blocked: 0 };
   const KIND_LABELS = {
+    wall: "a page asking for an account",
     search: "a search page",
     index: "a listings index",
     marketing: "a homepage or landing page",
@@ -1239,6 +1321,9 @@ async function captureListing({
    */
   const assess = async (pageUrl) => {
     const facts = await collectPageFacts(page);
+    // The wording from before the overlays were cleared, so a hidden
+    // registration wall is still recognised as one.
+    if (facts) facts.wallText = wallText;
     const verdict = classifyPage(facts);
     const explorer = await detectExplorer(page);
     const left = await blockers(page);
@@ -1254,7 +1339,13 @@ async function captureListing({
     checked.push(note);
     tally[verdict.kind] = (tally[verdict.kind] || 0) + 1;
     if (verdict.kind === "detail" && explorer.found) tally.withExplorer += 1;
+    // Opening a listing is the thing IDX sites count, so it is counted here too.
+    if (verdict.kind === "detail") listingViews += 1;
 
+    if (verdict.kind === "wall") {
+      log("That page wants an account before it will show more listings - stopping");
+      return { ok: false, reason: "wall", verdict, explorer, left };
+    }
     if (verdict.kind !== "detail") {
       log(`Skipped ${KIND_LABELS[verdict.kind] || "a page that is not a listing"}: ${note.why[0] || verdict.kind}`);
       return { ok: false, reason: verdict.kind, verdict, explorer, left };
@@ -1275,7 +1366,9 @@ async function captureListing({
     }
 
     if (wantExplorer && !explorer.found) {
-      log("That listing does not have School Explorer on it yet - holding it in reserve and looking for one that does");
+      // Only one listing gets opened, so there is no hunting for a better one.
+      // School Explorer is drawn onto this listing for the opening shot instead.
+      log("That listing does not have School Explorer on it yet - using it and adding School Explorer to the shot");
       return { ok: true, preferred: false, verdict, explorer, left, facts };
     }
     if (wantExplorer) log("That listing already has School Explorer on it - that is the one we want");
@@ -1359,21 +1452,20 @@ async function captureListing({
       );
     }
 
-    // A listing that will do, kept in case nothing better turns up. Only ever
-    // set for the upgrade rule, where the ideal page already has School
-    // Explorer on it.
-    let reserve = null;
     const fallbackNote = [
       "This listing does not have School Explorer on it yet, so the opening shot shows School Explorer added to it.",
     ];
 
     const startUrl = page.url();
     const first = await assess(startUrl);
-    if (first.ok && (first.preferred || startedOnListingUrl)) {
+    if (first.reason === "wall") throw registrationWallError();
+
+    // The first usable listing is the one we film. There is no looking around
+    // for a better one, because that would mean opening a second listing.
+    if (first.ok) {
       log("That page is a single listing - using it");
       return await shoot(startUrl, first.verdict, first.preferred ? [] : fallbackNote);
     }
-    if (first.ok) reserve = { url: startUrl, verdict: first.verdict };
 
     // A pasted listing with our own embed on it is a dead end. An embed on a
     // pasted search page is neither here nor there, so that case falls through
@@ -1387,8 +1479,16 @@ async function captureListing({
     if (startedOnListingUrl && first.reason === "blocked") {
       throw blockedError(first.left);
     }
+    // A pasted URL that was a listing but is unusable stops here: opening
+    // another listing is exactly what trips the account wall.
+    if (listingViews >= MAX_LISTING_VIEWS) {
+      throw captureError(
+        "LISTING_NOT_USABLE",
+        `That page is a listing, but it cannot be filmed as it is (${(first.verdict.reasons || []).join("; ") || first.reason}). Paste a different listing URL.`
+      );
+    }
     if (startedOnListingUrl) {
-      log(`That URL is ${first.reason === "search" ? "a search page" : "not a listing detail page"} - looking for a real listing from there`);
+      log(`That URL is ${first.reason === "search" ? "a search page" : "not a listing detail page"} - looking for one of their listings from there`);
     }
 
     /* ---- follow links into an actual listing ---- */
@@ -1435,15 +1535,17 @@ async function captureListing({
     await harvest(1);
 
     const drain = async () => {
-      while (queue.length && visits < MAX_CANDIDATE_VISITS && !outOfTime()) {
+      while (queue.length && visits < MAX_CANDIDATE_OPENS && !outOfTime()) {
+        // One listing view, so once a listing has been opened there is no
+        // second one, whatever came of the first.
+        if (listingViews >= MAX_LISTING_VIEWS) return null;
+
         const candidate = queue.shift();
         if (tried.has(candidate.href)) continue;
         tried.add(candidate.href);
         visits += 1;
         // Keep the progress list moving: a long wait must never look silent.
-        log(
-          `Checking ${new URL(candidate.href).pathname || "/"} (${visits} of ${MAX_CANDIDATE_VISITS}, ${secondsLeft()}s left)`
-        );
+        log(`Checking ${new URL(candidate.href).pathname || "/"} (${secondsLeft()}s left)`);
         let status;
         try {
           status = await visit(candidate.href);
@@ -1451,27 +1553,52 @@ async function captureListing({
           continue;
         }
         if (!status || status >= 400) continue;
+
         const verdict = await assess(candidate.href);
-        if (verdict.ok && verdict.preferred) return { ...verdict, url: candidate.href };
-        if (verdict.ok && !reserve) reserve = { url: candidate.href, verdict: verdict.verdict };
+        if (verdict.reason === "wall") return { wall: true };
+        if (verdict.ok) return { ...verdict, url: candidate.href };
+        // That was a listing, just not one we can use. Stop rather than open
+        // another: this is the counter that puts the account wall up.
+        if (verdict.verdict.kind === "detail") {
+          return { spent: true, verdict: verdict.verdict, reason: verdict.reason, left: verdict.left };
+        }
         // Not a listing, but a listings page links to them.
-        if (!verdict.ok) await harvest(candidate.depth + 1);
+        await harvest(candidate.depth + 1);
       }
       return null;
     };
 
-    let found = await drain();
-    if (found) {
+    /** Turn whatever drain stopped on into either a shot or a refusal. */
+    const settleWith = async (found) => {
+      if (!found) return null;
+      if (found.wall) throw registrationWallError();
+      if (found.spent) {
+        if (found.reason === "explorer") {
+          throw captureError(
+            "ALL_LISTINGS_HAVE_EXPLORER",
+            "The listing found on their site already has School Explorer or Neighborhood Explorer on it, so there is no \u201cbefore\u201d page to film. Paste a listing URL that does not have it yet."
+          );
+        }
+        if (found.reason === "blocked") throw blockedError(found.left || []);
+        throw captureError(
+          "LISTING_NOT_USABLE",
+          "The one listing found on their site cannot be filmed as it is. Paste a listing URL."
+        );
+      }
       log("Found a listing page with nothing in the way");
-      return await shoot(found.url, found.verdict);
-    }
+      return shoot(found.url, found.verdict, found.preferred ? [] : fallbackNote);
+    };
+
+    const shotFromQueue = await settleWith(await drain());
+    if (shotFromQueue) return shotFromQueue;
 
     // Their listings are often only reachable through a listings or search page.
-    // Opening one of those is navigation, not a candidate, so it has its own
+    // Opening one of those is navigation, not a listing view, so it has its own
     // small budget - otherwise the cards on it could never be followed.
     let navVisits = 0;
     for (const indexPath of LISTING_INDEX_PATHS) {
-      if (outOfTime() || navVisits >= MAX_NAV_VISITS || visits >= MAX_CANDIDATE_VISITS) break;
+      if (outOfTime() || navVisits >= MAX_NAV_VISITS) break;
+      if (listingViews >= MAX_LISTING_VIEWS) break;
       const indexUrl = new URL(indexPath, origin).toString();
       if (tried.has(indexUrl)) continue;
       tried.add(indexUrl);
@@ -1486,31 +1613,19 @@ async function captureListing({
       // A site without /listings just 404s; that is not a page we "checked".
       if (!indexStatus || indexStatus >= 400) continue;
       const here = await assess(indexUrl);
-      if (here.ok && here.preferred) {
+      if (here.reason === "wall") throw registrationWallError();
+      if (here.ok) {
         log("Found a listing page with nothing in the way");
-        return await shoot(indexUrl, here.verdict);
+        return await shoot(indexUrl, here.verdict, here.preferred ? [] : fallbackNote);
       }
-      if (here.ok && !reserve) reserve = { url: indexUrl, verdict: here.verdict };
       await harvest(2);
-      found = await drain();
-      if (found) {
-        log("Found a listing page with nothing in the way");
-        return await shoot(found.url, found.verdict);
-      }
-    }
-
-    /* ---- no ideal page, but one we can work with ---- */
-    if (reserve && !outOfTime()) {
-      log("No listing with School Explorer already on it - using the best listing found and adding School Explorer to it");
-      const status = await visit(reserve.url).catch(() => 0);
-      if (status && status < 400) {
-        const again = await assess(reserve.url);
-        if (again.ok) return await shoot(reserve.url, again.verdict, fallbackNote);
-      }
+      const shotFromIndex = await settleWith(await drain());
+      if (shotFromIndex) return shotFromIndex;
     }
 
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
+    if (tally.wall) throw registrationWallError();
     if (outOfTime()) {
       log("Could not find a listing in time");
       throw captureError(
@@ -1555,6 +1670,12 @@ async function captureListing({
         notListings.length ? ` and they were ${notListings.join(", ")}` : ""
       }. Nothing was rendered: a homepage, a city landing page, a market report and a search page are never used as a stand-in. Paste one listing URL - the page for a single house, with its street address, price, beds, baths and photos of that house.`
     );
+  } catch (error) {
+    // A refusal should carry what was looked at, so the job log and anyone
+    // debugging can see how it got there.
+    error.checked = checked;
+    error.tally = tally;
+    throw error;
   } finally {
     await closePage(page);
   }
@@ -1568,9 +1689,11 @@ module.exports = {
   // site was read the way it was.
   collectPageFacts,
   CAPTURE_BUDGET_MS,
-  MAX_CANDIDATE_VISITS,
+  MAX_LISTING_VIEWS,
+  MAX_NAV_VISITS,
   JUNK_HOSTS,
   HEAVY_RESOURCE_TYPES,
+  DISMISS_LABELS,
   OVERLAY_SELECTORS,
   OVERLAY_TEXT,
 };
