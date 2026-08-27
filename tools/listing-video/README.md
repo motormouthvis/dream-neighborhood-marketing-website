@@ -76,11 +76,14 @@ What it does about an Explorer already being on the page depends on the script:
 
 | The script needs | What capture does |
 | --- | --- |
-| a listing with no Explorer on it yet | Skips any listing that already has one. If they all have one, it refuses and says so. |
-| a listing that already has School Explorer | Prefers one that has it. A clean listing is kept in reserve and used if none turns up, and the video says School Explorer was added to it for the opening shot. |
+| a listing with no Explorer on it yet | If the one listing it opens already has one, it refuses and asks for a different listing URL. It does not go looking through more listings. |
+| a listing that already has School Explorer | Uses the one listing it opens. If that listing does not have School Explorer yet, the video says School Explorer was drawn on for the opening shot. To target a listing that really has it, paste its URL. |
 
-The walk is up to three clicks: their site, then a listings or homes page, then
-the house. Links are ranked, so a concrete listing URL like
+Both of those used to look through several listings to find the right one. They
+cannot any more — see [the account wall](#the-account-wall).
+
+The walk is up to three clicks, and ends at the first listing it opens: their
+site, then a listings or homes page, then the house. Links are ranked, so a concrete listing URL like
 `/listings/123-main-st` on a card showing a price, beds and baths and a photo is
 tried before a link to another index. Pages that are not listings still get
 harvested for links, because that is how you get from a homepage to a listing —
@@ -90,11 +93,42 @@ Links are matched on the **path**, never the whole URL. `redwagonteam.com`
 contains "team", and testing the whole URL against the exclusion list threw away
 every link on that site.
 
-**A minute, and three candidates.** The whole search is capped at 60 seconds and
-at most three candidate listing pages, plus a few navigation pages to get at
-their links. When the budget runs out it refuses and asks for a listing URL
-rather than wandering. Progress lines say which page is being checked and how
-long is left, so a wait is never a silent hang.
+**One listing, and a minute.** Exactly **one listing detail page** is opened per
+video. IDX sites count how many listings a visitor has looked at and put up a
+"create an account to view more listings" wall after a few, so this does not go
+poking through three or eight of them. Homepages, listings indexes and search
+pages are not listing views and do not count against that one.
+
+The whole search is capped at 60 seconds. When the budget runs out it refuses and
+asks for a listing URL rather than wandering. Progress lines say which page is
+being checked and how long is left, so a wait is never a silent hang.
+
+If you paste a listing URL, that one page is opened and nothing else: cookies
+accepted, screenshot, done. No other listing links are followed from it.
+
+#### The account wall
+
+Some sites stop showing listings and ask you to register. **We do not get past
+that, and we do not try.** No accounts are created, no registration form is ever
+filled in or submitted, and nothing is clicked that could be a step in one —
+"Continue", "Next", "Submit", "Sign up" and the like are excluded from every
+button this tool presses, and nothing inside a box containing an email or
+password field is touched at all.
+
+When a page asks for an account, capture stops there and says:
+
+> This site asks for an account after a few listing views. Paste a listing URL.
+
+It is spotted by its copy — "create an account", "register to continue",
+"register to view", "sign in to see", "sign up to view more listings", "please
+register", "become a member" and similar. The wording is read **before** the
+overlay pass runs, because a wall that has been hidden is still a wall.
+
+One distinction, because it matters and it is a judgement call: a page that
+really does show the listing, and merely floats a dismissible "create an account"
+promo over it, is treated as a listing and filmed. Pasting a listing URL is the
+way out of a wall, so that has to keep working. A page where the listing is not
+readable is a wall and is refused.
 
 **One page at a time.** Each page is closed before the next is opened, so a
 renderer's memory goes back rather than piling up. Images, fonts, analytics and
