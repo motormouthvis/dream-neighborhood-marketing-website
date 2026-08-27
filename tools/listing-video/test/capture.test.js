@@ -25,8 +25,8 @@ process.env.LISTING_VIDEO_DATA_DIR = dataDir;
 process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const config = require("../src/config");
-const { launch } = require("../src/browser");
-const { captureListing } = require("../src/capture");
+const { launch, closeBrowser } = require("../src/browser");
+const { captureListing, CAPTURE_BUDGET_MS, MAX_CANDIDATE_VISITS, JUNK_HOSTS } = require("../src/capture");
 const { run } = require("../src/exec");
 const fixture = require("./fixture-site");
 
@@ -34,10 +34,11 @@ const noChrome = !config.chromePath;
 const options = noChrome ? { skip: "no Chrome or Chromium on this machine" } : {};
 
 /** Run one capture against a fixture site and hand back what it found. */
-async function capture(routes, { listingUrl = "", explorerRule = "absent" } = {}) {
-  const { server, origin } = await fixture.listen(routes);
+async function capture(routes, { listingUrl = "", explorerRule = "absent", budgetMs } = {}) {
+  const { server, origin, hits } = await fixture.listen(routes);
   const outDir = await fsp.mkdtemp(path.join(dataDir, "shot-"));
   const messages = [];
+  const startedAt = Date.now();
   let browser;
   try {
     browser = await launch();
@@ -48,14 +49,26 @@ async function capture(routes, { listingUrl = "", explorerRule = "absent" } = {}
       outDir,
       log: (message) => messages.push(message),
       explorerRule,
+      ...(budgetMs ? { budgetMs } : {}),
     });
-    return { ...result, origin, messages, error: null };
+    return { ...result, origin, hits, messages, error: null, elapsedMs: Date.now() - startedAt };
   } catch (error) {
-    return { origin, messages, error };
+    return { origin, hits, messages, error, elapsedMs: Date.now() - startedAt };
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    if (browser) await closeBrowser(browser);
     await new Promise((resolve) => server.close(resolve));
   }
+}
+
+/** Average brightness of a strip of the screenshot, 0 (black) to 255 (white). */
+async function stripBrightness(file, crop) {
+  const { stdout } = await run(
+    config.ffmpegPath,
+    ["-v", "error", "-i", file, "-vf", `crop=${crop},scale=1:1`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { encoding: "buffer" }
+  );
+  const pixel = Buffer.from(stdout, "binary");
+  return (pixel[0] + pixel[1] + pixel[2]) / 3;
 }
 
 test("from a marketing homepage, capture walks to the listing and accepts the cookies", options, async () => {
@@ -89,17 +102,6 @@ test("from a marketing homepage, capture walks to the listing and accepts the co
   assert.ok(fs.statSync(shot.screenshot).size > 10000, "the screenshot is not blank");
 });
 
-/** Average brightness of a strip of the screenshot, 0 (black) to 255 (white). */
-async function stripBrightness(file, crop) {
-  const { stdout } = await run(
-    config.ffmpegPath,
-    ["-v", "error", "-i", file, "-vf", `crop=${crop},scale=1:1`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-    { encoding: "buffer" }
-  );
-  const pixel = Buffer.from(stdout, "binary");
-  return (pixel[0] + pixel[1] + pixel[2]) / 3;
-}
-
 test("no cookie banner is anywhere in the finished frame", options, async () => {
   const shot = await capture(fixture.ROUTES);
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");
@@ -110,6 +112,20 @@ test("no cookie banner is anywhere in the finished frame", options, async () => 
   // where the house button goes, so it has to be clear.
   const bottom = await stripBrightness(shot.screenshot, "iw:70:0:ih-70");
   assert.ok(bottom > 170, `the bottom of the frame is dark (${bottom.toFixed(0)}/255), so the cookie bar is still in it`);
+});
+
+test("a sign-up form that appears after the page settles is cleared before the shot", options, async () => {
+  // The listing here throws up "Create Your Free Account" over a dimming
+  // backdrop 1.5s in, and again on scroll. Loading the photos scrolls the page,
+  // so checking for popups only once was not enough.
+  const shot = await capture(fixture.LEAD_CAPTURE, { listingUrl: "/listings/123-main-st" });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, "/listings/123-main-st");
+
+  // The backdrop dims the whole page, so the middle of the frame being bright
+  // is proof neither it nor the form is in the picture.
+  const middle = await stripBrightness(shot.screenshot, "iw/2:ih/3:iw/4:ih/3");
+  assert.ok(middle > 150, `the middle of the frame is dark (${middle.toFixed(0)}/255), so the sign-up form is in it`);
 });
 
 test("a cookie banner that cannot be got rid of is a failed capture, not a bad video", options, async () => {
@@ -157,6 +173,126 @@ test("the upgrade script prefers the listing that already has School Explorer", 
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");
   assert.equal(new URL(shot.pageUrl).pathname, "/listings/88-ocean-view");
   assert.equal(shot.address.street, "88 Ocean View Dr");
+});
+
+/* ---------------------------------------------------------------- */
+/* the budget, and letting go of Chrome                             */
+/* ---------------------------------------------------------------- */
+
+test("the capture budget is a minute, and at most three candidates are opened", () => {
+  assert.equal(CAPTURE_BUDGET_MS, 60000);
+  assert.equal(MAX_CANDIDATE_VISITS, 3);
+});
+
+test("a slow site runs out of budget and is refused, not waited on forever", options, async () => {
+  // Every candidate here takes three seconds, so a four second budget has to
+  // stop the crawl rather than the page count.
+  const shot = await capture(fixture.SLOW_SITE, { budgetMs: 4000 });
+
+  assert.ok(shot.error, "a site that cannot be searched in time has to be refused");
+  assert.equal(shot.error.code, "CAPTURE_TIMED_OUT");
+  assert.match(shot.error.message, /paste one listing url/i);
+
+  // The point of the budget: it gives up in seconds, not the three-plus minutes
+  // that let Chrome grow past a gigabyte.
+  assert.ok(shot.elapsedMs < 30000, `capture took ${Math.round(shot.elapsedMs / 1000)}s, which is not a budget`);
+
+  // And it said so as it went, so the wait is never silent.
+  assert.ok(
+    shot.messages.some((message) => /could not find a listing in time/i.test(message)),
+    `expected the log to say it ran out of time:\n${shot.messages.join("\n")}`
+  );
+});
+
+test("progress keeps moving while it looks", options, async () => {
+  const shot = await capture(fixture.ROUTES);
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+
+  const expected = [/^Opening /i, /looking for one of their listing pages/i, /^Checking /i, /^Filmed /i];
+  for (const pattern of expected) {
+    assert.ok(
+      shot.messages.some((message) => pattern.test(message)),
+      `no progress line matching ${pattern}:\n${shot.messages.join("\n")}`
+    );
+  }
+  // Something to read every few seconds, not one line for the whole minute.
+  assert.ok(shot.messages.length >= 5, `only ${shot.messages.length} progress lines`);
+  assert.ok(shot.tookSeconds <= 60, `capture reported ${shot.tookSeconds}s`);
+});
+
+test("a browser that will not close is killed", async () => {
+  // Chrome that has just run out of memory does not answer close(), and a leaked
+  // one on a small dyno is the next crash.
+  const child = { killed: false, exitCode: null, kill() { child.killed = true; } };
+  const wedged = { close: () => new Promise(() => {}), process: () => child };
+
+  const how = await closeBrowser(wedged, { graceMs: 60 });
+  assert.equal(how, "killed");
+  assert.equal(child.killed, true, "the Chrome process has to actually be killed");
+});
+
+test("closing a real browser leaves no Chrome behind", options, async () => {
+  const browser = await launch();
+  const child = browser.process();
+  assert.ok(child && child.pid, "a real Chrome process");
+
+  const how = await closeBrowser(browser);
+  assert.match(how, /closed|killed/);
+
+  // Nothing answering on that pid any more.
+  let alive = true;
+  for (let attempt = 0; attempt < 40 && alive; attempt += 1) {
+    try {
+      process.kill(child.pid, 0);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } catch (_) {
+      alive = false;
+    }
+  }
+  assert.equal(alive, false, "Chrome is still running after closeBrowser");
+});
+
+test("photos are not downloaded while hunting, only for the shot", options, async () => {
+  const shot = await capture(fixture.ROUTES);
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+
+  // Three pages are opened on the way to the listing, and the listing carries
+  // four photos. With images blocked during the crawl, the only page that pays
+  // for them is the one that gets photographed.
+  const pagesOpened = Object.keys(shot.hits).filter((path) => path !== "/photo.svg").length;
+  assert.ok(pagesOpened >= 3, `expected a crawl, saw ${pagesOpened} pages`);
+
+  const photoHits = shot.hits["/photo.svg"] || 0;
+  assert.ok(photoHits >= 1, "the page being photographed must load its photos");
+  assert.ok(
+    photoHits <= 4,
+    `photos were fetched ${photoHits} times; they should only load for the final screenshot, not on every page`
+  );
+
+  // And the classifier still saw the photos, even with them blocked.
+  const listing = shot.checked.find((entry) => new URL(entry.url).pathname === "/listings/123-main-st");
+  assert.equal(listing.kind, "detail");
+});
+
+test("analytics and session recording are blocked, consent tools are not", () => {
+  for (const host of [
+    "https://www.googletagmanager.com/gtm.js",
+    "https://static.hotjar.com/c/hotjar-1.js",
+    "https://cdn.mouseflow.com/projects/x.js",
+    "https://www.google-analytics.com/analytics.js",
+  ]) {
+    assert.ok(JUNK_HOSTS.test(host), `${host} should be blocked`);
+  }
+  // Blocking these would leave a cookie banner half drawn and unacceptable.
+  for (const host of [
+    "https://cdn.cookielaw.org/scripttemplates/otSDKStub.js",
+    "https://consent.cookiebot.com/uc.js",
+    "https://cmp.osano.com/x/osano.js",
+    "https://cdn.iubenda.com/cs/cs.js",
+    "https://cdn.cookieyes.com/client_data/x/script.js",
+  ]) {
+    assert.equal(JUNK_HOSTS.test(host), false, `${host} must not be blocked`);
+  }
 });
 
 test.after(async () => {

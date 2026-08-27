@@ -15,6 +15,7 @@ const {
   extractAddress,
   looksLikeStreetAddress,
   firstStreetIn,
+  urlNamesTheSameHouse,
 } = require("../src/page-analysis");
 
 /* ---------------------------------------------------------------- */
@@ -304,6 +305,103 @@ test("an office address is not accepted from the page's own structured data", ()
     mainText: "Long Beach Real Estate & Homes For Sale",
   });
   assert.equal(address.street, "", "an agent's office address is not the listing address");
+});
+
+/*
+ * The site-wide business address, and the IDX pages that draw their price and
+ * beds after load. Both from www.redwagonteam.com.
+ */
+
+test("a WordPress site-wide Place is the office, not the listing", () => {
+  // Every SEO plugin emits one of these for the agent's own address, and it is
+  // how "2135 Bellflower Blvd" ended up on a page about 850 Ocean Blvd.
+  const facts = {
+    url: "https://www.redwagonteam.com/condominium/850-ocean-blvd-long-beach-ca-90802/",
+    jsonLd: [
+      JSON.stringify({
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Place",
+            "@id": "https://www.redwagonteam.com/#place",
+            address: { "@type": "PostalAddress", streetAddress: "2135 Bellflower Blvd", addressLocality: "Long Beach" },
+          },
+          { "@type": "WebPage", "@id": "https://www.redwagonteam.com/#webpage" },
+        ],
+      }),
+    ],
+    addressCandidates: [{ text: "850 Ocean Blvd, Long Beach, CA 90802", where: "heading", inFooter: false }],
+    mainText: "850 Ocean Blvd Long Beach CA 90802 The Pacific Building",
+  };
+  const address = extractAddress(facts);
+  assert.equal(address.street, "850 Ocean Blvd", "the page's own heading wins over the site-wide business");
+  assert.equal(address.source, "heading");
+});
+
+test("a URL that names the house counts, so a client-drawn IDX page is not lost", () => {
+  assert.equal(
+    urlNamesTheSameHouse(
+      "https://www.redwagonteam.com/properties/listing/CRMLS/OC26141010/850-E-Ocean-Boulevard-B3-Long-Beach-CA-90802/",
+      "850 E Ocean Boulevard"
+    ),
+    true
+  );
+  // A different house in the path is not agreement.
+  assert.equal(
+    urlNamesTheSameHouse("https://patty.test/properties/listing/123-Main-St/", "456 Oak Avenue"),
+    false
+  );
+  // A landing page cannot have a street address in its path.
+  assert.equal(urlNamesTheSameHouse("https://patty.test/long-beach-real-estate", "123 Main St"), false);
+  assert.equal(urlNamesTheSameHouse("https://patty.test/", "123 Main St"), false);
+  // Nor does a section of the site that merely mentions a street.
+  assert.equal(urlNamesTheSameHouse("https://patty.test/communities/ocean-blvd-condos/", "850 Ocean Blvd"), false);
+});
+
+test("an IDX listing whose price and beds load later is still a listing", () => {
+  // Exactly what ShowcaseIDX looks like when it is read: the heading is the
+  // address, and nothing else has arrived yet. There is a search widget in the
+  // site header, which used to be enough to call it a search page.
+  const verdict = classifyPage({
+    url: "https://www.redwagonteam.com/properties/listing/CRMLS/OC26141010/850-E-Ocean-Boulevard-B3-Long-Beach-CA-90802/",
+    h1s: ["850 E Ocean Boulevard B3 Long Beach, CA 90802", "Mortgage Calculator"],
+    jsonLd: [],
+    addressCandidates: [
+      { text: "850 E Ocean Boulevard B3 Long Beach, CA 90802", where: "heading", inFooter: false },
+    ],
+    mainText: "850 E Ocean Boulevard B3 Long Beach, CA 90802 Mortgage Calculator",
+    specRowText: "",
+    mlsId: "",
+    mainPriceCount: 0,
+    hasBeds: false,
+    hasBaths: false,
+    galleryImageCount: 5,
+    searchInputCount: 4,
+    ctaLabels: [],
+  });
+  assert.equal(verdict.kind, "detail");
+  assert.equal(verdict.address.street, "850 E Ocean Boulevard");
+});
+
+test("a condo building page with a search and many addresses is still refused", () => {
+  // Same site, and its URL has a street slug too, but it is a building page
+  // listing every unit rather than one home.
+  const verdict = classifyPage({
+    url: "https://www.redwagonteam.com/condominium/850-ocean-blvd-long-beach-ca-90802/",
+    h1s: ["850 Ocean Blvd, Long Beach, CA 90802 (Ocean Views)"],
+    jsonLd: [],
+    addressCandidates: [{ text: "850 Ocean Blvd, Long Beach, CA 90802", where: "heading", inFooter: false }],
+    mainText:
+      "850 Ocean Blvd Long Beach CA 90802 The Pacific Building Advanced Search Save Search sort by " +
+      "Units for sale 1000 E Ocean Blvd 1100 E Ocean Blvd 1200 E Ocean Blvd",
+    specRowText: "",
+    mainPriceCount: 4,
+    addressCount: 13,
+    searchInputCount: 5,
+    galleryImageCount: 6,
+    ctaLabels: [],
+  });
+  assert.notEqual(verdict.kind, "detail");
 });
 
 test("market report, blog and contact pages are never listings", () => {

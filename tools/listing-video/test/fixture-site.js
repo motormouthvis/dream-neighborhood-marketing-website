@@ -36,7 +36,9 @@ h1{font-size:34px;margin:0 0 12px}
 .hero .ctas a{background:#1e6fbf;color:#fff;padding:14px 22px;text-decoration:none;font-weight:700}
 .price{font-size:30px;font-weight:800}
 .gallery{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
-.photo{background:#dde2ea;width:320px;height:220px;display:block}
+/* Sized in CSS, so counting the photos on a page still works while images are
+   blocked during the crawl. Real listing sites size their containers too. */
+.photo{background:#dde2ea;width:320px;height:220px;display:block;border:0}
 .card{border:1px solid #ccd;padding:14px;margin:12px 0;max-width:560px}
 .card .thumb{background:#dde2ea;width:220px;height:150px;display:inline-block;vertical-align:middle;margin-right:14px}
 table{border-collapse:collapse}td{padding:4px 14px 4px 0}
@@ -156,7 +158,8 @@ function listing({ address, city, price, beds, baths, sqft, mls, extraHead = "",
        <p class="price">$${price}</p>
        <p>${beds} beds &middot; ${baths} baths &middot; ${sqft} sq ft</p>
        <div class="gallery">
-         <span class="photo"></span><span class="photo"></span><span class="photo"></span><span class="photo"></span>
+         <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+         <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
        </div>
        <h2>Property Details</h2>
        <table>
@@ -249,8 +252,17 @@ const SEARCH = page(
 
 const ABOUT = page("About Fathom Realty", '<div class="wrap"><h1>About us</h1><p>Selling homes since 1998.</p></div>');
 
+// A listing photo. Kept as an SVG so the fixture stays readable, but it is
+// still an image request, so it exercises the blocking during the crawl.
+const PHOTO = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640">
+  <rect width="960" height="640" fill="#b9c7d6"/>
+  <rect x="120" y="300" width="720" height="300" fill="#8ea3b8"/>
+  <polygon points="480,140 900,320 60,320" fill="#6f8399"/>
+</svg>`;
+
 const ROUTES = {
   "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
   "/market-report": MARKET_REPORT,
   "/listings": LISTINGS_INDEX,
   "/listings/123-main-st": MAIN_ST,
@@ -281,6 +293,59 @@ const UNCLOSEABLE_COOKIES = {
   ),
 };
 
+/**
+ * A listing that throws up a lead-capture form a moment after the page settles,
+ * over a dimming backdrop. Real IDX sites do this on a timer or on scroll, and
+ * one got into a finished frame over a genuine listing.
+ */
+const LEAD_CAPTURE = {
+  ...ROUTES,
+  "/listings/123-main-st": MAIN_ST.replace(
+    "</body>",
+    `<style>
+       #lead-backdrop{position:fixed;inset:0;background:rgba(8,10,14,.72);z-index:9500;display:none}
+       #lead-modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:520px;
+         background:#0e1218;color:#fff;border-radius:10px;padding:30px;z-index:9600;text-align:center}
+     </style>
+     <div id="lead-backdrop">
+       <div id="lead-modal">
+         <h2>Create Your Free Account</h2>
+         <p>Get instant access to new inventory and price reductions.</p>
+         <input placeholder="Full Name" /><input placeholder="Email" />
+         <button>Create Account</button>
+         <p>Already have an account? Sign in</p>
+       </div>
+     </div>
+     <script>
+       // On a timer, and again if the page is scrolled, which is exactly what
+       // loading the photos for the screenshot does.
+       function showLead() { document.getElementById('lead-backdrop').style.display = 'block'; }
+       setTimeout(showLead, 1500);
+       window.addEventListener('scroll', showLead);
+     </script></body>`
+  ),
+};
+
+/**
+ * A site where every candidate page is slow, so the capture budget is what stops
+ * it rather than a page count. Values are functions, so the server can delay.
+ */
+const SLOW_SITE = {
+  "/": page(
+    "Slow Realty",
+    `<div class="hero"><h1>Slow Realty Homes For Sale</h1>
+       <div class="ctas"><a href="/listings/slow-one">Search Homes</a></div></div>
+     <div class="wrap">
+       <div class="card"><a href="/listings/slow-one">101 Slow St</a><p>$500,000 &middot; 3 beds &middot; 2 baths</p></div>
+       <div class="card"><a href="/listings/slow-two">202 Slow Ave</a><p>$600,000 &middot; 4 beds &middot; 3 baths</p></div>
+       <div class="card"><a href="/listings/slow-three">303 Slow Rd</a><p>$700,000 &middot; 5 beds &middot; 4 baths</p></div>
+     </div>`
+  ),
+  "/listings/slow-one": { delayMs: 3000, body: page("Slow one", '<div class="wrap"><h1>Coming soon</h1></div>') },
+  "/listings/slow-two": { delayMs: 3000, body: page("Slow two", '<div class="wrap"><h1>Coming soon</h1></div>') },
+  "/listings/slow-three": { delayMs: 3000, body: page("Slow three", '<div class="wrap"><h1>Coming soon</h1></div>') },
+};
+
 /** A site with no listings at all, to check the refusal. */
 const NO_LISTINGS = {
   "/": page(
@@ -291,26 +356,49 @@ const NO_LISTINGS = {
   ),
 };
 
-function createServer(routes = ROUTES) {
+function createServer(routes = ROUTES, hits = {}) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
-    const body = routes[url.pathname];
-    res.writeHead(body ? 200 : 404, { "content-type": "text/html; charset=utf-8" });
-    res.end(body || page("Not found", '<div class="wrap"><h1>Not found</h1></div>', { cookies: false }));
+    hits[url.pathname] = (hits[url.pathname] || 0) + 1;
+
+    const route = routes[url.pathname];
+    // A route can ask to be slow, so the capture budget can be exercised.
+    const body = route && typeof route === "object" ? route.body : route;
+    const delayMs = route && typeof route === "object" ? route.delayMs || 0 : 0;
+    const contentType = (route && typeof route === "object" && route.contentType) || "text/html; charset=utf-8";
+
+    const send = () => {
+      res.writeHead(body ? 200 : 404, { "content-type": contentType });
+      res.end(body || page("Not found", '<div class="wrap"><h1>Not found</h1></div>', { cookies: false }));
+    };
+    if (delayMs) setTimeout(send, delayMs);
+    else send();
   });
 }
 
-/** Start on an ephemeral port and hand back the origin. */
+/**
+ * Start on an ephemeral port and hand back the origin, plus a live count of
+ * requests per path so a test can check what was and was not fetched.
+ */
 function listen(routes = ROUTES) {
   return new Promise((resolve) => {
-    const server = createServer(routes);
+    const hits = {};
+    const server = createServer(routes, hits);
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, origin: `http://127.0.0.1:${server.address().port}` });
+      resolve({ server, hits, origin: `http://127.0.0.1:${server.address().port}` });
     });
   });
 }
 
-module.exports = { ROUTES, NO_LISTINGS, UNCLOSEABLE_COOKIES, createServer, listen };
+module.exports = {
+  ROUTES,
+  NO_LISTINGS,
+  UNCLOSEABLE_COOKIES,
+  LEAD_CAPTURE,
+  SLOW_SITE,
+  createServer,
+  listen,
+};
 
 if (require.main === module) {
   const port = Number(process.argv[2] || 8899);
