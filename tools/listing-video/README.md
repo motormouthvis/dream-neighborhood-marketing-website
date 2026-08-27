@@ -86,6 +86,22 @@ tried before a link to another index. Pages that are not listings still get
 harvested for links, because that is how you get from a homepage to a listing —
 missing that hop is what left capture stuck on the homepage.
 
+Links are matched on the **path**, never the whole URL. `redwagonteam.com`
+contains "team", and testing the whole URL against the exclusion list threw away
+every link on that site.
+
+**A minute, and three candidates.** The whole search is capped at 60 seconds and
+at most three candidate listing pages, plus a few navigation pages to get at
+their links. When the budget runs out it refuses and asks for a listing URL
+rather than wandering. Progress lines say which page is being checked and how
+long is left, so a wait is never a silent hang.
+
+**One page at a time.** Each page is closed before the next is opened, so a
+renderer's memory goes back rather than piling up. Images, fonts, analytics and
+session recording are blocked for the whole search; the one page that actually
+gets photographed is loaded again with everything allowed. See
+[Memory](#memory) for why all of that matters.
+
 If you paste a URL it is used when it is a listing, and crawled from when it is
 not, so pasting a homepage or a search page still gets you a listing.
 
@@ -119,8 +135,9 @@ photographed. In order:
 
 #### Nothing else may cover the page either
 
-A finished video once went out with the site's own "Microphone access denied"
-voice-command panel sitting in the middle of frame. Three things stop that now:
+Finished videos have gone out with the site's own "Microphone access denied"
+voice-command panel in the middle of frame, and with an IDX "Create Your Free
+Account" form over the listing. Three things stop that now:
 
 - Speech recognition and `navigator.mediaDevices` are removed before the page
   loads, so a voice widget never starts and never asks for anything.
@@ -129,9 +146,15 @@ voice-command panel sitting in the middle of frame. Three things stop that now:
 - Whatever is left — cookie bars, chat bubbles, newsletter popups, consent
   dialogs — is dismissed by clicking its own close control and then force-hidden.
 
-The screenshot is only taken once nothing is floating over the middle of the
-page or over the bottom strip where the house button goes. A page that cannot be
-cleared is skipped rather than filmed.
+Anything floating counts: fixed, or absolutely positioned on a high layer, which
+is how a modal inside a dimming backdrop is usually built. Lead-capture forms are
+also matched on their wording.
+
+The check runs **more than once, with a pause between**, because these forms are
+on a timer and scrolling the page to load its photos is exactly what sets them
+off. Anything that reappears is hidden again. The screenshot is only taken once
+nothing is over the middle of the page or over the bottom strip where the house
+button goes, and a page that cannot be cleared is skipped rather than filmed.
 
 #### The address
 
@@ -142,8 +165,10 @@ been wrong twice: once reading "032 SQFT 4497 Chase Drive" — the tail of
 
 So the address is read in this order, and the footer is skipped entirely:
 
-1. the page's own structured data, ignoring any address that belongs to an agent,
-   an office or an organisation
+1. the page's own structured data, but only from a node that says it is a home.
+   Every WordPress SEO plugin emits a site-wide `Place` for the agent's office,
+   and that is where "2135 Bellflower Blvd" came from on a page about
+   850 Ocean Blvd
 2. an element marked up as the listing's address, outside the footer
 3. a heading: `h1`, `og:title`, the page title, then `h2`
 4. the running text, as a last resort — good enough to caption a tooltip, but
@@ -153,6 +178,17 @@ Any candidate is thrown away if it has a leading-zero house number, a thousands
 separator, a price, or a listing-spec word such as SQFT, BEDS or BATHS inside the
 street name. If no address can be read, the tooltip says "explore this
 neighborhood" rather than guessing.
+
+A footer is decided by **where it is**, not only what it is called: a wrapper
+called `page-footer-wrap` around the whole document used to swallow the listing's
+own heading. A named footer only counts when it actually sits low on the page.
+
+One more signal helps with IDX systems that draw the price and beds after load,
+which can make a real listing page look bare at the moment it is read: when the
+**URL and the heading name the same house** — as in
+`/properties/listing/CRMLS/OC26141010/850-E-Ocean-Boulevard-B3-…` — that counts
+as evidence on its own. A homepage or a market report can never have a street
+address in its path, so this cannot let one of those through.
 
 ### 4. The silent video is rendered first
 
@@ -346,11 +382,50 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
 
+### Memory
+
+Headless Chrome is the expensive part of this tool, and on staging it has already
+taken the web process down: a capture climbed to 1012MB on a 512MB dyno, Heroku
+killed it with R14, and because the disk is ephemeral the half-finished job went
+with it.
+
+What keeps it bounded now:
+
+- one browser, one page, and each page closed before the next opens
+- images, fonts, analytics and session recording blocked while searching; only
+  the page being photographed loads them
+- a 1024x768 window while searching, 1920x1080 only for the shot
+- Chrome launched in low-end device mode, with its caches capped, its GPU process
+  folded into the browser, one renderer, and a 128MB cap per V8 heap — so a
+  runaway page fails on its own instead of taking the dyno with it
+- DOM scans capped, since reading `innerText` across every element on a large
+  page forces a layout each time
+- a 60 second budget, and Chrome killed outright if it stops answering
+
+Measured against `www.redwagonteam.com`, the site from the failing run:
+
+| | Before | Now |
+| --- | --- | --- |
+| Peak Chrome (fair share of shared pages) | 1012MB observed on staging | ~550-620MB |
+| Time to finish or refuse | 3+ minutes, then a restart | 15-28 seconds |
+| Chrome left running afterwards | leaked on a wedged browser | none |
+
+**A 512MB dyno is still tight.** Chrome idles at about 150MB before it loads
+anything, and one real estate page in a renderer is another 250-300MB. If staging
+keeps hitting R14, the fix is a bigger dyno — Standard-2X has 1GB — rather than
+more tuning here. What has changed is that the failure is now bounded and
+recoverable instead of a silent hang.
+
 ### Disk
 
 Each job keeps its stills so a re-recorded take can be re-timed against the same
 pictures without opening Chrome again. That is roughly 5-10MB per video on top of
 the mp4. Deleting a video from the Library takes all of it.
+
+The staging disk is **ephemeral**: if the dyno restarts, jobs in progress and
+finished mp4s go with it. The tool copes rather than hanging — a poll that comes
+back 404 now says the server restarted and offers to start again — but a watch
+link for a video made before a restart will 404.
 
 ### Putting it behind the staging site
 
@@ -388,6 +463,7 @@ No `/popup/{address}` routes are added, and no product code is changed.
 server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
 src/default-templates.js     the three shipped scripts
+src/browser.js               Chrome, kept small, and killed for certain
 src/capture.js               opens their site, accepts cookies, walks to a listing
 src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
@@ -401,4 +477,5 @@ views/frame.html             the frame: top caption bar, popup button, SE and NE
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
+test/client.test.js          the front end in Chrome: a lost job must not hang
 ```
