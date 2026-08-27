@@ -1,5 +1,9 @@
 "use strict";
 
+const fs = require("fs");
+const fsp = require("fs/promises");
+const os = require("os");
+const path = require("path");
 const puppeteer = require("puppeteer-core");
 const config = require("./config");
 
@@ -61,21 +65,38 @@ const LOW_MEMORY_ARGS = [
   "--disable-notifications",
 ];
 
+/**
+ * A browser that has never been anywhere.
+ *
+ * IDX sites count listing views in a cookie, and after a few they stop showing
+ * listings and ask you to register. Opening the same listing URL in a clean
+ * profile shows the whole house. So every job gets its own throwaway profile
+ * directory and runs incognito on top of that: nothing is ever carried over from
+ * a previous job, and no view counter starts part-used.
+ *
+ * The directory is removed when the browser is closed.
+ */
 async function launch() {
   if (!config.chromePath) {
     throw new Error(
       "No Chrome found. Install Google Chrome or Chromium, or set LISTING_VIDEO_CHROME to its path."
     );
   }
-  return puppeteer.launch({
+
+  const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "dnlv-chrome-"));
+  const browser = await puppeteer.launch({
     executablePath: config.chromePath,
     headless: true,
-    args: LOW_MEMORY_ARGS,
+    userDataDir,
+    args: [...LOW_MEMORY_ARGS, "--incognito"],
     // Small while crawling. The page that actually gets photographed is resized
     // to 1920x1080 for the shot.
     defaultViewport: { width: 1024, height: 768 },
     protocolTimeout: 30000,
   });
+  // Remembered so closeBrowser can take the profile with it.
+  browser.__lvmUserDataDir = userDataDir;
+  return browser;
 }
 
 /**
@@ -103,6 +124,7 @@ async function closeStartupPage(browser) {
 async function closeBrowser(browser, { graceMs = 5000 } = {}) {
   if (!browser) return "nothing to close";
   const child = typeof browser.process === "function" ? browser.process() : null;
+  const userDataDir = browser.__lvmUserDataDir;
 
   const closed = await Promise.race([
     browser
@@ -112,17 +134,25 @@ async function closeBrowser(browser, { graceMs = 5000 } = {}) {
     new Promise((resolve) => setTimeout(() => resolve(false), graceMs)),
   ]);
 
-  if (closed && (!child || child.killed || child.exitCode !== null)) return "closed";
-
-  if (child) {
+  let how;
+  if (closed && (!child || child.killed || child.exitCode !== null)) {
+    how = "closed";
+  } else if (child) {
     try {
       child.kill("SIGKILL");
     } catch (_) {
       /* already gone */
     }
-    return closed ? "closed, process killed to be sure" : "killed";
+    how = closed ? "closed, process killed to be sure" : "killed";
+  } else {
+    how = closed ? "closed" : "would not close";
   }
-  return closed ? "closed" : "would not close";
+
+  // Take the throwaway profile with it, so no cookies survive to the next job.
+  if (userDataDir) {
+    await fsp.rm(userDataDir, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
+  }
+  return how;
 }
 
 module.exports = { launch, closeBrowser, closeStartupPage, LOW_MEMORY_ARGS };
