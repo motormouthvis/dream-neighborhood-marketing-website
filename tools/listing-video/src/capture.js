@@ -18,6 +18,7 @@
 
 const path = require("path");
 const { classifyPage, extractAddress } = require("./page-analysis");
+const { closeStartupPage } = require("./browser");
 
 const LISTING_HREF_HINTS =
   /(listing|listings|property|properties|homes?-for-sale|for-sale|home-details|homedetail|idx|mls|\/p\/|\/home\/|\/l\/|realestate|real-estate)/i;
@@ -93,9 +94,15 @@ const OVERLAY_SELECTORS = [
   ".osano-cm-window",
 ];
 
-/** Wording that gives an overlay away even when its markup does not. */
+/**
+ * Wording that gives an overlay away even when its markup does not.
+ *
+ * The lead-capture phrases are here because an IDX "Create Your Free Account"
+ * modal appeared over a listing a second after the page settled, and a form for
+ * somebody else's mailing list is not the house we came to film.
+ */
 const OVERLAY_TEXT =
-  /(microphone access|microphone is blocked|allow microphone|voice command|voice search|available voice commands|speech recognition|we use cookies|this site uses cookies|accept cookies|cookie policy|your privacy choices|subscribe to our newsletter|sign up for our newsletter|join our mailing list|enable notifications)/i;
+  /(microphone access|microphone is blocked|allow microphone|voice command|voice search|available voice commands|speech recognition|we use cookies|this site uses cookies|accept cookies|cookie policy|your privacy choices|subscribe to our newsletter|sign up for our newsletter|join our mailing list|enable notifications|create your free account|create an account|get instant access|sign up to (see|view|save)|register to (see|view|continue)|log in to (see|view|continue)|save your search|unlock (this|all) (listing|photo|home)|see all photos.{0,20}sign|enter your email|already have an account)/i;
 
 const DISMISS_LABELS =
   /^(accept|accept all|accept all cookies|accept cookies|allow all|i agree|agree|understood|got it|ok|okay|continue|close|dismiss|no thanks|no, thanks|not now|maybe later|later|reject all|reject|decline|deny|skip|skip for now|x|\u00d7|\u2715)$/i;
@@ -241,7 +248,7 @@ function clickCookieAccept(acceptSelectors, containerSelectors, cookieTextSource
   }
 
   // 3. Anything floating that talks about cookies and has a button in it.
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     if (!visible(el)) continue;
     const style = window.getComputedStyle(el);
     const floats = style.position === "fixed" || style.position === "sticky" || Number(style.zIndex || 0) >= 100;
@@ -321,7 +328,7 @@ function findCookieBanners(containerSelectors, cookieTextSource) {
     for (const el of Array.from(nodes)) if (visible(el)) note(el, "a known cookie banner");
   }
 
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     if (!visible(el)) continue;
     const style = window.getComputedStyle(el);
     const floats = style.position === "fixed" || style.position === "sticky" || Number(style.zIndex || 0) >= 100;
@@ -355,7 +362,7 @@ function hideCookieBanners(containerSelectors, cookieTextSource) {
     }
     for (const el of Array.from(nodes)) kill(el);
   }
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     const style = window.getComputedStyle(el);
     const floats = style.position === "fixed" || style.position === "sticky" || Number(style.zIndex || 0) >= 100;
     if (!floats) continue;
@@ -387,9 +394,9 @@ async function acceptCookies(page, log) {
   let found = await banners();
   if (!found.length) return { accepted: false, hidden: 0, remaining: [] };
 
-  log(`Cookie banner on the page ("${found[0].text || found[0].cls}") - accepting it`);
+  log(`Cookie banner on the page ("${String(found[0].text || found[0].cls).slice(0, 50)}") - accepting it`);
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     // Some consent dialogs live in their own iframe, so every frame gets a go.
     for (const frame of page.frames()) {
       try {
@@ -405,7 +412,7 @@ async function acceptCookies(page, log) {
         /* a cross-origin frame we cannot touch is not fatal */
       }
     }
-    await sleep(700);
+    await sleep(500);
     found = await banners();
     if (!found.length) {
       log("Cookie banner accepted and gone");
@@ -414,7 +421,7 @@ async function acceptCookies(page, log) {
   }
 
   const hidden = await page.evaluate(hideCookieBanners, COOKIE_CONTAINER_SELECTORS, COOKIE_TEXT.source).catch(() => 0);
-  await sleep(400);
+  await sleep(250);
   const remaining = await banners();
   if (remaining.length) {
     log(`That cookie banner will not go away ("${remaining[0].text || remaining[0].cls}")`);
@@ -424,11 +431,43 @@ async function acceptCookies(page, log) {
   return { accepted: false, hidden, remaining };
 }
 
-const MAX_CANDIDATE_VISITS = 14;
+/*
+ * A capture has to finish or fail inside a minute. It used to be allowed four,
+ * and on a 512MB dyno that meant Chrome climbing past a gigabyte and killing
+ * the web process, which took the job folder with it.
+ */
+const CAPTURE_BUDGET_MS = 60000;
+const GOTO_TIMEOUT_MS = 12000;
+const IDLE_TIMEOUT_MS = 4000;
+
+// Three candidate URLs, not fourteen. If a listing is not in the first few
+// links, wandering further costs more than it finds.
+const MAX_CANDIDATE_VISITS = 3;
+// Pages opened purely to get at their links - a listings index, a search page.
+// Counted separately, because spending the candidate budget on navigation left
+// nothing to follow the listing cards with.
+const MAX_NAV_VISITS = 3;
 // Homepage, then their listings page, then the house. Three hops is enough.
 const MAX_CRAWL_DEPTH = 3;
-const OVERALL_BUDGET_MS = 240000;
 const VIEWPORT = { width: 1920, height: 1080 };
+// Smaller while hunting: a 1920x1080 render of every candidate is memory we do
+// not need until the shot itself.
+const CRAWL_VIEWPORT = { width: 1024, height: 768 };
+
+/**
+ * Everything that costs memory and tells us nothing about whether a page is a
+ * listing. Blocked for the whole crawl, then allowed again for the one page that
+ * actually gets photographed.
+ */
+const HEAVY_RESOURCE_TYPES = new Set(["image", "font", "media"]);
+
+/**
+ * Analytics, ads and session recording. Consent tools are deliberately absent
+ * from this list: blocking those would leave a half-drawn cookie banner that
+ * cannot be accepted.
+ */
+const JUNK_HOSTS =
+  /(googletagmanager\.com|google-analytics\.com|googlesyndication\.com|doubleclick\.net|googleadservices\.com|facebook\.net|connect\.facebook|hotjar\.(com|io)|fullstory\.com|mouseflow\.com|clarity\.ms|segment\.(io|com)|mixpanel\.com|amplitude\.com|newrelic\.com|nr-data\.net|bat\.bing\.com|ads-twitter\.com|analytics\.tiktok\.com|criteo\.(com|net)|taboola\.com|outbrain\.com|scorecardresearch\.com|quantserve\.com\/pixel|bing\.com\/bat)/i;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -540,13 +579,17 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
 
   const hide = (el) => {
     if (!el || el === document.body || el === document.documentElement) return;
+    // Hide it again every time. A lead-capture modal that reappears on scroll
+    // has to be hidden again, so this cannot skip anything it has seen before -
+    // the marker only stops it being counted twice.
+    el.style.setProperty("display", "none", "important");
     // Marked with an expando, not an attribute. An earlier version used
     // data-dn-hidden, which the Explorer check then read as a Dream
     // Neighborhood widget on every page we had cleaned.
-    if (el.__lvmHidden) return;
-    el.style.setProperty("display", "none", "important");
-    el.__lvmHidden = true;
-    hidden += 1;
+    if (!el.__lvmHidden) {
+      el.__lvmHidden = true;
+      hidden += 1;
+    }
   };
 
   const visible = (el) => {
@@ -592,7 +635,7 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
   }
 
   // 3. Anything that reads like an overlay, wherever it sits.
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     if (!visible(el)) continue;
     const own = el.innerText || "";
     if (own.length > 1200 || !overlayText.test(own)) continue;
@@ -606,12 +649,17 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
     hide(el);
   }
 
-  // 4. Fixed things over the middle, or over the bottom where our button goes.
+  // 4. Things floating over the middle, or over the bottom where our button
+  //    goes. An absolutely positioned modal inside a fixed backdrop counts too,
+  //    which is how an IDX sign-up form got into a finished frame.
   const centre = { left: vw * 0.18, right: vw * 0.82, top: vh * 0.22, bottom: vh * 0.82 };
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     if (!visible(el)) continue;
     const style = window.getComputedStyle(el);
-    if (style.position !== "fixed") continue;
+    const floats =
+      style.position === "fixed" ||
+      ((style.position === "absolute" || style.position === "sticky") && Number(style.zIndex || 0) >= 100);
+    if (!floats) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width < 30 || rect.height < 30) continue;
     if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue;
@@ -650,9 +698,14 @@ function findBlockers() {
   const vh = window.innerHeight;
   const centre = { left: vw * 0.2, right: vw * 0.8, top: vh * 0.25, bottom: vh * 0.8 };
   const out = [];
-  for (const el of Array.from(document.querySelectorAll("body *"))) {
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 3000)) {
     const style = window.getComputedStyle(el);
-    if (style.position !== "fixed") continue;
+    // Fixed, or a high-layer absolute/sticky box: a modal is often absolutely
+    // positioned inside a fixed backdrop.
+    const floats =
+      style.position === "fixed" ||
+      ((style.position === "absolute" || style.position === "sticky") && Number(style.zIndex || 0) >= 100);
+    if (!floats) continue;
     if (style.display === "none" || style.visibility === "hidden") continue;
     if (Number(style.opacity || 1) <= 0.05) continue;
     const rect = el.getBoundingClientRect();
@@ -673,16 +726,16 @@ function findBlockers() {
 }
 /* eslint-enable no-undef */
 
-async function clearOverlays(page) {
+async function clearOverlays(page, { passes = 2 } = {}) {
   let hidden = 0;
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < passes; pass += 1) {
     try {
       hidden += await page.evaluate(dismissPass, OVERLAY_SELECTORS, OVERLAY_TEXT.source, DISMISS_LABELS.source);
     } catch (_) {
       /* a page that will not run our script is still worth checking */
     }
     await page.keyboard.press("Escape").catch(() => {});
-    await sleep(300);
+    await sleep(150);
   }
   return hidden;
 }
@@ -721,15 +774,29 @@ function readPageFacts() {
    * is kept out of the text everything else is judged on. A listing page's own
    * header is left in, because that is usually where the address lives.
    */
-  const FOOTER_SEL = "footer, [class*='footer'], [id*='footer'], [class*='contact-info'], [class*='office-info']";
+  const FOOTER_SEL =
+    "footer, [class*='footer'], [id*='footer'], [class*='contact-info'], [class*='office-info']";
   const CHROME_SEL =
     "nav, [role='navigation'], script, style, noscript, [class*='cookie'], [id*='cookie'], [class*='consent'], [class*='gdpr'], body > header, #masthead, .site-header, .main-header, .global-header, .topbar, .top-bar";
 
-  const skip = new Set();
-  for (const selector of [FOOTER_SEL, CHROME_SEL]) {
-    for (const el of Array.from(document.querySelectorAll(selector))) skip.add(el);
-  }
-  const inFooter = (el) => Boolean(el.closest(`${FOOTER_SEL}, [class*='contact'], [class*='office']`));
+  /*
+   * A footer is a footer because of where it is, not only what it is called. A
+   * wrapper called "page-footer-wrap" round the whole document used to swallow
+   * the listing's own heading, which then counted as footer text and was thrown
+   * away. So a named footer only counts when it actually sits low on the page.
+   */
+  const docHeight = Math.max(document.documentElement.scrollHeight, window.innerHeight, 1);
+  const isLowOnPage = (el) => {
+    const box = el.getBoundingClientRect();
+    return box.top + window.scrollY > docHeight * 0.55;
+  };
+  const footerNodes = Array.from(document.querySelectorAll(FOOTER_SEL)).filter(
+    (el) => el.tagName === "FOOTER" || isLowOnPage(el)
+  );
+
+  const skip = new Set(footerNodes);
+  for (const el of Array.from(document.querySelectorAll(CHROME_SEL))) skip.add(el);
+  const inFooter = (el) => footerNodes.some((footer) => footer === el || footer.contains(el));
 
   const collect = (root) => {
     const parts = [];
@@ -744,11 +811,7 @@ function readPageFacts() {
     return clean(parts.join(" "));
   };
   const mainText = collect(document.body);
-  const footerText = clean(
-    Array.from(document.querySelectorAll(FOOTER_SEL))
-      .map((el) => el.innerText || "")
-      .join(" ")
-  );
+  const footerText = clean(footerNodes.map((el) => el.innerText || "").join(" "));
 
   /* ---- which address is this page about ---- */
   const addressCandidates = [];
@@ -780,7 +843,12 @@ function readPageFacts() {
   const money = /\$\s?\d{2,3}(?:,\d{3})+/;
   const size = /\b[\d,]{3,}\s*(sq\.?\s?ft|sqft|square feet)\b/i;
   let specRowText = "";
-  for (const el of Array.from(document.querySelectorAll("div, p, ul, ol, section, span, li, tr, dl, h2, h3"))) {
+  // Capped, because reading innerText forces a layout each time and a big page
+  // has tens of thousands of these. The spec row is never near the bottom.
+  const specCandidates = Array.from(
+    document.querySelectorAll("div, p, ul, ol, section, span, li, tr, dl, h2, h3")
+  ).slice(0, 2500);
+  for (const el of specCandidates) {
     if (skip.has(el)) continue;
     const text = clean(el.innerText);
     if (!text || text.length > 220) continue;
@@ -791,7 +859,7 @@ function readPageFacts() {
 
   /* ---- buttons that sell a search rather than showing a house ---- */
   const ctaLabels = [];
-  for (const el of Array.from(document.querySelectorAll("a, button, [role='button']"))) {
+  for (const el of Array.from(document.querySelectorAll("a, button, [role='button']")).slice(0, 400)) {
     if (skip.has(el) || el.closest(CHROME_SEL) || el.closest(FOOTER_SEL)) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width < 80 || rect.height < 24) continue;
@@ -803,7 +871,7 @@ function readPageFacts() {
 
   /* ---- a hero banner with buttons over it ---- */
   let hasHeroBanner = false;
-  for (const el of Array.from(document.querySelectorAll("div, section, header"))) {
+  for (const el of Array.from(document.querySelectorAll("div, section, header")).slice(0, 600)) {
     const rect = el.getBoundingClientRect();
     if (rect.top > 900 || rect.width < window.innerWidth * 0.7 || rect.height < 200) continue;
     const style = window.getComputedStyle(el);
@@ -967,15 +1035,24 @@ async function collectListingLinks(page, origin) {
             continue;
           }
           if (!href.startsWith("http")) continue;
-          if (new URL(href).origin !== originValue) continue;
-          if (block.test(href)) continue;
+          // Their own site, including an IDX subdomain: plenty of agents serve
+          // listings from idx.theirsite.com, and that is still their listing.
+          const base = new URL(originValue).hostname.split(".").slice(-2).join(".");
+          const host = new URL(href).hostname;
+          if (host !== new URL(originValue).hostname && !host.endsWith(`.${base}`) && host !== base) continue;
           if (seen.has(href)) continue;
           seen.add(href);
 
           const label = (anchor.innerText || "").replace(/\s+/g, " ").trim();
-          const path = new URL(href).pathname;
+          const parsed = new URL(href);
+          const path = parsed.pathname;
+          // Match on the path, never the whole URL. "redwagonteam.com" contains
+          // "team", so testing the href threw away every link on that site.
+          const where = `${path}${parsed.search}`;
+          if (block.test(where)) continue;
+
           let score = 0;
-          if (hint.test(href)) score += 3;
+          if (hint.test(where) || /(^|\.)idx\./i.test(host)) score += 3;
           // A concrete listing URL: /listings/123-main-st, /homes/4497-chase-dr.
           if (/\/\d{1,6}-[a-z]/i.test(path)) score += 5;
           if (/\/\d{4,}/.test(path) || /-\d{5,}/.test(path)) score += 2;
@@ -988,7 +1065,7 @@ async function collectListingLinks(page, origin) {
           // Deeper paths are listings; a single segment is usually a landing page.
           if (path.replace(/^\/|\/$/g, "").split("/").length >= 2) score += 1;
           // Another search page, or a page that is never one listing.
-          if (search.test(href)) score -= 6;
+          if (search.test(where)) score -= 6;
           if (/^\/?(about|contact|blog|news|team|agents?|market-report|home-value|sell|buy|privacy|terms|faq)\b/i.test(path)) {
             score -= 8;
           }
@@ -1006,37 +1083,83 @@ async function collectListingLinks(page, origin) {
   }
 }
 
-async function settle(page) {
+async function settle(page, { forShot = false } = {}) {
   try {
-    await page.evaluate(async () => {
+    await page.evaluate(async (nudge) => {
       // Nudge lazy images into loading, then come back to the top for the shot.
-      window.scrollTo(0, 900);
-      await new Promise((r) => setTimeout(r, 500));
+      if (nudge) {
+        window.scrollTo(0, 900);
+        await new Promise((r) => setTimeout(r, 400));
+      }
       window.scrollTo(0, 0);
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 250));
+    }, forShot);
+  } catch (_) {
+    /* ignore */
+  }
+  if (forShot) {
+    try {
+      await page.evaluate(() => document.fonts && document.fonts.ready);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  await sleep(forShot ? 500 : 200);
+}
+
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/**
+ * A fresh page, set up the way capture needs it.
+ *
+ * One page at a time, and a new one for every navigation: closing the old page
+ * hands its renderer memory back, which is the difference between finishing a
+ * capture and being killed for using a gigabyte.
+ */
+async function preparePage(browser, { heavy = false } = {}) {
+  const page = await browser.newPage();
+  await silenceMediaFeatures(page);
+  await page.setUserAgent(USER_AGENT);
+  await page.setViewport({ ...(heavy ? VIEWPORT : CRAWL_VIEWPORT), deviceScaleFactor: 1 });
+  page.setDefaultNavigationTimeout(GOTO_TIMEOUT_MS);
+  page.setDefaultTimeout(GOTO_TIMEOUT_MS);
+  // A renderer that runs out of memory takes its page down with it. That must
+  // be one bad page to skip, not an unhandled rejection that kills the job.
+  page.on("error", () => {});
+
+  if (!heavy) {
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      try {
+        if (HEAVY_RESOURCE_TYPES.has(request.resourceType()) || JUNK_HOSTS.test(request.url())) {
+          request.abort();
+        } else {
+          request.continue();
+        }
+      } catch (_) {
+        /* the request was already handled */
+      }
     });
-  } catch (_) {
-    /* ignore */
   }
-  try {
-    await page.evaluate(() => document.fonts && document.fonts.ready);
-  } catch (_) {
-    /* ignore */
-  }
-  await sleep(600);
+  return page;
+}
+
+async function closePage(page) {
+  if (!page) return;
+  await page.close({ runBeforeUnload: false }).catch(() => {});
 }
 
 /**
- * Load a page and get it presentable: overlays gone, lazy images in, scrolled
- * back to the top. Overlays are cleared twice because plenty of them only
- * appear a second or two after load.
+ * Load a page and get it presentable: cookie banner accepted, overlays gone,
+ * scrolled back to the top.
  */
 async function open(page, url, timeout, log = () => {}) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout });
   const status = response ? response.status() : 0;
   // No point cleaning up a 404; the caller skips it.
   if (status >= 400) return status;
-  await page.waitForNetworkIdle({ idleTime: 700, timeout: 12000 }).catch(() => {});
+  await page.waitForNetworkIdle({ idleTime: 500, timeout: IDLE_TIMEOUT_MS }).catch(() => {});
 
   // Cookies first, and on every page, because the banner has to be gone before
   // anything is judged or photographed.
@@ -1069,20 +1192,36 @@ async function open(page, url, timeout, log = () => {}) {
  * Throws a refusal (error.isCaptureRefusal) when there is nothing usable, so
  * the job can tell the user what to do next instead of shipping a search page.
  */
-async function captureListing({ browser, url, listingUrl, outDir, log, explorerRule = "absent" }) {
+async function captureListing({
+  browser,
+  url,
+  listingUrl,
+  outDir,
+  log,
+  explorerRule = "absent",
+  budgetMs = CAPTURE_BUDGET_MS,
+}) {
   const wantExplorer = explorerRule === "prefer-present";
   const home = normalizeUrl(url);
   const origin = new URL(home).origin;
   const start = listingUrl ? normalizeUrl(listingUrl) : home;
-  const deadline = Date.now() + OVERALL_BUDGET_MS;
+  const startedAt = Date.now();
+  const deadline = startedAt + budgetMs;
   const outOfTime = () => Date.now() > deadline;
+  const secondsLeft = () => Math.max(0, Math.round((deadline - Date.now()) / 1000));
 
-  const page = await browser.newPage();
-  await silenceMediaFeatures(page);
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-  );
-  await page.setViewport({ ...VIEWPORT, deviceScaleFactor: 1 });
+  await closeStartupPage(browser);
+
+  // One page at a time. The previous one is closed before the next opens, so
+  // the renderer's memory goes back rather than piling up.
+  let page = null;
+  const visit = async (target, { heavy = false } = {}) => {
+    await closePage(page);
+    page = null;
+    if (outOfTime()) return 0;
+    page = await preparePage(browser, { heavy });
+    return open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
+  };
 
   const checked = [];
   const tally = { detail: 0, search: 0, index: 0, marketing: 0, other: 0, withExplorer: 0, blocked: 0 };
@@ -1143,16 +1282,45 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
     return { ok: true, preferred: true, verdict, explorer, left, facts };
   };
 
-  const shoot = async (verdict, notes) => {
-    // Last look before the shutter: a cookie bar or a popup in the frame is a
-    // failed capture, so try once more to clear it and refuse if it survives.
-    let left = await blockers(page);
-    if (left.length) {
-      await acceptCookies(page, log);
-      await clearOverlays(page);
-      left = await blockers(page);
-      if (left.length) throw blockedError(left);
+  /**
+   * Photograph the page we settled on.
+   *
+   * The crawl runs with images, fonts and analytics blocked, which is most of
+   * the memory saving, so the one page that gets filmed is loaded again with
+   * everything allowed and at full size. That reload happens once per capture.
+   */
+  const shoot = async (target, verdict, notes) => {
+    log("Loading the listing with its photos");
+    const status = await visit(target, { heavy: true }).catch(() => 0);
+    if (!status || status >= 400) {
+      throw captureError(
+        "LISTING_URL_UNREACHABLE",
+        `That listing page stopped answering while it was being photographed. Try again, or paste a listing URL.`
+      );
     }
+    await settle(page, { forShot: true });
+
+    /*
+     * Last look before the shutter, twice, with a pause between.
+     *
+     * Lead-capture modals are on a timer, and scrolling the page to load its
+     * photos is exactly the sort of thing that triggers them. Checking once
+     * straight after settling let an IDX "Create Your Free Account" form into a
+     * finished frame, so this waits for the late arrivals and then insists.
+     */
+    for (let look = 0; look < 3; look += 1) {
+      const left = await blockers(page);
+      if (!left.length && look > 0) break;
+      if (left.length) {
+        log(`Clearing ${left[0].cookie ? "a cookie banner" : "a popup"} over the listing`);
+        await acceptCookies(page, log);
+        await clearOverlays(page);
+      }
+      await sleep(900);
+    }
+
+    const left = await blockers(page);
+    if (left.length) throw blockedError(left);
 
     const address = verdict.address && verdict.address.street ? verdict.address : extractAddress(null);
     const shotPath = path.join(outDir, "site.png");
@@ -1165,6 +1333,7 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
       checked,
       tally,
       notes: notes || [],
+      tookSeconds: Math.round((Date.now() - startedAt) / 1000),
     };
   };
 
@@ -1174,7 +1343,7 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
     log(startedOnListingUrl ? `Opening the listing page you gave me` : `Opening ${new URL(home).hostname}`);
     let startStatus;
     try {
-      startStatus = await open(page, start, 45000, log);
+      startStatus = await visit(start);
     } catch (error) {
       throw captureError(
         startedOnListingUrl ? "LISTING_URL_UNREACHABLE" : "SITE_UNREACHABLE",
@@ -1198,12 +1367,13 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
       "This listing does not have School Explorer on it yet, so the opening shot shows School Explorer added to it.",
     ];
 
-    const first = await assess(page.url());
+    const startUrl = page.url();
+    const first = await assess(startUrl);
     if (first.ok && (first.preferred || startedOnListingUrl)) {
       log("That page is a single listing - using it");
-      return await shoot(first.verdict, first.preferred ? [] : fallbackNote);
+      return await shoot(startUrl, first.verdict, first.preferred ? [] : fallbackNote);
     }
-    if (first.ok) reserve = { url: page.url(), verdict: first.verdict };
+    if (first.ok) reserve = { url: startUrl, verdict: first.verdict };
 
     // A pasted listing with our own embed on it is a dead end. An embed on a
     // pasted search page is neither here nor there, so that case falls through
@@ -1222,8 +1392,8 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
     }
 
     /* ---- follow links into an actual listing ---- */
-    log("Looking for one of their listing pages");
-    const tried = new Set([start, page.url()]);
+    log(`Looking for one of their listing pages (${secondsLeft()}s left to find one)`);
+    const tried = new Set([start, startUrl]);
     const queue = [];
     let visits = 0;
 
@@ -1233,8 +1403,25 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
      * that are not listings themselves still get harvested for links. Missing
      * that second hop is what left capture stuck on the homepage.
      */
+    /** IDX cards are often drawn after load, so give them a moment to appear. */
+    const waitForCards = async (ms) => {
+      if (outOfTime()) return;
+      try {
+        await page.waitForFunction(
+          () =>
+            Array.from(document.querySelectorAll("a[href]")).some((anchor) =>
+              /(listing|property|home-detail|homedetail|\/homes?\/|\/p\/|\/l\/|mls)/i.test(anchor.getAttribute("href") || "")
+            ),
+          { timeout: Math.min(ms, Math.max(0, deadline - Date.now())), polling: 250 }
+        );
+      } catch (_) {
+        /* no cards turned up; carry on with whatever links there are */
+      }
+    };
+
     const harvest = async (depth) => {
       if (depth > MAX_CRAWL_DEPTH) return;
+      await waitForCards(2500);
       const found = await collectListingLinks(page, origin);
       for (const entry of found) {
         if (tried.has(entry.href) || queue.some((queued) => queued.href === entry.href)) continue;
@@ -1253,15 +1440,19 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
         if (tried.has(candidate.href)) continue;
         tried.add(candidate.href);
         visits += 1;
+        // Keep the progress list moving: a long wait must never look silent.
+        log(
+          `Checking ${new URL(candidate.href).pathname || "/"} (${visits} of ${MAX_CANDIDATE_VISITS}, ${secondsLeft()}s left)`
+        );
         let status;
         try {
-          status = await open(page, candidate.href, 35000, log);
+          status = await visit(candidate.href);
         } catch (_) {
           continue;
         }
-        if (status >= 400) continue;
+        if (!status || status >= 400) continue;
         const verdict = await assess(candidate.href);
-        if (verdict.ok && verdict.preferred) return verdict;
+        if (verdict.ok && verdict.preferred) return { ...verdict, url: candidate.href };
         if (verdict.ok && !reserve) reserve = { url: candidate.href, verdict: verdict.verdict };
         // Not a listing, but a listings page links to them.
         if (!verdict.ok) await harvest(candidate.depth + 1);
@@ -1272,50 +1463,63 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
     let found = await drain();
     if (found) {
       log("Found a listing page with nothing in the way");
-      return await shoot(found.verdict);
+      return await shoot(found.url, found.verdict);
     }
 
-    // Their listings are probably one click deeper than the entry page.
+    // Their listings are often only reachable through a listings or search page.
+    // Opening one of those is navigation, not a candidate, so it has its own
+    // small budget - otherwise the cards on it could never be followed.
+    let navVisits = 0;
     for (const indexPath of LISTING_INDEX_PATHS) {
-      if (outOfTime() || visits >= MAX_CANDIDATE_VISITS) break;
+      if (outOfTime() || navVisits >= MAX_NAV_VISITS || visits >= MAX_CANDIDATE_VISITS) break;
       const indexUrl = new URL(indexPath, origin).toString();
       if (tried.has(indexUrl)) continue;
       tried.add(indexUrl);
+      navVisits += 1;
+      log(`Trying ${indexPath} (${secondsLeft()}s left)`);
       let indexStatus;
       try {
-        indexStatus = await open(page, indexUrl, 30000, log);
+        indexStatus = await visit(indexUrl);
       } catch (_) {
         continue;
       }
       // A site without /listings just 404s; that is not a page we "checked".
-      if (indexStatus >= 400) continue;
-      log(`Checking ${indexPath}`);
+      if (!indexStatus || indexStatus >= 400) continue;
       const here = await assess(indexUrl);
       if (here.ok && here.preferred) {
         log("Found a listing page with nothing in the way");
-        return await shoot(here.verdict);
+        return await shoot(indexUrl, here.verdict);
       }
       if (here.ok && !reserve) reserve = { url: indexUrl, verdict: here.verdict };
       await harvest(2);
       found = await drain();
       if (found) {
         log("Found a listing page with nothing in the way");
-        return await shoot(found.verdict);
+        return await shoot(found.url, found.verdict);
       }
     }
 
     /* ---- no ideal page, but one we can work with ---- */
-    if (reserve) {
+    if (reserve && !outOfTime()) {
       log("No listing with School Explorer already on it - using the best listing found and adding School Explorer to it");
-      const status = await open(page, reserve.url, 35000, log).catch(() => 0);
+      const status = await visit(reserve.url).catch(() => 0);
       if (status && status < 400) {
         const again = await assess(reserve.url);
-        if (again.ok) return await shoot(again.verdict, fallbackNote);
+        if (again.ok) return await shoot(reserve.url, again.verdict, fallbackNote);
       }
     }
 
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
+    if (outOfTime()) {
+      log("Could not find a listing in time");
+      throw captureError(
+        "CAPTURE_TIMED_OUT",
+        `Their site took longer than ${Math.round(budgetMs / 1000)} seconds to search, so nothing was rendered. ${
+          checked.length
+        } page${checked.length === 1 ? "" : "s"} were checked and none was a single listing. Paste one listing URL and it will go straight there.`
+      );
+    }
     if (!wantExplorer && tally.withExplorer > 0 && tally.detail === tally.withExplorer) {
       throw captureError(
         "ALL_LISTINGS_HAVE_EXPLORER",
@@ -1338,6 +1542,7 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
       );
     }
 
+    log("Could not find a listing on their site");
     const notListings = [];
     if (tally.marketing) notListings.push(`${tally.marketing} homepage or landing page${tally.marketing === 1 ? "" : "s"}`);
     if (tally.search) notListings.push(`${tally.search} search or map page${tally.search === 1 ? "" : "s"}`);
@@ -1351,7 +1556,7 @@ async function captureListing({ browser, url, listingUrl, outDir, log, explorerR
       }. Nothing was rendered: a homepage, a city landing page, a market report and a search page are never used as a stand-in. Paste one listing URL - the page for a single house, with its street address, price, beds, baths and photos of that house.`
     );
   } finally {
-    await page.close().catch(() => {});
+    await closePage(page);
   }
 }
 
@@ -1359,6 +1564,13 @@ module.exports = {
   captureListing,
   normalizeUrl,
   detectExplorer,
+  // Exposed so a page can be inspected on its own while working out why a real
+  // site was read the way it was.
+  collectPageFacts,
+  CAPTURE_BUDGET_MS,
+  MAX_CANDIDATE_VISITS,
+  JUNK_HOSTS,
+  HEAVY_RESOURCE_TYPES,
   OVERLAY_SELECTORS,
   OVERLAY_TEXT,
 };

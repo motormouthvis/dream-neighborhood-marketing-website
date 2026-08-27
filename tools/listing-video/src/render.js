@@ -3,12 +3,44 @@
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
-const { launch } = require("./browser");
-const { captureListing } = require("./capture");
+const { launch, closeBrowser } = require("./browser");
+const { captureListing, CAPTURE_BUDGET_MS } = require("./capture");
 const { renderFrames } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
 const { buildSilentVideo, buildVideo, buildPoster } = require("./video");
 const store = require("./store");
+
+/**
+ * Run something with a hard stop.
+ *
+ * Capture polices its own budget, but a wedged Chrome can stop answering
+ * altogether, and on a 512MB dyno the next thing that happens is the whole web
+ * process being killed for memory. So there is an outer deadline that does not
+ * depend on Chrome replying, and it takes the browser down with it.
+ */
+async function withDeadline(work, ms, onTimeout) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(async () => {
+      try {
+        if (onTimeout) await onTimeout();
+      } catch (_) {
+        /* the kill is best effort */
+      }
+      const error = new Error(
+        `This took longer than ${Math.round(ms / 1000)} seconds and was stopped. Try again, and paste a listing URL so there is less to search.`
+      );
+      error.code = "CAPTURE_TIMED_OUT";
+      error.isCaptureRefusal = true;
+      reject(error);
+    }, ms);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Phase one: the picture, silent.
@@ -34,16 +66,27 @@ async function renderSilent(job) {
     await fsp.mkdir(workDir, { recursive: true });
     browser = await launch();
 
-    const capture = await captureListing({
-      browser,
-      url: job.input.websiteUrl,
-      listingUrl: job.input.listingUrl || "",
-      outDir: workDir,
-      log,
-      // The upgrade script wants a listing that already has School Explorer.
-      // Everything else wants one that has neither Explorer on it yet.
-      explorerRule: (job.template && job.template.listingExplorer) || "absent",
-    });
+    const capture = await withDeadline(
+      captureListing({
+        browser,
+        url: job.input.websiteUrl,
+        listingUrl: job.input.listingUrl || "",
+        outDir: workDir,
+        log,
+        // The upgrade script wants a listing that already has School Explorer.
+        // Everything else wants one that has neither Explorer on it yet.
+        explorerRule: (job.template && job.template.listingExplorer) || "absent",
+      }),
+      // Its own budget plus a little, so this only fires when capture is wedged
+      // rather than merely slow.
+      CAPTURE_BUDGET_MS + 20000,
+      () => {
+        // A browser that is stuck, or has just run out of memory, will not
+        // answer close(), so it gets killed.
+        log("Their site took too long - stopping the browser");
+        return closeBrowser(browser, { graceMs: 2000 });
+      }
+    );
 
     log("Drawing the scenes");
     const frames = await renderFrames({
@@ -87,7 +130,11 @@ async function renderSilent(job) {
     job.retryable = Boolean(error.isCaptureRefusal);
     log(`Stopped: ${job.error}`);
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    // Always, on every path: a leaked Chrome on a small dyno is the next crash.
+    if (browser) {
+      const how = await closeBrowser(browser).catch(() => "would not close");
+      if (how !== "closed") log(`Browser ${how}`);
+    }
     await store.persist(job);
   }
 
