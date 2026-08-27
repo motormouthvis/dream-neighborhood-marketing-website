@@ -17,7 +17,7 @@
  */
 
 const path = require("path");
-const { classifyPage, extractAddress } = require("./page-analysis");
+const { classifyPage, extractAddress, REGISTRATION_GATE_RE } = require("./page-analysis");
 const { closeStartupPage } = require("./browser");
 
 const LISTING_HREF_HINTS =
@@ -815,6 +815,79 @@ async function blockers(page) {
 /* ---------------------------------------------------------------- */
 
 /* eslint-disable no-undef */
+/**
+ * Is the site gating this listing behind an account? Runs in the page, before
+ * anything has been cleared off it, because the overlay pass would hide the very
+ * thing we are looking for.
+ *
+ * Two shapes count:
+ *   blocking  - a box carrying gate wording, with a way to register in it, that
+ *               covers a good part of the page or sits over the middle of it
+ *   wholePage - the page itself is the registration form, with no listing on it
+ *
+ * An optional "Sign In" link in a header matches neither, which is the point:
+ * the same listing URL in a clean profile shows the whole house with nothing but
+ * that link, so it must never be mistaken for a locked door.
+ */
+function readRegistrationGate(gateSource) {
+  const gate = new RegExp(gateSource, "i");
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const centre = { left: vw * 0.25, right: vw * 0.75, top: vh * 0.2, bottom: vh * 0.8 };
+
+  const canRegister = (el) =>
+    Boolean(
+      el.querySelector("input[type=password], input[type=email], input[name*='email' i]") ||
+        Array.from(el.querySelectorAll("button, a, input[type=submit]")).some((control) =>
+          /register|create account|create an account|sign up|join now/i.test(
+            control.innerText || control.value || ""
+          )
+        )
+    );
+
+  let blocking = null;
+  for (const el of Array.from(document.querySelectorAll("body *")).slice(0, 4000)) {
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") continue;
+    if (Number(style.opacity || 1) <= 0.05) continue;
+    const floats =
+      style.position === "fixed" ||
+      ((style.position === "absolute" || style.position === "sticky") && Number(style.zIndex || 0) >= 100);
+    if (!floats) continue;
+
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (!text || text.length > 1500 || !gate.test(text)) continue;
+    if (!canRegister(el)) continue;
+
+    const rect = el.getBoundingClientRect();
+    const coverage = (rect.width * rect.height) / (vw * vh);
+    const overCentre =
+      rect.right > centre.left && rect.left < centre.right && rect.bottom > centre.top && rect.top < centre.bottom;
+    if (coverage < 0.15 && !overCentre) continue;
+
+    blocking = { text: text.slice(0, 120), coverage: Math.round(coverage * 100) };
+    break;
+  }
+
+  // The page itself is the gate: its heading asks you to register, there is
+  // somewhere to type a password, and there is no house on it.
+  const body = (document.body.innerText || "").replace(/\s+/g, " ");
+  const heading = `${document.title || ""} ${Array.from(document.querySelectorAll("h1, h2"))
+    .slice(0, 3)
+    .map((el) => el.innerText || "")
+    .join(" ")}`;
+  const hasPrice = /\$\s?\d{2,3}(?:,\d{3})+/.test(body);
+  const wholePage =
+    gate.test(heading) && Boolean(document.querySelector("input[type=password], input[type=email]")) && !hasPrice;
+
+  return {
+    blocking: blocking ? true : false,
+    wholePage,
+    text: blocking ? blocking.text : wholePage ? heading.replace(/\s+/g, " ").trim().slice(0, 120) : "",
+    coverage: blocking ? blocking.coverage : 0,
+  };
+}
+
 function readPageFacts() {
   const attr = (selector, name) => {
     const el = document.querySelector(selector);
@@ -1214,7 +1287,7 @@ async function open(page, url, timeout, log = () => {}) {
   const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout });
   const status = response ? response.status() : 0;
   // No point cleaning up a 404; the caller skips it.
-  if (status >= 400) return { status, wallText: "" };
+  if (status >= 400) return { status, registrationGate: null };
   await page.waitForNetworkIdle({ idleTime: 500, timeout: IDLE_TIMEOUT_MS }).catch(() => {});
 
   // Cookies first, and on every page, because the banner has to be gone before
@@ -1222,22 +1295,24 @@ async function open(page, url, timeout, log = () => {}) {
   await acceptCookies(page, log);
 
   /*
-   * Read the page's wording BEFORE anything is cleared off it.
+   * Look for a registration gate BEFORE anything is cleared off the page.
    *
-   * A "register to view more listings" wall is exactly the sort of box the
-   * overlay pass hides, and a wall we have hidden is still a wall. So its text
-   * is taken first and carried through to the verdict.
+   * A "register to view this listing" box is exactly the sort of thing the
+   * overlay pass hides, and a gate we have hidden is still a gate.
    */
-  const wallText = await page
-    .evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 8000))
-    .catch(() => "");
+  let registrationGate = { blocking: false, wholePage: false, text: "" };
+  try {
+    registrationGate = await page.evaluate(readRegistrationGate, REGISTRATION_GATE_RE.source);
+  } catch (_) {
+    /* a page that will not run our script gets the benefit of the doubt */
+  }
 
   await clearOverlays(page);
   await settle(page);
   // Consent tools and popups often only appear a second or two after load.
   await acceptCookies(page, log);
   await clearOverlays(page);
-  return { status, wallText };
+  return { status, registrationGate };
 }
 
 /* ---------------------------------------------------------------- */
@@ -1283,15 +1358,15 @@ async function captureListing({
   // One page at a time. The previous one is closed before the next opens, so
   // the renderer's memory goes back rather than piling up.
   let page = null;
-  let wallText = "";
+  let registrationGate = null;
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
     page = null;
-    wallText = "";
+    registrationGate = null;
     if (outOfTime()) return 0;
     page = await preparePage(browser, { heavy });
     const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
-    wallText = opened.wallText || "";
+    registrationGate = opened.registrationGate || null;
     return opened.status;
   };
 
@@ -1321,9 +1396,8 @@ async function captureListing({
    */
   const assess = async (pageUrl) => {
     const facts = await collectPageFacts(page);
-    // The wording from before the overlays were cleared, so a hidden
-    // registration wall is still recognised as one.
-    if (facts) facts.wallText = wallText;
+    // Spotted before the overlays were cleared, so a hidden gate still counts.
+    if (facts) facts.registrationGate = registrationGate;
     const verdict = classifyPage(facts);
     const explorer = await detectExplorer(page);
     const left = await blockers(page);
@@ -1343,7 +1417,7 @@ async function captureListing({
     if (verdict.kind === "detail") listingViews += 1;
 
     if (verdict.kind === "wall") {
-      log("That page wants an account before it will show more listings - stopping");
+      log(`That page will not show the listing without an account (${verdict.reasons[0]}) - stopping`);
       return { ok: false, reason: "wall", verdict, explorer, left };
     }
     if (verdict.kind !== "detail") {

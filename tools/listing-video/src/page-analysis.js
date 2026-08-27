@@ -405,23 +405,34 @@ function countDetailLabels(text) {
 }
 
 /**
- * Copy that means the site wants an account before it will show any more
- * listings. IDX sites put this up after a handful of views.
+ * Copy that means the site will not show the listing without an account.
  *
- * We do not get past this, and we do not try: no accounts, no forms, no carrying
- * on to the next listing. Seeing it is a reason to stop and ask for a listing
- * URL instead.
+ * This is the narrow list on purpose. An earlier version also treated "create an
+ * account" as a wall, and that is marketing on most IDX sites rather than a gate:
+ * opening the same listing URL in a clean profile shows the whole house with
+ * nothing but an optional "Sign In" link in the header. So these are only the
+ * phrases that say you must register to see THIS, and a link in a header can
+ * never match one.
+ *
+ * We do not get past a real gate, and we do not try: no accounts, no forms, no
+ * carrying on to the next listing.
  */
-const REGISTRATION_WALL_RE =
-  /(create an account|create your free account|create a free account|register to continue|register to view|register to see|register for free|please register|registration is required|sign in to see|sign in to view|sign in to continue|sign up to see|sign up to view|sign up to continue|sign up for free to|log in to see|log in to view|log in to continue|become a member|membership is required|view more listings|see more listings|more photos are available|unlock this listing|unlock all photos|free account to view|account is required)/i;
+const REGISTRATION_GATE_RE =
+  /(register to continue|register to view|register to see|registration is required|please register|you must register|sign in to see|sign in to view|sign in to continue|sign up to see|sign up to view|sign up to continue|log in to see|log in to view|log in to continue|become a member|membership is required|free account to view|account is required to view|unlock this listing|you have viewed \d+ of \d+)/i;
 
-/** Is the site asking for an account before it will show the listing? */
+/**
+ * Is the site actually gating the listing?
+ *
+ * Structure, not just words. It counts when a box carrying gate wording covers
+ * the page, or when the page itself is the gate and there is no listing on it.
+ * Wording alone anywhere in the body does not, because a footer link or a
+ * marketing promo is not a locked door.
+ */
 function looksLikeRegistrationWall(facts) {
   if (!facts) return false;
-  // Read the wording the page had before anything was cleared off it, since a
-  // wall that has been hidden is still a wall.
-  const text = `${facts.wallText || ""} ${facts.mainText || facts.bodyText || ""}`;
-  return REGISTRATION_WALL_RE.test(text);
+  const gate = facts.registrationGate;
+  if (!gate) return false;
+  return Boolean(gate.blocking || gate.wholePage);
 }
 
 // A path segment that says "this is one property", not a section of the site.
@@ -527,19 +538,23 @@ function classifyPage(facts) {
   }
 
   /*
-   * A registration wall.
+   * A registration gate, checked before search and marketing because "they want
+   * an account" is the useful thing to say.
    *
-   * Checked before search and marketing, because "they want an account" is the
-   * useful thing to say. But a page that IS a readable listing is not a wall:
-   * plenty of IDX sites float a dismissible "create an account" promo over a
-   * fully rendered listing, and Bill's own way out of a wall is to paste a
-   * listing URL, so that has to keep working.
+   * A box covering the page is a gate however readable the listing behind it is:
+   * that is a locked door and we do not go through it. A gate that is the whole
+   * page is one too. Wording on its own is not - an optional "Sign In" in a
+   * header, or a "create an account" marketing promo, is not a locked door.
    */
-  const readableListing = address.isSubject && (markers.length >= 2 || urlNamesHouse);
-  if (looksLikeRegistrationWall(facts) && !readableListing) {
+  if (looksLikeRegistrationWall(facts)) {
+    const gate = facts.registrationGate || {};
     return {
       kind: "wall",
-      reasons: ["the site wants an account before it will show more listings"],
+      reasons: [
+        gate.blocking
+          ? "a register-to-view box is covering the page"
+          : "this page is a registration form, not a listing",
+      ],
       address,
     };
   }
@@ -599,5 +614,5 @@ module.exports = {
   countDetailLabels,
   urlNamesTheSameHouse,
   looksLikeRegistrationWall,
-  REGISTRATION_WALL_RE,
+  REGISTRATION_GATE_RE,
 };
