@@ -255,8 +255,54 @@ audio track at all**:
   in the same place and at the same size as each other.
 - School Explorer is always the first explorer on screen. Neighborhood Explorer
   beats only run after it, and only in a `se-ne` script.
-- Between Neighborhood Explorer beats only the highlighted tab moves. The card
-  body stays the real Map and Summary view; no per-tab screens are invented.
+- Each Neighborhood Explorer beat is a **photograph of that tab in the live
+  product**, taken at this listing's own address. See
+  [Filming the Explorer](#filming-the-explorer).
+
+#### Filming the Explorer
+
+The seven Neighborhood Explorer tabs each show genuinely different data, so each
+tab beat is a screenshot of that tab **in the live product, at this listing's
+address**. Nothing about a tab's contents is drawn by this tool.
+
+It used to be. The card was ours, and between tab beats only the highlighted chip
+moved while the body stayed on Map and Summary — so Schools, Commutes and
+Mobility all showed the same income and rent bars. Because each beat is now one
+photograph, the highlighted tab and the body underneath it cannot disagree.
+
+How it runs, after the listing still is in hand:
+
+1. The listing browser is **closed first**. It is deliberately starved to survive
+   a small dyno, and the Explorer's map needs WebGL — without a GPU the widget
+   sits on "Loading location..." forever. The walk gets its own browser, so only
+   one Chrome is ever alive at a time.
+2. The address captured from the realtor page is turned into coordinates. Every
+   answer is checked against the town and state the listing gave, because a loose
+   geocode once put "123 Main St, Long Beach, CA" in Lake Huron, and filming that
+   would have put another town's schools in the video. If only the town or
+   postcode resolves, the job log says the Explorer was centred nearby.
+3. The live widget is opened at those coordinates, and each tab is clicked and
+   photographed once its own content has arrived and stopped moving.
+
+It refuses rather than falling back to anything drawn by us:
+
+| What happened | What it says |
+| --- | --- |
+| the address cannot be placed on the map | that address could not be found, try a different listing |
+| the Explorer never loads data for it | it has no neighborhood data for that address |
+| it reports "Unknown location" | same, and it names what the Explorer reported |
+| a tab is missing, or the walk runs over its budget | which tab, and how far it got |
+| every tab came out the same picture | nothing is rendered, because that is the bug this replaces |
+
+No `/popup/{address}` or `/embed/{address}` page is created for any of this. The
+widget is opened at coordinates through the parameters it already supports —
+`popup=true` for the tabbed build, since `variant=full` is one long scrolling
+report with no tabs at all. The defaults point at the same widget the marketing
+site's own demo page loads, and `LISTING_VIDEO_EXPLORER_URL`,
+`LISTING_VIDEO_EXPLORER_PARTNER` and `LISTING_VIDEO_EXPLORER_WIDGET` can move it.
+
+The School Explorer card is still drawn from `src/demo-data.js`. Only the
+Neighborhood Explorer tabs changed.
 
 ### 5. Record and try it, on one screen
 
@@ -276,7 +322,8 @@ video yet.** From here you can:
 - **Throw this take away** and start from the top.
 
 Dead air is trimmed off the front of a take and a known 0.6s of silence is put
-back, so the first word is never clipped.
+back, so the first word is never clipped. Dead air is trimmed off the **end** as
+well — see [Where the video ends](#where-the-video-ends).
 
 You can also upload an mp3, wav, m4a or webm. That becomes a take like any
 other, so it can be tried against the pictures before you commit to it.
@@ -286,6 +333,24 @@ other, so it can be tried against the pictures before you commit to it.
 **Keep this take and add the audio to the video** is the only thing that burns
 the voice onto the pictures. Nothing is muxed while you are still trying takes,
 so re-recording is free and does not cost a render.
+
+#### Where the video ends
+
+**On the last spoken word**, with a breath after it and nothing else.
+
+Videos used to run on for two or three seconds after "Give us a call": the
+picture was held for a hardcoded extra second, on top of whatever silence the
+voice track already ended with. An AI line is padded out to whatever the script
+allowed for, so that silence was often a second or two on its own.
+
+Now the voice track is cut back to its last audible sound, a 0.35s breath is put
+after it, and the finished video is exactly as long as that track. If the voice
+runs past the planned scenes the last scene is held to cover it; if it finishes
+early, the video stops rather than sitting on the card in silence. This applies
+to a recorded take and to the AI voice alike.
+
+The silent preview is not trimmed — it stays the script's own length, because it
+is what the voice is recorded against.
 
 ### 7. Final review, then send
 
@@ -435,6 +500,8 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `PIPER_BIN`, `PIPER_VOICE` | Point at a Piper install if `setup-voice.sh` put it somewhere unusual. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
+| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. |
+| `LISTING_VIDEO_GEOCODER` | Address lookup. Defaults to OpenStreetMap's Nominatim, which needs no key. |
 
 ### Memory
 
@@ -526,7 +593,9 @@ src/audio.js                 recorded takes, the optional AI voice, 0.6s lead si
 src/render.js                phase one (silent picture) and phase two (attach audio)
 src/store.js                 jobs on disk, the library list, delete
 src/mail.js                  the two from-addresses, honest "not connected" state
-src/demo-data.js             the demo neighborhood shown inside the SE and NE cards
+src/demo-data.js             the demo neighborhood shown inside the School Explorer card
+src/explorer.js              films the live Neighborhood Explorer, one tab at a time
+src/geocode.js               the listing's address as coordinates, checked against its town
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
