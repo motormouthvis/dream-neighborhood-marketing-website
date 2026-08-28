@@ -91,6 +91,24 @@ const config = {
   ],
 
   callToActionPhone: process.env.LISTING_VIDEO_PHONE || "",
+
+  /*
+   * The live Neighborhood Explorer.
+   *
+   * Videos film the real product: the widget is opened at the listing's
+   * coordinates and its seven tabs are screenshotted one at a time. These
+   * defaults are the same widget the marketing site's own demo page loads.
+   */
+  explorer: {
+    widgetUrl:
+      process.env.LISTING_VIDEO_EXPLORER_URL ||
+      "https://app.dreamneighborhood.com/a/dream-neighborhood-main-marketing-website/widget/",
+    partnerId: process.env.LISTING_VIDEO_EXPLORER_PARTNER || "23784",
+    widgetNumber: process.env.LISTING_VIDEO_EXPLORER_WIDGET || "1",
+  },
+
+  // Address to coordinates. Keyless by default; see src/geocode.js.
+  geocoderUrl: process.env.LISTING_VIDEO_GEOCODER || "https://nominatim.openstreetmap.org/search",
 };
 
 config.mailConfigured = Boolean(config.smtp.host);
