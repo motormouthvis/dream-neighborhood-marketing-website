@@ -100,6 +100,49 @@ async function launch() {
 }
 
 /**
+ * A browser for filming the Neighborhood Explorer.
+ *
+ * Same throwaway profile and same incognito, but the GPU stays on: the
+ * Explorer's map needs WebGL, and with the listing-capture flags it never gets
+ * past "Loading location...". This one only ever runs after the listing browser
+ * has closed, so there is still only one Chrome alive at a time.
+ */
+async function launchExplorerBrowser() {
+  if (!config.chromePath) {
+    throw new Error(
+      "No Chrome found. Install Google Chrome or Chromium, or set LISTING_VIDEO_CHROME to its path."
+    );
+  }
+
+  const keepsTheMapWorking = new Set([
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-gpu-compositing",
+    "--disable-accelerated-2d-canvas",
+    "--in-process-gpu",
+    "--disable-gpu-program-cache",
+    "--disable-partial-raster",
+    "--enable-low-end-device-mode",
+    "--js-flags=--max-old-space-size=128",
+    "--renderer-process-limit=1",
+    "--disk-cache-size=1",
+    "--media-cache-size=1",
+  ]);
+
+  const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "dnlv-explorer-"));
+  const browser = await puppeteer.launch({
+    executablePath: config.chromePath,
+    headless: true,
+    userDataDir,
+    args: [...LOW_MEMORY_ARGS.filter((arg) => !keepsTheMapWorking.has(arg)), "--incognito"],
+    defaultViewport: { width: 1340, height: 764 },
+    protocolTimeout: 60000,
+  });
+  browser.__lvmUserDataDir = userDataDir;
+  return browser;
+}
+
+/**
  * The blank page Chrome opens with. It is an idle renderer we never use, so it
  * gets closed before any real work starts.
  */
@@ -155,4 +198,4 @@ async function closeBrowser(browser, { graceMs = 5000 } = {}) {
   return how;
 }
 
-module.exports = { launch, closeBrowser, closeStartupPage, LOW_MEMORY_ARGS };
+module.exports = { launch, launchExplorerBrowser, closeBrowser, closeStartupPage, LOW_MEMORY_ARGS };
