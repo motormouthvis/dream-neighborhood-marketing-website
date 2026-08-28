@@ -122,11 +122,14 @@ async function waitForTabContent(page, { previousText, deadline }) {
  */
 async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () => {}, budgetMs = WALK_BUDGET_MS }) {
   const wanted = tabs.filter((tab) => NE_TABS.includes(tab));
-  if (!wanted.length) return { shots: {}, place: "", url: "" };
+  if (!wanted.length) return { shots: {}, texts: {}, place: "", url: "" };
 
   const url = widgetUrlFor({ lat, lng });
   const deadline = Date.now() + budgetMs;
   const shots = {};
+  // What was written on each tab when it was photographed. Handy for the job log
+  // and for checking a tab really loaded its own content.
+  const texts = {};
   let browser = null;
   let place = "";
 
@@ -197,6 +200,7 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
       const { text, settled } = await waitForTabContent(page, { previousText, deadline });
       if (!settled) log(`${tab} was still loading, filmed it as it stood`);
       previousText = text;
+      texts[tab] = text;
 
       const file = path.join(outDir, `ne-tab-${tab.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`);
       await page.screenshot({ path: file, type: "png", captureBeyondViewport: false });
@@ -222,7 +226,7 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
       }
     }
 
-    return { shots, place, url };
+    return { shots, texts, place, url };
   } finally {
     if (browser) await closeBrowser(browser).catch(() => {});
   }

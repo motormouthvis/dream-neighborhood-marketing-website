@@ -110,6 +110,30 @@ test("the seven tabs are seven different pictures of the real product", async (t
   // The whole point of the fix: no two tabs may be the same picture.
   const distinct = new Set(sizes.values());
   assert.equal(distinct.size, NE_TABS.length, `only ${distinct.size} distinct pictures across ${NE_TABS.length} tabs`);
+
+  // Stronger than comparing pixels, which two tabs could differ on by a stray
+  // map tile: what is written on each tab has to be its own content.
+  const words = NE_TABS.map((tab) => (walk.texts[tab] || "").replace(NE_TABS.join(" "), "").trim());
+  assert.ok(words.every((text) => text.length > 80), "a tab came back with almost nothing on it");
+  assert.equal(
+    new Set(words).size,
+    NE_TABS.length,
+    `only ${new Set(words).size} distinct tab bodies:\n${NE_TABS.map((t, i) => `  ${t}: ${words[i].slice(0, 70)}`).join("\n")}`
+  );
+
+  // And each one really is the tab it claims to be. These are the phrases the
+  // approved Vanessa cut shows on Schools, Commutes and Mobility.
+  const signatures = {
+    Schools: /nearby schools|public schools/i,
+    Commutes: /calculate your commute/i,
+    Mobility: /what's within reach/i,
+    Demographics: /population|education/i,
+    "Housing & Market Trends": /housing|market/i,
+    "Points of Interest": /view route|cafes|restaurants/i,
+  };
+  for (const [tab, pattern] of Object.entries(signatures)) {
+    assert.match(walk.texts[tab] || "", pattern, `the ${tab} tab does not read like ${tab}`);
+  }
 });
 
 test("an address the Explorer cannot place is refused, not faked", async (t) => {
