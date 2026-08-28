@@ -3,7 +3,7 @@
 const path = require("path");
 const { pathToFileURL } = require("url");
 const config = require("./config");
-const { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS, NE_SUMMARY } = require("./demo-data");
+const { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS } = require("./demo-data");
 
 function tooltipFor(address) {
   const street = address && address.street ? address.street : "";
@@ -19,19 +19,26 @@ function specForBeat(beat, context) {
     tapping: false,
     hidePopup: false,
     card: null,
-    activeTab: 0,
+    tabImage: "",
     company: context.company,
     demo: DEMO_NEIGHBORHOOD,
     schools: DEMO_SCHOOLS,
-    tabs: NE_TABS,
-    summary: NE_SUMMARY,
     year: new Date().getFullYear(),
   };
 
   if (beat.scene === "listing-tap") return { ...base, tapping: true };
   if (beat.scene === "se") return { ...base, card: "se", hidePopup: true };
   if (beat.scene === "ne") {
-    return { ...base, card: "ne", hidePopup: true, activeTab: Number(beat.neTab || 0) };
+    // The Neighborhood Explorer card is a photograph of the real tab, taken by
+    // src/explorer.js for this listing's address.
+    const tab = beat.neTabName || NE_TABS[Number(beat.neTab || 0)];
+    const shot = context.explorerShots && context.explorerShots[tab];
+    if (!shot) {
+      throw new Error(
+        `There is no Neighborhood Explorer screenshot for the "${tab}" tab, so that beat cannot be drawn.`
+      );
+    }
+    return { ...base, card: "ne", hidePopup: true, tabImage: pathToFileURL(shot).toString() };
   }
   return base;
 }
@@ -41,7 +48,7 @@ function specForBeat(beat, context) {
  * for the whole life of the job so a re-recorded voice can be re-timed against
  * the same pictures without opening Chrome again.
  */
-async function renderFrames({ browser, beats, screenshot, address, company, outDir, log }) {
+async function renderFrames({ browser, beats, screenshot, address, company, explorerShots, outDir, log }) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
   const templateUrl = pathToFileURL(path.join(config.root, "views", "frame.html")).toString();
@@ -51,6 +58,7 @@ async function renderFrames({ browser, beats, screenshot, address, company, outD
     bgUrl: pathToFileURL(screenshot).toString(),
     address,
     company,
+    explorerShots: explorerShots || {},
   };
 
   const frames = [];

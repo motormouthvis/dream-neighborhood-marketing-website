@@ -5,6 +5,8 @@ const fsp = require("fs/promises");
 const path = require("path");
 const { launch, closeBrowser } = require("./browser");
 const { captureListing, CAPTURE_BUDGET_MS } = require("./capture");
+const { captureExplorerTabs, WALK_BUDGET_MS } = require("./explorer");
+const { locateAddress } = require("./geocode");
 const { renderFrames } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
 const { buildSilentVideo, buildVideo, buildPoster } = require("./video");
@@ -88,6 +90,32 @@ async function renderSilent(job) {
       }
     );
 
+    /*
+     * Film the Neighborhood Explorer, if this script walks its tabs.
+     *
+     * The listing browser is shut first. It is deliberately starved to survive a
+     * small dyno and the Explorer's map needs a GPU, so the walk gets its own
+     * browser - and only one is ever alive at a time.
+     */
+    let explorerShots = {};
+    const tabsWanted = [...new Set(job.beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName))];
+    if (tabsWanted.length) {
+      log(`Closing the listing browser, then filming ${tabsWanted.length} Neighborhood Explorer tabs`);
+      await closeBrowser(browser);
+      browser = null;
+
+      const where = await locateAddress(capture.address, { log });
+      const walk = await withDeadline(
+        captureExplorerTabs({ lat: where.lat, lng: where.lng, tabs: tabsWanted, outDir: workDir, log }),
+        WALK_BUDGET_MS + 20000,
+        () => log("The Explorer took too long - stopping it")
+      );
+      explorerShots = walk.shots;
+      job.explorer = { place: walk.place, lat: where.lat, lng: where.lng, precision: where.precision };
+
+      browser = await launch();
+    }
+
     log("Drawing the scenes");
     const frames = await renderFrames({
       browser,
@@ -95,6 +123,7 @@ async function renderSilent(job) {
       screenshot: capture.screenshot,
       address: capture.address,
       company: job.input.company,
+      explorerShots,
       outDir: workDir,
       log,
     });

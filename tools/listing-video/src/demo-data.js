@@ -1,13 +1,11 @@
 "use strict";
 
 /**
- * The demo neighborhood shown inside the School Explorer / Neighborhood
- * Explorer cards. This is the same demo area used in the approved reference
- * video, so both cards always agree with each other.
+ * The demo neighborhood shown inside the School Explorer card, which is the
+ * same demo area used in the approved reference video.
  *
- * The listing behind the card is the customer's own page, and the popup tooltip
- * uses the address auto-detected on that page. Only the card contents come from
- * here.
+ * The Neighborhood Explorer card no longer uses any of this: its tabs are
+ * photographed from the live product at the listing's own address.
  */
 
 const DEMO_NEIGHBORHOOD = {
@@ -116,18 +114,11 @@ const NE_TABS = [
   "Points of Interest",
 ];
 
-const NE_SUMMARY = {
-  stats: [
-    { icon: "income", value: "$149,438", label: "Household Income" },
-    { icon: "home", value: "$529,843", label: "Median Home Price" },
-    { icon: "rent", value: "$1,640", label: "Median Rent" },
-    { icon: "owners", value: "64%", label: "Occupied by owners" },
-  ],
-  bars: [
-    { label: "Has College Degree", percent: 53, tone: "dark" },
-    { label: "Finished High School", percent: 95, tone: "light" },
-    { label: "Employed", percent: 63, tone: "dark" },
-  ],
-};
+/*
+ * There is no stand-in for the Neighborhood Explorer's tab contents any more.
+ * Each tab beat is a screenshot of the live product at the listing's own
+ * address - see src/explorer.js. NE_TABS is only the official order of the tabs
+ * to walk.
+ */
 
-module.exports = { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS, NE_SUMMARY };
+module.exports = { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS };
