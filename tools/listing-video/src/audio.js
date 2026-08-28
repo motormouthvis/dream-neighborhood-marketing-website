@@ -9,6 +9,9 @@ const { run } = require("./exec");
 // Enough lead-in that the first word is never clipped by a player that starts slow.
 const LEAD_SILENCE_SECONDS = 0.6;
 const SEGMENT_GAP_SECONDS = 0.32;
+// A breath after the last word, and no more. The video ends here.
+const TRAILING_BREATH_SECONDS = 0.35;
+const END_SILENCE_THRESHOLD = "-45dB";
 const SAMPLE_RATE = 44100;
 
 async function probeDuration(file) {
@@ -56,6 +59,43 @@ async function toWav(inputFile, outFile) {
     "pcm_s16le",
     outFile,
   ]);
+  return outFile;
+}
+
+/**
+ * Cut the silence off the end of a take, leaving a short breath after the last
+ * word.
+ *
+ * Videos used to run on for two or three seconds after "Give us a call", partly
+ * from a hardcoded tail and partly because an AI line is padded out to whatever
+ * the template allowed for. Reversing the audio turns "trailing silence" into
+ * "leading silence", which ffmpeg can already remove, and reversing it back
+ * leaves the take ending on the last word.
+ */
+async function trimTrailingSilence(inputFile, outFile) {
+  try {
+    await run(config.ffmpegPath, [
+      "-y",
+      "-i",
+      inputFile,
+      "-af",
+      `areverse,silenceremove=start_periods=1:start_duration=0.15:start_threshold=${END_SILENCE_THRESHOLD}:detection=peak,areverse`,
+      "-ac",
+      "1",
+      "-ar",
+      String(SAMPLE_RATE),
+      "-c:a",
+      "pcm_s16le",
+      outFile,
+    ]);
+  } catch (_) {
+    await fsp.copyFile(inputFile, outFile);
+    return outFile;
+  }
+  const duration = await probeDuration(outFile).catch(() => 0);
+  if (duration > 0.4) return outFile;
+  // It ate the whole thing; keep what we had.
+  await fsp.copyFile(inputFile, outFile);
   return outFile;
 }
 
@@ -237,7 +277,12 @@ async function buildAiVoiceTrack({ beats, workDir, log }) {
       }
 
       const joined = await concatWavs(pieces, path.join(workDir, "voice-joined.wav"), workDir);
-      const finalTrack = await normalizeLoudness(joined, path.join(workDir, "voice.wav"));
+      // Each line was padded out to the length the template allowed for, so the
+      // last one usually ends in silence. Cut back to the last word.
+      const tightened = await trimTrailingSilence(joined, path.join(workDir, "voice-tight.wav"));
+      const breath = await makeSilence(TRAILING_BREATH_SECONDS, path.join(workDir, "breath.wav"));
+      const withBreath = await concatWavs([tightened, breath], path.join(workDir, "voice-end.wav"), workDir);
+      const finalTrack = await normalizeLoudness(withBreath, path.join(workDir, "voice.wav"));
       return {
         audioFile: finalTrack,
         durations,
@@ -271,9 +316,12 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
     );
   }
   const trimmed = await trimLeadingSilence(converted, path.join(workDir, "take-trimmed.wav"));
+  // Whatever room tone was left running after the last word goes too, so the
+  // video can end there.
+  const tightened = await trimTrailingSilence(trimmed, path.join(workDir, "take-tight.wav"));
   const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
-  const tail = await makeSilence(0.5, path.join(workDir, "tail.wav"));
-  const joined = await concatWavs([lead, trimmed, tail], path.join(workDir, "take-joined.wav"), workDir);
+  const breath = await makeSilence(TRAILING_BREATH_SECONDS, path.join(workDir, "breath.wav"));
+  const joined = await concatWavs([lead, tightened, breath], path.join(workDir, "take-joined.wav"), workDir);
   const finalTrack = await normalizeLoudness(joined, path.join(workDir, "voice.wav"));
 
   return {
@@ -285,8 +333,10 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
 
 module.exports = {
   LEAD_SILENCE_SECONDS,
+  TRAILING_BREATH_SECONDS,
   availableVoiceEngines,
   buildAiVoiceTrack,
   buildRecordedTrack,
+  trimTrailingSilence,
   probeDuration,
 };

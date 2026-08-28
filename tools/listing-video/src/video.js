@@ -6,7 +6,15 @@ const config = require("./config");
 const { run } = require("./exec");
 const { probeDuration } = require("./audio");
 
-const TAIL_SECONDS = 1.0;
+/*
+ * There is no tail.
+ *
+ * The picture used to be held for a second after the audio finished, on top of
+ * whatever silence the voice track already ended with, so a school-only video
+ * sat on the School Explorer card for two or three seconds after "Give us a
+ * call". The voice track is now cut back to the last word plus a breath (see
+ * src/audio.js) and the video ends exactly with it.
+ */
 
 const ENCODE = [
   "-c:v",
@@ -74,9 +82,11 @@ async function buildSilentVideo({ frames, durations, workDir, outFile, log }) {
 }
 
 /**
- * The same stills, this time with a voice track laid over them. Any rounding
- * drift plus a short tail is absorbed by the last scene, so the picture never
- * ends before the last word.
+ * The same stills, this time with a voice track laid over them.
+ *
+ * The finished video is exactly as long as the voice track. If the voice runs
+ * past the planned scenes the last one is held to cover it; if it finishes
+ * early, the video stops there rather than sitting in silence.
  */
 async function buildVideo({ frames, durations, audioFile, workDir, outFile, log }) {
   if (frames.length !== durations.length) {
@@ -86,8 +96,10 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
   const audioDuration = await probeDuration(audioFile);
   const scenes = durations.slice();
   const plannedTotal = scenes.reduce((sum, value) => sum + value, 0);
-  scenes[scenes.length - 1] += Math.max(0, audioDuration - plannedTotal) + TAIL_SECONDS;
-  const videoDuration = scenes.reduce((sum, value) => sum + value, 0);
+  // Only ever extended, never padded past the audio: the -t below is what ends
+  // the video, and it ends on the last word.
+  scenes[scenes.length - 1] += Math.max(0, audioDuration - plannedTotal);
+  const videoDuration = audioDuration;
 
   const listFile = await writeConcatList({ frames, durations: scenes, workDir, name: "frames-voiced.txt" });
 
@@ -108,8 +120,8 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
       "0:v:0",
       "-map",
       "1:a:0",
-      "-af",
-      "apad",
+      // No apad: the audio is already the length of the video, and padding it
+      // would put the trailing silence straight back.
       "-t",
       videoDuration.toFixed(3),
       "-vf",
