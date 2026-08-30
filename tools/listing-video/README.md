@@ -328,8 +328,8 @@ address**. Nothing about a tab's contents is drawn by this tool.
 
 It used to be. The card was ours, and between tab beats only the highlighted chip
 moved while the body stayed on Map and Summary — so Schools, Commutes and
-Mobility all showed the same income and rent bars. Because each beat is now one
-photograph, the highlighted tab and the body underneath it cannot disagree.
+Walk & Bike all showed the same income and rent bars. Because each beat is now one
+photograph, the highlighted chip and the body underneath it cannot disagree.
 
 How it runs, after the listing still is in hand:
 
@@ -355,15 +355,34 @@ It refuses rather than falling back to anything drawn by us:
 | a tab is missing, or the walk runs over its budget | which tab, and how far it got |
 | every tab came out the same picture | nothing is rendered, because that is the bug this replaces |
 
-**If a tab beat is refused, the product has moved and the script has to follow.**
-The tab names in a script are matched against the live widget, so a tab that gets
-renamed or dropped stops that script rather than filming the wrong panel. As of
-this writing the widget walks Map and Summary, Demographics, Schools,
-Housing & Market Trends and Commutes; the approved v11 cut also named Mobility and
-Points of Interest, and those two no longer answer. Edit the beats on the Scripts
-page to match what the widget shows — that is a decision about the pitch, so the
-tool will not quietly pick a different tab. The school-only script has no tab
-beats and is unaffected.
+#### The seven chips, and their spelling
+
+The chips are matched against the live widget, so how they are spelled is not
+cosmetic — a chip spelled wrong is never found, and the beat is refused rather
+than filmed from the wrong panel. Left to right:
+
+| # | Chip | Note |
+| --- | --- | --- |
+| 1 | Map and Summary | the word "and" |
+| 2 | Demographics | |
+| 3 | Schools | |
+| 4 | Housing & Market Trends | ampersand |
+| 5 | Commutes | |
+| 6 | Walk & Bike | ampersand, **not** the word "and". Was called Mobility. |
+| 7 | What's Nearby | Was called Points of Interest. |
+
+"Ask AI" is not one of the seven and is never walked.
+
+Two chips were renamed, and their internal keys did not change — `data-view=mobility`
+with `#mobility-switch`, and `data-view=points-of-interest` with
+`#points-of-interest-switch`. So a chip is found by its visible text first, and by
+that key when a label is being flaky; the job log says when it fell back to the key.
+The old names are still accepted from a script, and a script saved before the
+rename is brought up to date on boot: the pin, the spoken line and the caption.
+Anything reworded by hand is left alone.
+
+The **spoken** line says "Walk and Bike", because that is how anybody reads it
+aloud. The **chip** is "Walk & Bike". Those are deliberately different.
 
 No `/popup/{address}` or `/embed/{address}` page is created for any of this. The
 widget is opened at coordinates through the parameters it already supports —
@@ -472,7 +491,7 @@ empty and the tabs are handed out in the order the `ne` beats appear, which is
 what the v11 script does. `Housing and Market Trends` and
 `Housing & Market Trends` are the same tab. The seven tabs, in the official
 order, are the only ones there are: Map and Summary, Demographics, Schools,
-Housing & Market Trends, Commutes, Mobility, Points of Interest.
+Housing & Market Trends, Commutes, Walk & Bike, What's Nearby.
 
 The Scripts tab can create, edit, save, duplicate and delete. Making an "other
 video" means writing a new script here and saving it; it shows up in the picker

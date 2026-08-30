@@ -68,6 +68,72 @@ test("a default deleted after it was seeded is not put back on the next boot", a
   assert.deepEqual(ids, ["vanessa-se-ne-v11", "vanessa-se-only-v11"]);
 });
 
+/*
+ * Staging's scripts were written when the chips were called Mobility and Points
+ * of Interest. Seeding never overwrites a saved script, so booting has to bring
+ * those two names up to date or the voice will name a chip that is not there.
+ */
+test("a script saved before the chips were renamed is brought up to date on boot", async () => {
+  fs.rmSync(templatesDir, { recursive: true, force: true });
+  await templates.ensureSeeded();
+
+  // Wind the saved script back to how it read before the rename.
+  const file = path.join(templatesDir, "se-to-ne-upgrade.json");
+  fs.writeFileSync(
+    file,
+    fs
+      .readFileSync(file, "utf8")
+      .replace(/Walk & Bike/g, "Mobility")
+      .replace(/Walk and Bike/g, "Mobility")
+      .replace(/What's Nearby/g, "Points of Interest"),
+    "utf8"
+  );
+
+  await templates.ensureSeeded();
+
+  const loaded = await templates.getTemplate("se-to-ne-upgrade");
+  const tabBeats = loaded.beats.filter((beat) => beat.scene === "ne");
+  assert.deepEqual(
+    [...new Set(tabBeats.map((beat) => beat.tab))],
+    ["Map and Summary", "Demographics", "Schools", "Housing & Market Trends", "Commutes", "Walk & Bike", "What's Nearby"]
+  );
+
+  const walkBeat = tabBeats.find((beat) => beat.tab === "Walk & Bike");
+  // The chip is an ampersand; the spoken line reads "and", as anybody would.
+  assert.equal(walkBeat.caption.headline, "Walk & Bike.");
+  assert.match(walkBeat.text, /^Walk and Bike:/);
+  assert.doesNotMatch(walkBeat.text, /Mobility/);
+
+  const nearbyBeat = tabBeats.find((beat) => beat.tab === "What's Nearby");
+  assert.match(nearbyBeat.text, /^What's Nearby:/);
+  assert.doesNotMatch(nearbyBeat.text, /Points of Interest/);
+
+  const asText = templates.beatsToText(loaded.beats);
+  assert.doesNotMatch(asText, /Mobility|Points of Interest/);
+});
+
+test("a script somebody already reworded by hand is left alone", async () => {
+  fs.rmSync(templatesDir, { recursive: true, force: true });
+  await templates.ensureSeeded();
+
+  const mine = await templates.createTemplate({
+    name: "Bill's own cut",
+    explorers: "se-ne",
+    beats: [
+      { scene: "listing", seconds: 6, text: "Take a look at this one." },
+      { scene: "se", seconds: 6, text: "Here it is with the School Explorer." },
+      { scene: "ne", tab: "Walk & Bike", seconds: 3, text: "Getting around town, however you travel." },
+    ],
+  });
+
+  await templates.ensureSeeded();
+
+  const after = await templates.getTemplate(mine.id);
+  assert.equal(after.beats[2].text, "Getting around town, however you travel.");
+  assert.equal(after.beats[2].tab, "Walk & Bike");
+  assert.equal(after.updatedAt, mine.updatedAt, "an untouched script is not rewritten");
+});
+
 test("a data dir with no marker at all seeds everything", async () => {
   fs.rmSync(templatesDir, { recursive: true, force: true });
   const seeded = await templates.ensureSeeded();

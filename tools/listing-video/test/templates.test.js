@@ -155,8 +155,8 @@ test("the upgrade script opens on School Explorer, then walks every tab in order
     "Schools",
     "Housing & Market Trends",
     "Commutes",
-    "Mobility",
-    "Points of Interest",
+    "Walk & Bike",
+    "What's Nearby",
   ]);
   assert.deepEqual(walked.map((beat) => beat.neTab), [0, 1, 2, 3, 4, 5, 6]);
   assert.ok(walked.every((beat) => beat.seconds >= 2.5 && beat.seconds <= 3.5));
@@ -172,7 +172,7 @@ test("the upgrade script opens on School Explorer, then walks every tab in order
   }
 
   // The closing beats stay on the last tab rather than jumping somewhere new.
-  assert.ok(tabBeats.slice(7).every((beat) => beat.neTabName === "Points of Interest"));
+  assert.ok(tabBeats.slice(7).every((beat) => beat.neTabName === "What's Nearby"));
 });
 
 test("a beat can pin its Neighborhood Explorer tab, and the v11 script still runs in order", async () => {

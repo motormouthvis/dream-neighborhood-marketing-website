@@ -27,7 +27,7 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 const config = require("../src/config");
 const { captureExplorerTabs, widgetUrlFor } = require("../src/explorer");
 const { queriesFor } = require("../src/geocode");
-const { NE_TABS } = require("../src/demo-data");
+const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("../src/demo-data");
 
 /* ---------------------------------------------------------------- */
 /* the bits that need nothing                                       */
@@ -82,6 +82,44 @@ async function explorerReachable() {
 const noChrome = !config.chromePath;
 let liveSkip = noChrome ? "no Chrome or Chromium on this machine" : null;
 
+/*
+ * The chip labels are matched against the live product, so their spelling is not
+ * cosmetic. "Map and Summary" is the word "and"; "Housing & Market Trends" and
+ * "Walk & Bike" are ampersands. Mobility was renamed to Walk & Bike and Points
+ * of Interest to What's Nearby, and "Ask AI" is not one of the seven.
+ */
+test("the seven chips are spelled the way the product spells them", () => {
+  assert.deepEqual(NE_TABS, [
+    "Map and Summary",
+    "Demographics",
+    "Schools",
+    "Housing & Market Trends",
+    "Commutes",
+    "Walk & Bike",
+    "What's Nearby",
+  ]);
+  assert.equal(NE_TABS.length, 7, "Ask AI is not an eighth chip");
+  assert.ok(!NE_TABS.includes("Walk and Bike"), "the chip is an ampersand, not the word and");
+  assert.ok(!NE_TABS.some((tab) => /Mobility|Points of Interest/.test(tab)));
+});
+
+test("a script written against the old chip names still points at the right chip", () => {
+  assert.equal(canonicalTabName("Mobility"), "Walk & Bike");
+  assert.equal(canonicalTabName("Points of Interest"), "What's Nearby");
+  // Written either way round, and by the internal key, which did not change.
+  assert.equal(canonicalTabName("Walk and Bike"), "Walk & Bike");
+  assert.equal(canonicalTabName("Walk & Bike"), "Walk & Bike");
+  assert.equal(canonicalTabName("mobility"), "Walk & Bike");
+  assert.equal(canonicalTabName("points-of-interest"), "What's Nearby");
+  assert.equal(canonicalTabName("Housing and Market Trends"), "Housing & Market Trends");
+  assert.equal(canonicalTabName("Map and Summary"), "Map and Summary");
+});
+
+test("the internal keys are the ones the product still uses", () => {
+  assert.equal(NE_TAB_ALIASES["Walk & Bike"].key, "mobility");
+  assert.equal(NE_TAB_ALIASES["What's Nearby"].key, "points-of-interest");
+});
+
 test("the seven tabs are seven different pictures of the real product", async (t) => {
   if (!liveSkip && !(await explorerReachable())) liveSkip = "the live Neighborhood Explorer is not reachable";
   if (liveSkip) return t.skip(liveSkip);
@@ -126,10 +164,11 @@ test("the seven tabs are seven different pictures of the real product", async (t
   const signatures = {
     Schools: /nearby schools|public schools/i,
     Commutes: /calculate your commute/i,
-    Mobility: /what's within reach/i,
     Demographics: /population|education/i,
     "Housing & Market Trends": /housing|market/i,
-    "Points of Interest": /view route|cafes|restaurants/i,
+    // Mobility was renamed to Walk & Bike, Points of Interest to What's Nearby.
+    "Walk & Bike": /getting around|walk radius|bike radius/i,
+    "What's Nearby": /view route|cafes|restaurants/i,
   };
   for (const [tab, pattern] of Object.entries(signatures)) {
     assert.match(walk.texts[tab] || "", pattern, `the ${tab} tab does not read like ${tab}`);
