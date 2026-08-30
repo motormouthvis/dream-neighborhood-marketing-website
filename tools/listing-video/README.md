@@ -469,24 +469,25 @@ so re-recording is free and does not cost a render.
 
 #### How long the finished video is
 
-**The longer of two things**, and only a person can make it shorter:
+**The same length as the silent cut.** That is the picture that was approved, so
+that is the video:
 
-| | |
-| --- | --- |
-| the silent cut's length | That is the picture that was approved, so a 60 second cut with a 30 second voice over it is still a 60 second video — the picture runs to the end and the audio stops. It is **never cut back to the voice**. |
-| the voice plus **5 seconds** | A take recorded against the silent video usually ends about where the script does, and the video then stopped dead on the last word. The last scene is held to give it a pause. |
+| Silent cut | Voice | Finished video |
+| --- | --- | --- |
+| 60s | 30s | **60s** — the picture holds, the audio stops |
+| 12s | 12s | **12s** |
 
-So a 12 second script with a 12 second voice comes out about 17 seconds, and a 60
-second script with a 30 second voice comes out 60.
+Nothing is padded on after the last word, and the picture is **never cut back to
+the voice**. If a video should end sooner than the script does, that is a
+person's call, made with [the trim](#trimming-the-end-off).
 
-Neither number is a guess at what Bill wants — if a video ends later than it
-should, he ends it where he likes with [the trim](#trimming-the-end-off). Between
-them, the two rules mean the picture is never thrown away and the voice never
-finishes on a hard cut.
+The one exception is a voice that runs *past* the script, and it exists so nobody
+is clipped mid-word: the last scene is held to cover it.
 
 Dead air is still cut off the end of the voice *track*, for a recorded take and
 for the AI voice. That is about the audio, not the picture: a take stopped ten
-seconds late would otherwise put ten seconds of nothing before the 5 second tail.
+seconds late would otherwise be ten seconds longer than the script and drag the
+picture out with it.
 
 One thing can make it shorter, and it is a person: [trimming on the final
 review](#trimming-the-end-off).

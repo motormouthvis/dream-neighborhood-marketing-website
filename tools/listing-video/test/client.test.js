@@ -331,7 +331,8 @@ test("after a trim the player holds the shorter file, sitting at its new end", o
 
     // The old, longer file is gone; this is what would be sent.
     const fresh = await store.getJob(job.id);
-    assert.ok(duration - fresh.result.durationSeconds > 5, "the file really is shorter now");
+    assert.equal(fresh.result.durationSeconds, 9, "the file on disk ends where they paused it");
+    assert.ok(fresh.result.durationSeconds < duration - 1, `it was ${duration.toFixed(2)}s and is not shorter`);
     assert.equal(fresh.review.reviewed, false);
   } finally {
     await tool.close();
