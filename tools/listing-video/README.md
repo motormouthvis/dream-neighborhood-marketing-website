@@ -442,7 +442,7 @@ video yet.** From here you can:
 
 Dead air is trimmed off the front of a take and a known 0.6s of silence is put
 back, so the first word is never clipped. Dead air is trimmed off the **end** as
-well — see [Where the video ends](#where-the-video-ends).
+well — see [How long the finished video is](#how-long-the-finished-video-is).
 
 You can also upload an mp3, wav, m4a or webm. That becomes a take like any
 other, so it can be tried against the pictures before you commit to it.
@@ -453,23 +453,30 @@ other, so it can be tried against the pictures before you commit to it.
 the voice onto the pictures. Nothing is muxed while you are still trying takes,
 so re-recording is free and does not cost a render.
 
-#### Where the video ends
+#### How long the finished video is
 
-**On the last spoken word**, with a breath after it and nothing else.
+**Exactly as long as the silent cut.** That is the picture that was approved, so
+that is the video. A 60 second silent cut with a 30 second voice over it is still
+a 60 second video: the picture runs to the end and the audio simply stops.
 
-Videos used to run on for two or three seconds after "Give us a call": the
-picture was held for a hardcoded extra second, on top of whatever silence the
-voice track already ended with. An AI line is padded out to whatever the script
-allowed for, so that silence was often a second or two on its own.
+It is **never cut back to the voice**, and **nothing is padded on after the last
+word**. An earlier version did both — it set the video's length to the voice
+track's and added a breath on the end — and that threw away picture Bill had
+already signed off.
 
-Now the voice track is cut back to its last audible sound, a 0.35s breath is put
-after it, and the finished video is exactly as long as that track. If the voice
-runs past the planned scenes the last scene is held to cover it; if it finishes
-early, the video stops rather than sitting on the card in silence. This applies
-to a recorded take and to the AI voice alike.
+One thing can make it longer: a voice that outruns the script. Then the last
+scene is held to cover it, rather than the picture running out before the voice
+does.
 
-The silent preview is not trimmed — it stays the script's own length, because it
-is what the voice is recorded against.
+One thing can make it shorter, and it is a person: [trimming on the final
+review](#trimming-the-end-off).
+
+Dead air is still cut off the end of the voice *track*, both for a recorded take
+and for the AI voice. That is about the audio, not the picture — an AI line is
+padded out to whatever the script allowed for, and a take is usually stopped a
+moment after the last word, so a track can carry seconds of nothing. Left there,
+that silence would push the video past the length of the script. It cannot make
+the video shorter.
 
 ### 7. Final review, then send
 
@@ -482,6 +489,25 @@ review, because the new file has not been reviewed.
 If SMTP is not configured the UI says **"Mailbox not connected"**, the send
 button stays off, and you get the watch link plus the whole email text to copy
 and send yourself. It never reports a send that did not happen.
+
+#### Trimming the end off
+
+The only thing that shortens a video, and it is deliberate rather than automatic.
+
+On the final review, **pause the player exactly where you want the video to
+finish** and press **Trim remainder of video**. Everything after the playhead
+goes, picture and audio together. It asks first, and it cannot be undone.
+
+The button is only live while the player is paused, because the playhead *is* the
+cut — there is nothing being guessed at. It says what it is about to do ("would
+end at 0:42, cutting 0:18") before you press it.
+
+The cut is re-encoded rather than stream-copied. A stream copy cuts at the
+previous keyframe, which would leave up to a couple of seconds of whatever you
+wanted rid of. It writes over the finished file, so the watch link keeps working,
+and it **clears the review** — what you approved is not what the file is now, so
+send switches off until you have watched it again. Nothing shorter than three
+seconds, and trimming at the end is refused rather than re-encoding for nothing.
 
 ### 8. Hosting
 
@@ -738,6 +764,7 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
 | `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |
 | `GET /tools/listing-video/api/videos`, `DELETE .../videos/:id` | Signed in only |
 | `GET /tools/listing-video/api/failures` | Signed in only |

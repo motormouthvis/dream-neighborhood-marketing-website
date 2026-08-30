@@ -251,6 +251,14 @@ textarea.input { resize: vertical; line-height: 1.5; }
 }
 .card__failure .card__meta { margin-top: 6px; }
 
+.trim {
+  margin-top: 18px; padding: 15px 16px; border: 1px solid var(--line);
+  border-radius: 11px; background: #f7f9f8;
+}
+.trim .label { display: block; }
+.trim .hint { margin-top: 6px; }
+.trim .recorder__row { margin-top: 12px; align-items: center; }
+
 .pill {
   font-size: 13px; font-weight: 700; border-radius: 999px; padding: 5px 12px;
   background: #eef2f0; color: var(--ink-soft); white-space: nowrap;

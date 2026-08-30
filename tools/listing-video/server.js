@@ -12,7 +12,7 @@ const auth = require("./src/auth");
 const store = require("./src/store");
 const mail = require("./src/mail");
 const templates = require("./src/templates");
-const { renderSilent, attachAudio } = require("./src/render");
+const { renderSilent, attachAudio, trimFinishedVideo } = require("./src/render");
 const { availableVoiceEngines } = require("./src/audio");
 const { normalizeUrl } = require("./src/capture");
 
@@ -336,6 +336,34 @@ app.post(`${TOOL_PATH}/api/jobs/:id/reviewed`, auth.requireSession, async (req, 
   const how = (req.body || {}).how === "confirmed" ? "confirmed" : "played";
   await store.markReviewed(job, how);
   return res.json({ review: job.review });
+});
+
+/**
+ * Cut the end off the finished video, where a person paused it.
+ *
+ * The only thing that shortens a video. The picture is otherwise as long as the
+ * silent cut that was approved, whatever the voice did.
+ */
+app.post(`${TOOL_PATH}/api/jobs/:id/trim`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "That video was not found." });
+  if (job.status !== "ready" || !job.result) {
+    return res.status(400).json({ error: "There is no finished video to trim yet." });
+  }
+
+  const atSeconds = Number((req.body || {}).atSeconds);
+  if (!Number.isFinite(atSeconds)) {
+    return res.status(400).json({ error: "Pause the video where you want it to end, then trim." });
+  }
+
+  try {
+    // Queued with the renders: trimming re-encodes, and two of those at once on
+    // a small dyno is how it runs out of memory.
+    await enqueue(() => trimFinishedVideo(job, { atSeconds }));
+  } catch (error) {
+    return res.status(400).json({ error: error.message || "That video could not be trimmed." });
+  }
+  return res.json({ job: store.publicView(job) });
 });
 
 app.post(`${TOOL_PATH}/api/jobs/:id/email`, auth.requireSession, async (req, res) => {

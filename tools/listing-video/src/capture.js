@@ -606,6 +606,9 @@ async function waitForListingHrefs(page, ms) {
   }
 }
 
+/* How long a picture of a failed page is worth waiting for, and no longer. */
+const FAILURE_SHOT_TIMEOUT_MS = 4000;
+
 /** A refusal about a search page, which is what it stopped on. */
 function searchOnlyError(pageUrl, message) {
   const error = captureError("SITE_IS_SEARCH_ONLY", message);
@@ -2105,11 +2108,25 @@ async function captureListing({
     if (page) {
       const shot = path.join(outDir, "failure.png");
       try {
-        await page.screenshot({ path: shot, type: "png", captureBeyondViewport: false });
+        /*
+         * Bounded, and the page is stopped first.
+         *
+         * A screenshot of a page that is still loading can sit there until the
+         * protocol times out - thirty seconds, on a capture that had a four
+         * second budget. A picture is worth having, but never at the cost of the
+         * budget the whole thing exists to keep.
+         */
+        await page.evaluate(() => window.stop()).catch(() => {});
+        await Promise.race([
+          page.screenshot({ path: shot, type: "png", captureBeyondViewport: false }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("screenshot took too long")), FAILURE_SHOT_TIMEOUT_MS)
+          ),
+        ]);
         error.screenshot = shot;
         log("Saved a picture of the page it stopped on");
       } catch (_) {
-        /* a crashed or closed page cannot be photographed; the record says so */
+        /* a crashed, closed or still-loading page cannot be photographed */
       }
     }
     throw error;

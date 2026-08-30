@@ -9,7 +9,7 @@ const { captureExplorerTabs, WALK_BUDGET_MS } = require("./explorer");
 const { locateAddress } = require("./geocode");
 const { renderFrames } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
-const { buildSilentVideo, buildVideo, buildPoster } = require("./video");
+const { buildSilentVideo, buildVideo, buildPoster, trimVideoAt } = require("./video");
 const store = require("./store");
 
 /**
@@ -63,7 +63,7 @@ async function withDeadline(work, ms, onTimeout) {
  * all. The user watches this back and records over it, so the words land on the
  * right scenes.
  */
-async function renderSilent(job) {
+async function renderSilent(job, { budgetMs } = {}) {
   const dir = store.jobDir(job.id);
   const workDir = path.join(dir, "work");
   const log = (message) => store.logProgress(job, message);
@@ -90,10 +90,11 @@ async function renderSilent(job) {
         // The upgrade script wants a listing that already has School Explorer.
         // Everything else wants one that has neither Explorer on it yet.
         explorerRule: (job.template && job.template.listingExplorer) || "absent",
+        ...(budgetMs ? { budgetMs } : {}),
       }),
       // Its own budget plus a little, so this only fires when capture is wedged
       // rather than merely slow.
-      CAPTURE_BUDGET_MS + 20000,
+      (budgetMs || CAPTURE_BUDGET_MS) + 20000,
       () => {
         // A browser that is stuck, or has just run out of memory, will not
         // answer close(), so it gets killed.
@@ -302,4 +303,44 @@ async function cleanTempAudio(workDir) {
   }
 }
 
-module.exports = { renderSilent, attachAudio };
+/**
+ * Phase three, and only if a person asks for it: cut the end off.
+ *
+ * The finished video is as long as the silent cut, because that is the picture
+ * that was approved. If Bill decides on the final review that it should stop
+ * earlier, he pauses the player and trims - and that is the only thing that
+ * makes it shorter.
+ *
+ * The trim is applied to the finished cut in place, so the watch link keeps
+ * working, and the review flag is cleared because what he approved has changed.
+ */
+async function trimFinishedVideo(job, { atSeconds }) {
+  if (!job.result || !job.result.videoFile || !fs.existsSync(job.result.videoFile)) {
+    throw new Error("There is no finished video to trim yet.");
+  }
+  const dir = store.jobDir(job.id);
+  const log = (message) => store.logProgress(job, message);
+  const pendingPath = path.join(dir, "video-trimming.mp4");
+
+  const trimmed = await trimVideoAt({
+    inputFile: job.result.videoFile,
+    atSeconds,
+    outFile: pendingPath,
+    log,
+  });
+  await fsp.rename(pendingPath, job.result.videoFile);
+
+  job.result.durationSeconds = Math.round(trimmed.duration);
+  job.result.trimmed = {
+    at: new Date().toISOString(),
+    atSeconds: Math.round(Number(atSeconds) * 10) / 10,
+    wasSeconds: Math.round(trimmed.wasSeconds * 10) / 10,
+  };
+  // A different video to the one that was reviewed, so it needs reviewing again.
+  job.review = { reviewed: false, at: null, how: null };
+  log(`Trimmed the video to ${trimmed.duration.toFixed(1)}s - review it again, then send`);
+  await store.persist(job);
+  return job;
+}
+
+module.exports = { renderSilent, attachAudio, trimFinishedVideo };

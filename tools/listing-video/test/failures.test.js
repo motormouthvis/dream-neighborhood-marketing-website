@@ -124,6 +124,42 @@ test("a 403 is written down as a 403, and a refusal that had no status has none"
   assert.equal(nothing.failure.pageKind, "marketing");
 });
 
+/*
+ * The picture must never cost the budget it exists to protect. Screenshotting a
+ * page that is still loading can sit there until the protocol times out - thirty
+ * seconds, on a capture that had four - so it is bounded and the page is stopped
+ * first.
+ */
+test("a timed-out capture is still written down, and still gives up on time", options, async () => {
+  const { server, origin } = await fixture.listen(fixture.SLOW_SITE);
+  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const input = {
+    templateId: template.id,
+    firstName: "Bill",
+    company: "Slow Realty",
+    websiteUrl: origin,
+    listingUrl: "",
+    customerEmail: "fixture@example.test",
+    fromId: "bill",
+  };
+  const job = await store.createJob({ input, template, beats: templates.renderBeats(template, input) });
+
+  const startedAt = Date.now();
+  try {
+    await renderSilent(job, { budgetMs: 4000 });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  const elapsed = Date.now() - startedAt;
+
+  const fresh = await store.getJob(job.id);
+  assert.equal(fresh.status, "failed");
+  assert.ok(fresh.failure, "a timeout is written down like any other failure");
+  assert.equal(fresh.failure.errorCode, "CAPTURE_TIMED_OUT");
+  assert.equal(fresh.failure.stage, "capture");
+  assert.ok(elapsed < 40000, `it took ${Math.round(elapsed / 1000)}s, so the picture cost the budget`);
+});
+
 test("a search page we would not film is recorded as a search page", options, async () => {
   const job = await failingJob(fixture.SEARCH_WITH_NO_LISTINGS, { company: "Search Only Realty" });
   assert.equal(job.failure.errorCode, "SITE_IS_SEARCH_ONLY");

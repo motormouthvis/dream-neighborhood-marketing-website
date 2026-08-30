@@ -29,6 +29,7 @@
     tickerStart: 0,
     pollErrors: 0,
     startedAt: 0,
+    trimming: false,
     beats: [],
     watched: 0,
     lastTime: 0,
@@ -609,6 +610,9 @@
 
     D.showMessage(el("sendError"), "");
     D.show(el("sendOk"), false);
+    D.showMessage(el("trimError"), "");
+    D.show(el("trimOk"), false);
+    applyTrimState();
     applyReviewState();
     loadDraft(job.id);
     step("review");
@@ -656,6 +660,7 @@
     if (jump > 0 && jump < 1.5) mine.watched += jump;
     mine.lastTime = player.currentTime;
     if (player.duration && mine.watched >= player.duration * 0.8) markReviewed("played");
+    if (player.paused) applyTrimState();
   });
 
   el("reviewPlayer").addEventListener("ended", function () {
@@ -664,6 +669,65 @@
 
   el("reviewedBox").addEventListener("change", function () {
     if (el("reviewedBox").checked) markReviewed("confirmed");
+  });
+
+  /*
+   * Trimming the end off, which is the only thing that shortens a video.
+   *
+   * The picture is as long as the silent cut that was approved, so it holds after
+   * the voice stops. The button only wakes up while the player is paused, because
+   * the playhead is the cut - there is nothing to guess at.
+   */
+  function applyTrimState() {
+    var player = el("reviewPlayer");
+    var at = player.currentTime || 0;
+    var paused = player.paused && at > 0;
+    var tooLate = player.duration ? at >= player.duration - 0.05 : false;
+
+    el("trimBtn").disabled = !paused || tooLate || mine.trimming;
+    if (mine.trimming) {
+      D.setText(el("trimHint"), "Trimming...");
+    } else if (!paused) {
+      D.setText(el("trimHint"), "Pause the player to choose the ending.");
+    } else if (tooLate) {
+      D.setText(el("trimHint"), "That is already the end. Pause it earlier.");
+    } else {
+      D.setText(el("trimHint"), "Would end at " + D.runtime(at) + ", cutting " + D.runtime(player.duration - at) + ".");
+    }
+  }
+
+  el("reviewPlayer").addEventListener("pause", applyTrimState);
+  el("reviewPlayer").addEventListener("play", applyTrimState);
+  el("reviewPlayer").addEventListener("seeked", applyTrimState);
+  el("reviewPlayer").addEventListener("loadedmetadata", applyTrimState);
+
+  el("trimBtn").addEventListener("click", function () {
+    var player = el("reviewPlayer");
+    var at = player.currentTime || 0;
+    if (player.paused === false || at <= 0) return;
+
+    var cutting = player.duration ? D.runtime(player.duration - at) : "the rest";
+    if (!window.confirm("Cut " + cutting + " off the end, so the video finishes at " + D.runtime(at) + "? This cannot be undone.")) {
+      return;
+    }
+
+    mine.trimming = true;
+    D.showMessage(el("trimError"), "");
+    D.show(el("trimOk"), false);
+    applyTrimState();
+
+    D.send("POST", API + "/jobs/" + mine.jobId + "/trim", { atSeconds: at }).then(function (result) {
+      mine.trimming = false;
+      if (!result.ok) {
+        applyTrimState();
+        D.showMessage(el("trimError"), D.errorFrom(result, "That video was not trimmed."));
+        return;
+      }
+      // A different video to the one that was reviewed, so the review starts over.
+      paintReview(result.body.job);
+      D.setText(el("trimOk"), "Trimmed. Watch it again, then send.");
+      D.show(el("trimOk"), true);
+    });
   });
 
   el("redoAudioBtn").addEventListener("click", function () {

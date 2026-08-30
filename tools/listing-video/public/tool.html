@@ -221,6 +221,21 @@
             <span>I reviewed this video and it is good to send.</span>
           </label>
 
+          <div class="trim" id="trimBox">
+            <span class="label">Ending too late?</span>
+            <p class="hint">
+              The video is as long as the silent cut you approved, so the picture holds after the voice stops.
+              To end it sooner, pause the player exactly where you want it to finish and trim.
+              This cannot be undone.
+            </p>
+            <div class="recorder__row recorder__row--wrap">
+              <button type="button" class="btn btn--ghost" id="trimBtn" disabled>Trim remainder of video</button>
+              <span class="hint" id="trimHint">Pause the player to choose the ending.</span>
+            </div>
+            <p class="ok" id="trimOk" hidden></p>
+            <p class="error" id="trimError" hidden></p>
+          </div>
+
           <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
             <button type="button" class="btn btn--ghost" id="redoAudioBtn">Back to recording</button>
           </div>

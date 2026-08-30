@@ -7,13 +7,15 @@ const { run } = require("./exec");
 const { probeDuration } = require("./audio");
 
 /*
- * There is no tail.
+ * The silent cut's length is the length of the video.
  *
- * The picture used to be held for a second after the audio finished, on top of
- * whatever silence the voice track already ended with, so a school-only video
- * sat on the School Explorer card for two or three seconds after "Give us a
- * call". The voice track is now cut back to the last word plus a breath (see
- * src/audio.js) and the video ends exactly with it.
+ * That is the picture that was approved, so that is what gets sent. A voice
+ * shorter than the picture does not shorten it - the picture holds and the audio
+ * stops - and nothing is padded on after the last word. An earlier version did
+ * both, and threw away picture that had already been signed off.
+ *
+ * A voice that outruns the script holds the last scene. The only thing that makes
+ * a video shorter is a person trimming it on the final review: trimVideoAt below.
  */
 
 const ENCODE = [
@@ -84,9 +86,16 @@ async function buildSilentVideo({ frames, durations, workDir, outFile, log }) {
 /**
  * The same stills, this time with a voice track laid over them.
  *
- * The finished video is exactly as long as the voice track. If the voice runs
- * past the planned scenes the last one is held to cover it; if it finishes
- * early, the video stops there rather than sitting in silence.
+ * The silent cut's length is the source of truth. A 60 second picture with a 30
+ * second voice over it is still a 60 second video: the picture runs to the end
+ * and the audio simply stops. The video is never cut down to the voice, and
+ * nothing is padded on after the last word.
+ *
+ * The one thing that can make it longer is a voice that outruns the script, and
+ * then the last scene is held to cover it rather than the picture running out.
+ *
+ * Making it shorter is a person's decision, taken on the final review with
+ * "Trim remainder of video" - see trimVideoAt below.
  */
 async function buildVideo({ frames, durations, audioFile, workDir, outFile, log }) {
   if (frames.length !== durations.length) {
@@ -96,10 +105,9 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
   const audioDuration = await probeDuration(audioFile);
   const scenes = durations.slice();
   const plannedTotal = scenes.reduce((sum, value) => sum + value, 0);
-  // Only ever extended, never padded past the audio: the -t below is what ends
-  // the video, and it ends on the last word.
+  // Held only if the voice runs past the script; never trimmed back to it.
   scenes[scenes.length - 1] += Math.max(0, audioDuration - plannedTotal);
-  const videoDuration = audioDuration;
+  const videoDuration = Math.max(plannedTotal, audioDuration);
 
   const listFile = await writeConcatList({ frames, durations: scenes, workDir, name: "frames-voiced.txt" });
 
@@ -120,10 +128,12 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
       "0:v:0",
       "-map",
       "1:a:0",
-      // No apad: the audio is already the length of the video, and padding it
-      // would put the trailing silence straight back.
       "-t",
       videoDuration.toFixed(3),
+      // The voice is usually shorter than the picture, so the track is padded
+      // with silence to the end. The picture holds; the audio has finished.
+      "-af",
+      "apad",
       "-vf",
       "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p",
       ...ENCODE,
@@ -143,6 +153,63 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
   return { file: outFile, duration: await probeDuration(outFile) };
 }
 
+/** The shortest a trimmed video is allowed to be, so nobody keeps two frames. */
+const MIN_TRIMMED_SECONDS = 3;
+
+/**
+ * Cut everything after a point a person chose.
+ *
+ * The only thing that shortens a finished video. Nothing here guesses: the
+ * playhead is where they paused it on the final review, and everything after it
+ * goes - picture and audio together.
+ *
+ * Re-encoded rather than stream-copied, because a stream copy cuts at the
+ * previous keyframe and would leave up to a couple of seconds of whatever they
+ * wanted rid of.
+ */
+async function trimVideoAt({ inputFile, atSeconds, outFile, log = () => {} }) {
+  const full = await probeDuration(inputFile);
+  const at = Number(atSeconds);
+
+  if (!Number.isFinite(at) || at <= 0) {
+    throw new Error("Pause the video where you want it to end, then trim.");
+  }
+  if (at < MIN_TRIMMED_SECONDS) {
+    throw new Error(`A video has to be at least ${MIN_TRIMMED_SECONDS} seconds long. Pause it later and try again.`);
+  }
+  // Within a frame of the end there is nothing to remove.
+  if (at >= full - 0.05) {
+    throw new Error("That is already the end of the video. Pause it earlier to cut something off.");
+  }
+
+  log(`Cutting everything after ${at.toFixed(1)}s`);
+  await run(
+    config.ffmpegPath,
+    [
+      "-y",
+      "-i",
+      inputFile,
+      "-t",
+      at.toFixed(3),
+      "-vf",
+      "fps=30,format=yuv420p",
+      ...ENCODE,
+      "-crf",
+      "21",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k",
+      "-ar",
+      "44100",
+      outFile,
+    ],
+    { timeout: 900000 }
+  );
+
+  return { file: outFile, duration: await probeDuration(outFile), wasSeconds: full };
+}
+
 async function buildPoster({ frames, outFile }) {
   // Prefer a frame with the explorer card open - it makes a better thumbnail.
   const source = frames[Math.min(frames.length - 1, Math.max(0, frames.length - 3))];
@@ -150,4 +217,4 @@ async function buildPoster({ frames, outFile }) {
   return outFile;
 }
 
-module.exports = { buildSilentVideo, buildVideo, buildPoster };
+module.exports = { buildSilentVideo, buildVideo, buildPoster, trimVideoAt, MIN_TRIMMED_SECONDS };
