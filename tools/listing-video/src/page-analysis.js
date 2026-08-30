@@ -66,8 +66,19 @@ const NOISE_WORDS = new Set(
   ].map((word) => word.toUpperCase())
 );
 
-const TYPE_GROUP = STREET_TYPES.join("|");
-const DIR_GROUP = DIRECTIONS.join("|");
+/*
+ * Street types and directions in either the mixed case people write or the
+ * SHOUTING that IDX headings use. The regex below cannot simply be made
+ * case-insensitive, because the capital that begins each street-name word is
+ * what stops it matching a sentence, so the two spellings are listed instead.
+ *
+ * Andy Harris's listing is titled "1908 SW MILES ST, Portland, OR 97219". With
+ * only mixed case here, "ST" did not match, no heading address was found, and a
+ * "Recently viewed" address from further down the page was filmed instead.
+ */
+const bothCases = (words) => words.flatMap((word) => [word, word.toUpperCase()]);
+const TYPE_GROUP = bothCases(STREET_TYPES).join("|");
+const DIR_GROUP = bothCases(DIRECTIONS).join("|");
 const STREET_TYPE_SET = new Set(STREET_TYPES.map((type) => type.toLowerCase()));
 
 /*
@@ -335,8 +346,53 @@ function extractAddress(facts) {
 /* what kind of page is this?                                       */
 /* ---------------------------------------------------------------- */
 
+/*
+ * A URL that reads like a search.
+ *
+ * "/idx/" used to be in here, which condemned every page on an idxbroker-hosted
+ * site - including /idx/details/listing/b001/114051774, a single house. So the
+ * IDX paths are named individually instead.
+ */
 const SEARCH_URL_RE =
-  /(\/search|\/results|\/map\b|\/idx\/|advanced-?search|property-?search|\/browse\b|\/sold\b|[?&](q|query|search|keyword|city|zip|minprice|maxprice|beds|baths|sort)=)/i;
+  /(\/search\b|\/results\b|\/map\b|advanced-?search|property-?search|\/browse\b|\/sold\b|\/idx\/(search|results|map|city|area|zipcode|county|subdivision|neighborhood|community|advanced)\b|[?&](q|query|search|keyword|city|zip|minprice|maxprice|beds|baths|sort)=)/i;
+
+/**
+ * A URL that is one house, by its shape alone.
+ *
+ * /idx/details/listing/b001/114051774, /listing/12345, /properties/listing/...
+ * A path like this is a single property on every IDX and every agent site I have
+ * seen, and no search or index page looks like it. Somebody pasting one of these
+ * has told us exactly which house they mean, and that is not overruled by a map
+ * widget or a search box sitting in the page furniture.
+ */
+const SINGLE_LISTING_PATH_RE =
+  /\/(?:idx\/)?(?:details\/)?(?:listing|listings|property|properties|home|homes|mls|estate)\/[^/?#]+/i;
+
+/** Somewhere on the site's own search, rather than on one property. */
+const IDX_SEARCH_PATH_RE = /\/idx\/(search|results|map|city|area|zipcode|county|subdivision|neighborhood|community|advanced)\b/i;
+
+function looksLikeSingleListingUrl(url) {
+  let path;
+  try {
+    const parsed = new URL(url);
+    path = decodeURIComponent(parsed.pathname);
+    // A listing URL does not carry search filters.
+    if (/[?&](q|query|search|keyword|minprice|maxprice|beds|baths|sort)=/i.test(parsed.search)) return false;
+  } catch (_) {
+    return false;
+  }
+  if (IDX_SEARCH_PATH_RE.test(path)) return false;
+  if (/\/(search|results|browse)\b/i.test(path)) return false;
+  return SINGLE_LISTING_PATH_RE.test(path);
+}
+
+function looksLikeIdxSearchUrl(url) {
+  try {
+    return IDX_SEARCH_PATH_RE.test(decodeURIComponent(new URL(url).pathname));
+  } catch (_) {
+    return false;
+  }
+}
 
 // A whole path that is never one listing. The empty path is the homepage.
 const NEVER_LISTING_PATH_RE =
@@ -502,6 +558,12 @@ function classifyPage(facts) {
   const urlNamesHouse = address.isSubject && urlNamesTheSameHouse(url, address.street);
   if (urlNamesHouse) markers.push(`the address is in both the page's URL and its heading (${address.street})`);
 
+  // The URL is the shape of one property. On its own that is a listing marker,
+  // and below it also stops a map or a search box in the furniture calling this
+  // a search page.
+  const urlIsOneListing = looksLikeSingleListingUrl(url);
+  if (urlIsOneListing) markers.push("the URL is for a single property");
+
   // Structured data naming a home, plus a listing-only field, is about as sure
   // as this gets. That outranks a map or a "similar homes" strip further down.
   const stronglyDetail = structured && markers.length >= 2;
@@ -559,18 +621,24 @@ function classifyPage(facts) {
     };
   }
 
-  if (searchReasons.length >= 2 && !stronglyDetail) {
+  /*
+   * A URL for one property is not a search page, however much search furniture
+   * is on it. IDX detail pages carry a map of the neighbourhood and the site's
+   * own search box in the header, and Bill pasted exactly such a URL and was
+   * told to paste a listing URL.
+   */
+  if (searchReasons.length >= 2 && !stronglyDetail && !urlIsOneListing) {
     return { kind: "search", reasons: searchReasons, address };
   }
   if (INDEX_PATH_RE.test(path) && !stronglyDetail) {
     return { kind: "index", reasons: ["this is their listings index, not one listing"], address };
   }
-  if (marketingReasons.length >= 2 && !stronglyDetail) {
+  if (marketingReasons.length >= 2 && !stronglyDetail && !urlIsOneListing) {
     return { kind: "marketing", reasons: marketingReasons, address };
   }
   // One search-ish signal on its own is not much: a site-wide search widget sits
   // in the header of plenty of real listing pages.
-  if (searchReasons.length === 1 && markers.length < 2 && !urlNamesHouse) {
+  if (searchReasons.length === 1 && markers.length < 2 && !urlNamesHouse && !urlIsOneListing) {
     return { kind: "search", reasons: searchReasons, address };
   }
 
@@ -578,7 +646,7 @@ function classifyPage(facts) {
   // least two things only a listing page has. Photos and the words "bed" and
   // "bath" somewhere in the copy are not enough - that is what filmed a city
   // landing page.
-  if (!address.isSubject) {
+  if (!address.isSubject && !urlIsOneListing) {
     return {
       kind: marketingReasons.length ? "marketing" : "other",
       reasons: [
@@ -591,7 +659,7 @@ function classifyPage(facts) {
   }
   // Two listing markers, or one that is the URL and the heading naming the same
   // house, which no landing page can manage.
-  if (markers.length < 2 && !urlNamesHouse) {
+  if (markers.length < 2 && !urlNamesHouse && !urlIsOneListing) {
     return {
       kind: "other",
       reasons: [`${address.street} is named, but there is no price, beds, baths or MLS detail for it`],
@@ -613,6 +681,9 @@ module.exports = {
   cityStateIn,
   countDetailLabels,
   urlNamesTheSameHouse,
+  looksLikeSingleListingUrl,
+  looksLikeIdxSearchUrl,
   looksLikeRegistrationWall,
   REGISTRATION_GATE_RE,
+  SEARCH_URL_RE,
 };
