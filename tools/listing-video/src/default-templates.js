@@ -194,13 +194,13 @@ const SCHOOL_AND_NEIGHBORHOOD = {
       scene: "ne",
       seconds: 2.6,
       text: "Become not just the home expert, but the school and neighborhood expert as well.",
-      caption: { headline: "The school and neighborhood expert.", subline: "Mobility." },
+      caption: { headline: "The school and neighborhood expert.", subline: "Walk & Bike." },
     },
     {
       scene: "ne",
       seconds: 2.6,
       text: "Give us a call!",
-      caption: { headline: "Give us a call.", subline: "Points of Interest." },
+      caption: { headline: "Give us a call.", subline: "What's Nearby." },
     },
   ],
 };
@@ -288,22 +288,22 @@ const SE_TO_NE_UPGRADE = {
     },
     {
       scene: "ne",
-      tab: "Mobility",
+      tab: "Walk & Bike",
       seconds: 3,
-      text: "Mobility: walk, bike, transit, how easy it is to get around.",
-      caption: { headline: "Mobility.", subline: "Walk, bike, transit." },
+      text: "Walk and Bike: how easy it is to get around on foot, on a bike, on transit.",
+      caption: { headline: "Walk & Bike.", subline: "On foot, on a bike, on transit." },
     },
     {
       scene: "ne",
-      tab: "Points of Interest",
+      tab: "What's Nearby",
       seconds: 3,
       text:
-        "Points of Interest: grocery, parks, restaurants, the everyday stuff that makes her want the house.",
-      caption: { headline: "Points of Interest.", subline: "Grocery, parks, restaurants." },
+        "What's Nearby: grocery, parks, restaurants, the everyday stuff that makes her want the house.",
+      caption: { headline: "What's Nearby.", subline: "Grocery, parks, restaurants." },
     },
     {
       scene: "ne",
-      tab: "Points of Interest",
+      tab: "What's Nearby",
       seconds: 10,
       text:
         "That extra time on your page helps SEO and dwell time. Buyers show up already sold on the neighborhood, so you can cut showings per closing. And it is cost effective: one upgrade, same button, on every listing.",
@@ -311,7 +311,7 @@ const SE_TO_NE_UPGRADE = {
     },
     {
       scene: "ne",
-      tab: "Points of Interest",
+      tab: "What's Nearby",
       seconds: 6,
       text: "Become not just the school expert, but the neighborhood expert as well. Give us a call!",
       caption: { headline: "Become the neighborhood expert too.", subline: "Give us a call." },

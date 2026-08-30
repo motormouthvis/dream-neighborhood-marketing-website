@@ -3,10 +3,10 @@
 /**
  * Filming the real Neighborhood Explorer.
  *
- * The Explorer's seven tabs each show genuinely different data - Schools has a
+ * The Explorer's seven chips each show genuinely different data - Schools has a
  * map of schools and school cards, Commutes has "Calculate Your Commute" with
- * Drive/Transit/Walk/Bike, Mobility has "What's within reach" and the walk and
- * bike sliders. The video used to draw its own Neighborhood Explorer card and
+ * Drive/Transit/Walk/Bike, Walk & Bike has the walk and bike radius sliders with
+ * a count of what is inside each. The video used to draw its own card and
  * only move the highlighted tab chip, so every tab beat showed the same Map and
  * Summary body. That is what this replaces.
  *
@@ -28,7 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const { launchExplorerBrowser, closeBrowser } = require("./browser");
 const config = require("./config");
-const { NE_TABS } = require("./demo-data");
+const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("./demo-data");
 
 // The card the shots are dropped into is 1340x764, so they are taken at exactly
 // that size and need no scaling.
@@ -66,14 +66,55 @@ function widgetUrlFor({ lat, lng }) {
 }
 
 /* eslint-disable no-undef */
-/** Click a tab by its label. Runs in the page. */
-function clickTab(label) {
-  const tab = Array.from(document.querySelectorAll(".main-tab-item")).find(
-    (el) => (el.innerText || "").trim().toLowerCase() === String(label).toLowerCase()
+/**
+ * Click a chip. Runs in the page.
+ *
+ * The visible label is tried first, because that is what the product shows and
+ * what the script names. Two chips were renamed - Mobility to "Walk & Bike" and
+ * Points of Interest to "What's Nearby" - while their data-view and switch ids
+ * stayed put, so the key is the way in when a label is being flaky, and the old
+ * labels are still accepted from an older script.
+ *
+ * "Walk & Bike" is an ampersand and "Map and Summary" is the word, so matching
+ * treats the two as the same thing rather than relying on which was written.
+ */
+function clickTab({ label, key, names }) {
+  const tidy = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const wanted = [label].concat(names || []).map(tidy).filter(Boolean);
+  const chips = Array.from(
+    document.querySelectorAll('.main-tab-item, [data-view], [role="tab"], button[id$="-switch"]')
   );
-  if (!tab) return false;
-  tab.click();
-  return true;
+
+  // By what it says.
+  for (const chip of chips) {
+    if (wanted.includes(tidy(chip.innerText))) {
+      chip.click();
+      return { clicked: true, how: "label" };
+    }
+  }
+  // By the key behind it, which did not change when the labels did.
+  if (key) {
+    const byKey =
+      document.querySelector(`[data-view="${key}"]`) ||
+      document.querySelector(`#${key}-switch`) ||
+      chips.find((chip) => tidy(chip.getAttribute("data-view")) === tidy(key));
+    if (byKey) {
+      byKey.click();
+      return { clicked: true, how: "key" };
+    }
+  }
+  return {
+    clicked: false,
+    how: null,
+    // What the widget does offer, so a refusal can say.
+    offered: chips.map((chip) => (chip.innerText || "").trim()).filter(Boolean).slice(0, 12),
+  };
 }
 
 /** What the widget is showing right now. Runs in the page. */
@@ -121,7 +162,8 @@ async function waitForTabContent(page, { previousText, deadline }) {
  * Returns { shots: { [tab]: pngPath }, place, url }.
  */
 async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () => {}, budgetMs = WALK_BUDGET_MS }) {
-  const wanted = tabs.filter((tab) => NE_TABS.includes(tab));
+  // A script written against the old chip names still walks the right chips.
+  const wanted = tabs.map(canonicalTabName).filter((tab) => NE_TABS.includes(tab));
   if (!wanted.length) return { shots: {}, texts: {}, place: "", url: "" };
 
   const url = widgetUrlFor({ lat, lng });
@@ -189,13 +231,21 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
         );
       }
 
-      const clicked = await page.evaluate(clickTab, tab);
-      if (!clicked) {
+      const alias = NE_TAB_ALIASES[tab] || { key: "", wasCalled: [] };
+      const clicked = await page.evaluate(clickTab, {
+        label: tab,
+        key: alias.key,
+        names: alias.wasCalled,
+      });
+      if (!clicked.clicked) {
         throw explorerError(
           "EXPLORER_TAB_MISSING",
-          `The Neighborhood Explorer has no "${tab}" tab any more, so that beat cannot be filmed. The script may need updating to match the product.`
+          `The Neighborhood Explorer has no "${tab}" chip, so that beat cannot be filmed${
+            clicked.offered && clicked.offered.length ? `. It offers: ${clicked.offered.join(", ")}` : ""
+          }. The script may need updating to match the product.`
         );
       }
+      if (clicked.how === "key") log(`Found the ${tab} chip by its id rather than its label`);
 
       const { text, settled } = await waitForTabContent(page, { previousText, deadline });
       if (!settled) log(`${tab} was still loading, filmed it as it stood`);

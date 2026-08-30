@@ -29,7 +29,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const config = require("./config");
-const { NE_TABS } = require("./demo-data");
+const { NE_TABS, canonicalTabName } = require("./demo-data");
 const { DEFAULT_TEMPLATES, DEFAULT_TEMPLATE_IDS } = require("./default-templates");
 
 const SCENES = ["listing", "listing-tap", "se", "ne"];
@@ -126,7 +126,10 @@ function cleanTab(raw, scene, where) {
     return NE_TABS[index];
   }
 
-  const match = NE_TABS.find((tab) => sameTabName(tab, wanted));
+  // canonicalTabName also answers to what a chip used to be called, so a script
+  // saved when Mobility and Points of Interest had those names keeps working.
+  const canonical = canonicalTabName(wanted);
+  const match = NE_TABS.find((tab) => sameTabName(tab, canonical));
   if (!match) {
     throw badRequest(`${where} names a Neighborhood Explorer tab that does not exist: "${wanted}". The tabs are: ${NE_TABS.join(", ")}.`);
   }
@@ -228,6 +231,59 @@ async function writeTemplate(template) {
   return template;
 }
 
+/*
+ * The two chips the product renamed, and how a script should now read.
+ *
+ * The chip is written with an ampersand because that is what the product shows
+ * and what gets clicked; the spoken line says "and", because that is how anybody
+ * reads it aloud.
+ */
+const RENAMED_TABS = [
+  { was: "Mobility", chip: "Walk & Bike", spoken: "Walk and Bike" },
+  { was: "Points of Interest", chip: "What's Nearby", spoken: "What's Nearby" },
+];
+
+/**
+ * Bring a script saved before the chips were renamed up to date.
+ *
+ * Seeding never overwrites a saved script, so a staging data dir still holds the
+ * scripts as they were first written - naming Mobility and Points of Interest in
+ * their tab pins, their spoken lines and their captions. The pins would still
+ * find the right chip, but the voice would name a chip that is no longer there.
+ *
+ * Only the two old names are touched, and only where they still appear, so any
+ * rewording already done by hand is left exactly as it is.
+ */
+function renameTabsIn(template) {
+  let touched = 0;
+  const beats = (template.beats || []).map((beat) => {
+    const next = { ...beat };
+    for (const { was, chip, spoken } of RENAMED_TABS) {
+      const whole = new RegExp(`\\b${was.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+      if (next.tab === was) {
+        next.tab = chip;
+        touched += 1;
+      }
+      if (typeof next.text === "string" && whole.test(next.text)) {
+        next.text = next.text.replace(whole, spoken);
+        touched += 1;
+      }
+      if (next.caption) {
+        const caption = { ...next.caption };
+        for (const part of ["headline", "subline"]) {
+          if (typeof caption[part] === "string" && whole.test(caption[part])) {
+            caption[part] = caption[part].replace(whole, chip);
+            touched += 1;
+          }
+        }
+        next.caption = caption;
+      }
+    }
+    return next;
+  });
+  return touched ? { ...template, beats } : null;
+}
+
 /**
  * Put the shipped templates on disk.
  *
@@ -258,6 +314,8 @@ async function ensureSeeded() {
     offered.push(template.id);
   }
 
+  await renameTabsOnDisk();
+
   const missing = DEFAULT_TEMPLATE_IDS.some((id) => !offered.includes(id));
   if (seeded.length || missing || !fs.existsSync(marker)) {
     await fsp.writeFile(
@@ -267,6 +325,32 @@ async function ensureSeeded() {
     );
   }
   return seeded;
+}
+
+/** Apply the chip rename to every script already on disk. Returns the ids changed. */
+async function renameTabsOnDisk() {
+  let names = [];
+  try {
+    names = await fsp.readdir(dir());
+  } catch (_) {
+    return [];
+  }
+  const changed = [];
+  for (const name of names) {
+    if (!name.endsWith(".json") || name === SEED_MARKER) continue;
+    const id = name.replace(/\.json$/, "");
+    let saved;
+    try {
+      saved = JSON.parse(await fsp.readFile(fileFor(id), "utf8"));
+    } catch (_) {
+      continue;
+    }
+    const renamed = renameTabsIn(saved);
+    if (!renamed) continue;
+    await writeTemplate(renamed);
+    changed.push(id);
+  }
+  return changed;
 }
 
 /** Put the shipped templates back, exactly as they ship. */
@@ -395,7 +479,7 @@ function renderBeats(template, vars = {}) {
     if (beat.scene === "ne") {
       // A beat that names its own tab wins. That is how a script guarantees the
       // Demographics tab is on screen while the voice says "Demographics".
-      const pinned = beat.tab ? NE_TABS.indexOf(beat.tab) : -1;
+      const pinned = beat.tab ? NE_TABS.indexOf(canonicalTabName(beat.tab)) : -1;
       rendered.neTab = pinned >= 0 ? pinned : Math.min(neSeen, NE_TABS.length - 1);
       rendered.neTabName = NE_TABS[rendered.neTab];
       neSeen += 1;
@@ -442,6 +526,7 @@ module.exports = {
   MAX_BEAT_SECONDS,
   dir,
   ensureSeeded,
+  renameTabsOnDisk,
   restoreDefaults,
   listTemplates,
   getTemplate,
