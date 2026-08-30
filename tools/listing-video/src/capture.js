@@ -596,6 +596,17 @@ function sameTarget(a, b) {
   return tidy(a) === tidy(b);
 }
 
+/*
+ * A customer who already has an Explorer is not a dead end, he is the upgrade
+ * pitch. Andy Harris has our School Explorer on his listings, so the two
+ * before-and-after scripts have no "before" to film there - and the third script
+ * exists for exactly that customer. Say so, rather than only saying no.
+ */
+const EXPLORER_ALREADY_THERE =
+  "That page already has a Dream Neighborhood Explorer on it, so it cannot be the \u201cbefore\u201d shot for this script. " +
+  "This customer is already on School Explorer, so the \u201cSE to NE upgrade\u201d script is the one to use - it opens on their listing with School Explorer and pitches Neighborhood Explorer. " +
+  "Otherwise paste one of their listings that does not have it yet.";
+
 /** One refusal for "something is over the page", naming a cookie bar as such. */
 function blockedError(left) {
   const worst = left[0] || {};
@@ -1677,7 +1688,7 @@ async function captureListing({
     if (startedOnListingUrl && first.reason === "explorer") {
       throw captureError(
         "LISTING_HAS_EXPLORER",
-        "That page already has a Dream Neighborhood Explorer embedded on it, so it cannot be the \u201cbefore\u201d shot. Pick one of their listings that does not have it yet."
+        EXPLORER_ALREADY_THERE
       );
     }
     if (startedOnListingUrl && first.reason === "blocked") {
@@ -1700,7 +1711,7 @@ async function captureListing({
       if (first.explorer && first.explorer.found && !wantExplorer) {
         throw captureError(
           "LISTING_HAS_EXPLORER",
-          "That page already has a Dream Neighborhood Explorer embedded on it, so it cannot be the \u201cbefore\u201d shot. Pick one of their listings that does not have it yet."
+          EXPLORER_ALREADY_THERE
         );
       }
       log("That URL is one property, so it is being filmed as it is");

@@ -279,6 +279,9 @@ const ROUTES = {
  * neighbourhood map sits in the middle of the page. It also has no structured
  * data, a SHOUTING address in its heading, and a "Similar Listings" rail of
  * other people's houses - which is where the wrong address came from.
+ *
+ * The price, size, listing ID, photo count, branding and the "See school ratings
+ * near" widget are all as confirmed on the live page.
  */
 const IDX_DETAILS = page(
   "Residential for sale in Portland, Oregon, 114051774",
@@ -291,16 +294,20 @@ const IDX_DETAILS = page(
        <a href="/idx/search">Advanced Search</a> &middot; <a href="/idx/map">Map Search</a>
      </div>
      <p><a href="/idx/search">New Search</a> &middot; Add to Favorites</p>
+     <p>FORIS REAL ESTATE | eXp Realty</p>
      <h1>1908 SW MILES ST, Portland, OR 97219</h1>
-     <p class="price">$724,900</p>
-     <p>3 beds &middot; 2 baths &middot; 1,844 sq ft</p>
+     <p class="price">$560,000</p>
+     <p>3 beds &middot; 2 baths &middot; 1,502 sq ft</p>
      <div class="gallery">
        <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
        <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+       <span>+44</span>
      </div>
      <div id="map" style="height:320px"><p>Map data &middot; Street View &middot; Zoom in</p></div>
+     <div class="card"><p>See school ratings near 1908 SW Miles St</p><button>View schools</button></div>
      <h2>Property Details</h2>
      <table>
+       <tr><td>Listing ID</td><td>114051774</td></tr>
        <tr><td>MLS #</td><td>114051774</td></tr>
        <tr><td>Year Built</td><td>1955</td></tr>
        <tr><td>Property Type</td><td>Residential</td></tr>
@@ -321,6 +328,19 @@ const IDX_SITE = {
   "/idx/details/listing/b001/114051774": IDX_DETAILS,
 };
 
+/*
+ * The same site, but with our School Explorer already installed - which is what
+ * Andy Harris really has. There is no "before" here for the two before-and-after
+ * scripts, and the upgrade script wants exactly this page.
+ */
+const IDX_SITE_WITH_EXPLORER = {
+  ...IDX_SITE,
+  "/idx/details/listing/b001/114051774": IDX_DETAILS.replace(
+    "</head>",
+    '<script src="https://app.dreamneighborhood.com/explorer/sdk.js" data-dn-partner="foris"></script></head>'
+  ),
+};
+
 /**
  * A site whose homepage bounces straight onto its IDX search, like
  * homes.dukecitysunrise.com. There is no listing to be had without walking the
@@ -329,7 +349,8 @@ const IDX_SITE = {
 const SEARCH_ONLY_SITE = {
   "/": { redirect: "/idx/search" },
   "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
-  "/idx/search": SEARCH,
+  // "MY SEARCH & LOGIN" is an optional header link on the real site, not a gate.
+  "/idx/search": SEARCH.replace("<h1>", '<a href="/idx/signup">MY SEARCH &amp; LOGIN</a><h1>'),
   "/idx/mortgage": page("Mortgage Calculator", '<div class="wrap"><h1>Mortgage Calculator</h1></div>'),
   "/idx/homevaluation": page("What Is Your Home Worth?", '<div class="wrap"><h1>What Is Your Home Worth?</h1></div>'),
 };
@@ -518,6 +539,7 @@ module.exports = {
   WALL_OVER_LISTING,
   SLOW_SITE,
   IDX_SITE,
+  IDX_SITE_WITH_EXPLORER,
   IDX_DETAILS_PATH: "/idx/details/listing/b001/114051774",
   SEARCH_ONLY_SITE,
   FORBIDDEN_SITE,

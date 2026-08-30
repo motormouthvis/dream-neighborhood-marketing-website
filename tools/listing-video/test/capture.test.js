@@ -159,6 +159,42 @@ test("a pasted IDX details URL is one house, whatever furniture is on the page",
   assert.notEqual(shot.address.street, "205 SE Spokane St");
 });
 
+/*
+ * The live page carries a map of the neighbourhood and a "See school ratings
+ * near 1908 SW Miles St" widget. Neither is a reason to call one house a page of
+ * search results.
+ */
+test("a map and a school-ratings widget do not turn a listing into a search page", options, async () => {
+  const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.checked[0].kind, "detail");
+  assert.equal(shot.address.street, "1908 SW MILES ST");
+});
+
+/*
+ * Andy Harris really has app.dreamneighborhood.com/explorer/sdk.js on his
+ * listings, so there is no "before" shot to film there. That is the upgrade
+ * pitch, not a dead end, and the refusal has to say so.
+ */
+test("a listing that already has School Explorer is sent to the upgrade script", options, async () => {
+  const shot = await capture(fixture.IDX_SITE_WITH_EXPLORER, { listingUrl: fixture.IDX_DETAILS_PATH });
+  assert.ok(shot.error, "the before-and-after scripts have no before here");
+  assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
+  assert.match(shot.error.message, /SE to NE upgrade/);
+});
+
+test("the upgrade script films that same listing, School Explorer and all", options, async () => {
+  const shot = await capture(fixture.IDX_SITE_WITH_EXPLORER, {
+    listingUrl: fixture.IDX_DETAILS_PATH,
+    explorerRule: "prefer-present",
+  });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, fixture.IDX_DETAILS_PATH);
+  assert.equal(shot.address.street, "1908 SW MILES ST");
+  // It really has School Explorer, so nothing is drawn on for the opening shot.
+  assert.deepEqual(shot.notes, []);
+});
+
 test("a pasted listing is opened once, and no other page is touched", options, async () => {
   const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");
@@ -181,6 +217,10 @@ test("a homepage that bounces onto IDX search is refused, not crawled", options,
   assert.match(shot.error.message, /single house/i);
   assert.equal(shot.hits["/idx/mortgage"], undefined, "no wandering around the IDX pages");
   assert.equal(shot.hits["/idx/homevaluation"], undefined);
+  // "MY SEARCH & LOGIN" in the header is optional, so this is a search page we
+  // will not film, not a site demanding an account.
+  assert.notEqual(shot.error.code, "REGISTRATION_WALL");
+  assert.doesNotMatch(shot.error.message, /account/i);
 });
 
 /*

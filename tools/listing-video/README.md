@@ -76,7 +76,7 @@ What it does about an Explorer already being on the page depends on the script:
 
 | The script needs | What capture does |
 | --- | --- |
-| a listing with no Explorer on it yet | If the one listing it opens already has one, it refuses and asks for a different listing URL. It does not go looking through more listings. |
+| a listing with no Explorer on it yet | If the one listing it opens already has one, it refuses — and points at the *SE to NE upgrade* script, since a customer who already has School Explorer is that pitch rather than a dead end. It does not go looking through more listings. |
 | a listing that already has School Explorer | Uses the one listing it opens. If that listing does not have School Explorer yet, the video says School Explorer was drawn on for the opening shot. To target a listing that really has it, paste its URL. |
 
 Both of those used to look through several listings to find the right one. They
@@ -112,9 +112,15 @@ A URL is treated as one house on its **shape alone** — `/idx/details/listing/.
 `/listing/...`, `/listings/123-main-st`, `/properties/listing/...`, `/property/...`,
 `/homes/...`. No search or index page looks like that, and somebody who pastes one
 has said exactly which house they mean. So the page furniture cannot overrule
-them: an IDX details page carries the site's own search box in its header and a
-neighbourhood map in the middle of the page, and neither makes it a page of search
-results.
+them: an IDX details page carries the site's own search box in its header, a
+neighbourhood map in the middle of the page and often a "See school ratings near
+&lt;address&gt;" widget, and none of that makes it a page of search results.
+
+The page this was checked against, opened with no login,
+`andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774`, is one
+house: 1908 SW MILES ST, Portland, OR 97219, $560,000, 3 bed, 2 bath, 1,502 sq ft,
+listing ID 114051774, a gallery of about 44 photos, branded FORIS / eXp. No cookie
+banner and no account wall. It is filmed as it is.
 
 It still has to be free of an [account wall](#the-account-wall), free of
 [our own Explorer](#which-listing-gets-filmed) and free of overlays. Those are
@@ -140,9 +146,11 @@ Two things had this refusing URLs Bill had pasted himself:
 #### A site that has nothing but search
 
 A homepage that bounces straight onto the site's own IDX search — as
-`homes.dukecitysunrise.com` does — is refused on the spot and asks for a listing
-URL. Its listings are only reachable by walking the search results, and walking
-IDX results is the thing that raises the account wall.
+`homes.dukecitysunrise.com` does, landing on IDX advanced search — is refused on
+the spot and asks for a listing URL. Its listings are only reachable by walking
+the search results, and walking IDX results is the thing that raises the account
+wall. That site loads perfectly well and its "MY SEARCH & LOGIN" link is optional,
+so the refusal says it is a search page, not that the site is missing or gated.
 
 #### A brand-new browser every time
 
