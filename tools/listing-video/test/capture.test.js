@@ -143,6 +143,73 @@ test("a pasted listing URL is used as-is, after the cookies are accepted", optio
   assert.equal(shot.address.street, "123 Main St");
 });
 
+/*
+ * Bill pasted https://andyharrisrealestate.idxbroker.com/idx/details/listing/
+ * b001/114051774 and was told "1 page were checked and they were 1 search or map
+ * page. Paste one listing URL". He had. Two things did it: "/idx/" was in the
+ * search-URL pattern, so every page on an idxbroker site was a search, and the
+ * page's own search box and neighbourhood map were counted against it.
+ */
+test("a pasted IDX details URL is one house, whatever furniture is on the page", options, async () => {
+  const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, fixture.IDX_DETAILS_PATH);
+  // The heading SHOUTS, and the wrong address is three cards further down.
+  assert.equal(shot.address.street, "1908 SW MILES ST");
+  assert.notEqual(shot.address.street, "205 SE Spokane St");
+});
+
+test("a pasted listing is opened once, and no other page is touched", options, async () => {
+  const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.checked.length, 1, "only the page we were given gets assessed");
+  assert.equal(shot.hits["/idx/search"], undefined, "the search page is never opened");
+  // One request for the page itself: loading it lean and again for the shutter
+  // costs a second listing view, and it is the repeat hit that IDX blocks.
+  assert.equal(shot.hits[fixture.IDX_DETAILS_PATH], 1);
+});
+
+/*
+ * homes.dukecitysunrise.com bounces its homepage onto /idx/search. Crawling the
+ * results is what puts up the "create an account" wall, so it stops here.
+ */
+test("a homepage that bounces onto IDX search is refused, not crawled", options, async () => {
+  const shot = await capture(fixture.SEARCH_ONLY_SITE);
+  assert.ok(shot.error, "a search page is never filmed");
+  assert.equal(shot.error.code, "SITE_IS_SEARCH_ONLY");
+  assert.match(shot.error.message, /paste that URL/i);
+  assert.match(shot.error.message, /single house/i);
+  assert.equal(shot.hits["/idx/mortgage"], undefined, "no wandering around the IDX pages");
+  assert.equal(shot.hits["/idx/homevaluation"], undefined);
+});
+
+/*
+ * Bill was told "That address came back as 403, so there is no page there" for a
+ * site that answered curl with a 302. A 403 is the site refusing us.
+ */
+test("a 403 is the site blocking us, not a missing page", options, async () => {
+  const shot = await capture(fixture.FORBIDDEN_SITE);
+  assert.ok(shot.error, "a blocked site cannot be filmed");
+  assert.equal(shot.error.code, "SITE_BLOCKED");
+  assert.doesNotMatch(shot.error.message, /no page there|there is no page/i);
+  assert.match(shot.error.message, /blocked/i);
+  assert.match(shot.error.message, /listing URL/i);
+});
+
+test("a pasted listing that 403s says so, and does not claim the page is missing", options, async () => {
+  const shot = await capture(fixture.FORBIDDEN_SITE, { listingUrl: "/listings/123-main-st" });
+  assert.ok(shot.error);
+  assert.equal(shot.error.code, "SITE_BLOCKED");
+  assert.doesNotMatch(shot.error.message, /no page there|there is no page/i);
+});
+
+test("a page that really is missing still says so", options, async () => {
+  const shot = await capture(fixture.ROUTES, { listingUrl: "/listings/no-such-house" });
+  assert.ok(shot.error);
+  assert.equal(shot.error.code, "PAGE_NOT_FOUND");
+  assert.match(shot.error.message, /no page at that address/i);
+});
+
 test("a pasted homepage is not filmed; capture walks off it to a real listing", options, async () => {
   const shot = await capture(fixture.ROUTES, { listingUrl: "/" });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");

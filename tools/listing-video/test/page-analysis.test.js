@@ -16,6 +16,8 @@ const {
   looksLikeStreetAddress,
   firstStreetIn,
   urlNamesTheSameHouse,
+  looksLikeSingleListingUrl,
+  looksLikeIdxSearchUrl,
   looksLikeRegistrationWall,
   REGISTRATION_GATE_RE,
 } = require("../src/page-analysis");
@@ -174,6 +176,91 @@ test("a listing page keeps its verdict even with a location map and similar home
     bodyText: `${DETAIL_PAGE.bodyText} Similar homes for sale in Smyrna`,
   });
   assert.equal(verdict.kind, "detail");
+});
+
+/* ---------------------------------------------------------------- */
+/* a URL that is already one house                                  */
+/* ---------------------------------------------------------------- */
+
+test("a URL for a single property is recognised by its shape", () => {
+  for (const url of [
+    "https://andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774",
+    "https://www.redwagonteam.com/properties/listing/CRMLS/PW26184619/7092-Island-Village-Drive-Long-Beach-CA-90803/",
+    "https://patty.test/listing/4497-chase-drive",
+    "https://patty.test/listings/123-main-st",
+    "https://patty.test/property/8891",
+    "https://patty.test/homes/22-monterey-court",
+  ]) {
+    assert.equal(looksLikeSingleListingUrl(url), true, url);
+  }
+});
+
+test("a search, an index and a homepage are not mistaken for one property", () => {
+  for (const url of [
+    "https://homes.dukecitysunrise.com/idx/search",
+    "https://andyharrisrealestate.idxbroker.com/idx/results/listing",
+    "https://patty.test/",
+    "https://patty.test/listings",
+    "https://patty.test/homes-for-sale",
+    "https://patty.test/search?city=smyrna&beds=3",
+    "https://patty.test/listings/search?minprice=500000",
+    "https://patty.test/idx/mortgage",
+  ]) {
+    assert.equal(looksLikeSingleListingUrl(url), false, url);
+  }
+});
+
+test("the site's own search pages are spotted, its details pages are not", () => {
+  assert.equal(looksLikeIdxSearchUrl("https://homes.dukecitysunrise.com/idx/search"), true);
+  assert.equal(looksLikeIdxSearchUrl("https://x.idxbroker.com/idx/city/portland"), true);
+  assert.equal(looksLikeIdxSearchUrl("https://x.idxbroker.com/idx/details/listing/b001/114051774"), false);
+});
+
+/*
+ * The refusal Bill got: "1 page were checked and they were 1 search or map
+ * page", on a URL he had pasted himself. An IDX details page is under /idx/,
+ * carries the site's own search box in its header and a neighbourhood map in
+ * the middle, and none of that makes it a page of search results.
+ */
+test("an IDX details page is one house, not a search, map or index", () => {
+  const verdict = classifyPage({
+    url: "https://andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774",
+    title: "Residential for sale in Portland, Oregon, 114051774",
+    h1s: ["1908 SW MILES ST, Portland, OR 97219"],
+    jsonLd: [],
+    microdata: {},
+    bodyText:
+      "Real Estate Search HOME SEARCH MAP SEARCH ADVANCED SEARCH BASIC SEARCH New Search " +
+      "1908 SW MILES ST, Portland, OR 97219 $724,900 3 beds 2 baths 1,844 sq ft " +
+      "MLS # 114051774 Year Built 1955 Days on Market 6 Similar Listings " +
+      "205 SE Spokane St Portland, Oregon 11131 SW 45th Ave Portland, Oregon",
+    priceCount: 4,
+    listingLinkCount: 14,
+    addressCount: 4,
+    mapAreaFraction: 0.3,
+    searchInputCount: 6,
+    galleryImageCount: 8,
+    hasBeds: true,
+    hasBaths: true,
+    hasSqft: true,
+    mlsId: "114051774",
+  });
+  assert.equal(verdict.kind, "detail");
+  assert.equal(verdict.address.street, "1908 SW MILES ST");
+});
+
+test("a shouted address in a heading is read, and the similar-listings rail is not", () => {
+  const address = extractAddress({
+    url: "https://andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774",
+    h1s: ["1908 SW MILES ST, Portland, OR 97219"],
+    jsonLd: [],
+    bodyText:
+      "1908 SW MILES ST , Portland , OR 97219 Similar Listings 205 SE Spokane St Portland, Oregon",
+  });
+  assert.equal(address.street, "1908 SW MILES ST");
+  assert.equal(address.cityState, "Portland, OR");
+  assert.equal(address.zip, "97219");
+  assert.equal(address.isSubject, true);
 });
 
 test("a homepage and a bare listings index are neither", () => {

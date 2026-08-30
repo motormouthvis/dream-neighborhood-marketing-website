@@ -271,6 +271,76 @@ const ROUTES = {
   "/about": ABOUT,
 };
 
+/*
+ * An IDX details page, built to match the one Bill pasted and was refused.
+ *
+ * Everything here is what made that page look like a search: the URL sits under
+ * /idx/, the header carries the site's own search with several filters, and a
+ * neighbourhood map sits in the middle of the page. It also has no structured
+ * data, a SHOUTING address in its heading, and a "Similar Listings" rail of
+ * other people's houses - which is where the wrong address came from.
+ */
+const IDX_DETAILS = page(
+  "Residential for sale in Portland, Oregon, 114051774",
+  `<div class="wrap">
+     <div class="filters">
+       <input placeholder="Add Another Location" name="location" />
+       <select name="minprice"><option>Price</option></select>
+       <select name="beds"><option>Beds</option></select>
+       <select name="baths"><option>Baths</option></select>
+       <a href="/idx/search">Advanced Search</a> &middot; <a href="/idx/map">Map Search</a>
+     </div>
+     <p><a href="/idx/search">New Search</a> &middot; Add to Favorites</p>
+     <h1>1908 SW MILES ST, Portland, OR 97219</h1>
+     <p class="price">$724,900</p>
+     <p>3 beds &middot; 2 baths &middot; 1,844 sq ft</p>
+     <div class="gallery">
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+     </div>
+     <div id="map" style="height:320px"><p>Map data &middot; Street View &middot; Zoom in</p></div>
+     <h2>Property Details</h2>
+     <table>
+       <tr><td>MLS #</td><td>114051774</td></tr>
+       <tr><td>Year Built</td><td>1955</td></tr>
+       <tr><td>Property Type</td><td>Residential</td></tr>
+       <tr><td>Days on Market</td><td>6</td></tr>
+     </table>
+     <h2>Similar Listings</h2>
+     <div class="card"><div class="IDX-similar-listings--address">205 SE Spokane St Portland, Oregon</div></div>
+     <div class="card"><div class="IDX-similar-listings--address">11131 SW 45th Ave Portland, Oregon</div></div>
+     <div class="card"><div class="IDX-similar-listings--address">9009 SW 36th Ave Portland, Oregon</div></div>
+   </div>`
+);
+
+/** The same details page, but hosted where an IDX site really puts it. */
+const IDX_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH,
+  "/idx/details/listing/b001/114051774": IDX_DETAILS,
+};
+
+/**
+ * A site whose homepage bounces straight onto its IDX search, like
+ * homes.dukecitysunrise.com. There is no listing to be had without walking the
+ * search results, and walking IDX results is what raises the account wall.
+ */
+const SEARCH_ONLY_SITE = {
+  "/": { redirect: "/idx/search" },
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH,
+  "/idx/mortgage": page("Mortgage Calculator", '<div class="wrap"><h1>Mortgage Calculator</h1></div>'),
+  "/idx/homevaluation": page("What Is Your Home Worth?", '<div class="wrap"><h1>What Is Your Home Worth?</h1></div>'),
+};
+
+/** A site that refuses an automated browser outright, the way Andy Harris's did. */
+const FORBIDDEN_SITE = {
+  ...ROUTES,
+  "/": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/123-main-st": { status: 403, body: "<h1>Forbidden</h1>" },
+};
+
 /**
  * A listing whose cookie banner cannot be dismissed at all: Accept does
  * nothing, and an observer puts the banner back if anything tries to hide it.
@@ -398,12 +468,25 @@ function createServer(routes = ROUTES, hits = {}) {
     hits[url.pathname] = (hits[url.pathname] || 0) + 1;
 
     const route = routes[url.pathname];
+    const spec = route && typeof route === "object" ? route : { body: route };
     // A route can ask to be slow, so the capture budget can be exercised.
-    const body = route && typeof route === "object" ? route.body : route;
-    const delayMs = route && typeof route === "object" ? route.delayMs || 0 : 0;
-    const contentType = (route && typeof route === "object" && route.contentType) || "text/html; charset=utf-8";
+    const body = spec.body;
+    const delayMs = spec.delayMs || 0;
+    const contentType = spec.contentType || "text/html; charset=utf-8";
 
     const send = () => {
+      // A homepage that bounces onto the site's search, like an IDX site does.
+      if (spec.redirect) {
+        res.writeHead(spec.status || 302, { location: spec.redirect });
+        res.end();
+        return;
+      }
+      // A site that refuses an automated browser rather than serving the page.
+      if (spec.status && spec.status >= 400) {
+        res.writeHead(spec.status, { "content-type": contentType });
+        res.end(body || "");
+        return;
+      }
       res.writeHead(body ? 200 : 404, { "content-type": contentType });
       res.end(body || page("Not found", '<div class="wrap"><h1>Not found</h1></div>', { cookies: false }));
     };
@@ -434,6 +517,10 @@ module.exports = {
   WALLED_SITE,
   WALL_OVER_LISTING,
   SLOW_SITE,
+  IDX_SITE,
+  IDX_DETAILS_PATH: "/idx/details/listing/b001/114051774",
+  SEARCH_ONLY_SITE,
+  FORBIDDEN_SITE,
   createServer,
   listen,
 };
