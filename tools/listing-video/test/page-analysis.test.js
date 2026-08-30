@@ -55,6 +55,23 @@ test("real addresses still come through, including directions and long names", (
   assert.equal(firstStreetIn("22 Monterey Court, Smyrna"), "22 Monterey Court");
 });
 
+/*
+ * IDX headings shout. "1908 SW MILES ST" found no street at all, because the
+ * street types were only listed in mixed case, so the page's own heading yielded
+ * no address and one from further down the page was filmed instead.
+ */
+test("a SHOUTED street type is still a street type", () => {
+  assert.equal(firstStreetIn("1908 SW MILES ST, Portland, OR 97219"), "1908 SW MILES ST");
+  assert.equal(firstStreetIn("7092 ISLAND VILLAGE DR"), "7092 ISLAND VILLAGE DR");
+  assert.equal(firstStreetIn("205 SE SPOKANE ST"), "205 SE SPOKANE ST");
+  assert.equal(firstStreetIn("1420 BELLFLOWER BLVD"), "1420 BELLFLOWER BLVD");
+  assert.equal(firstStreetIn("88 OCEAN VIEW AVE"), "88 OCEAN VIEW AVE");
+  assert.equal(firstStreetIn("4697 WEHUNT COMMONS DRIVE SE"), "4697 WEHUNT COMMONS DRIVE SE");
+  // And the shouting does not let the spec row through.
+  assert.equal(looksLikeStreetAddress("032 SQFT 4497 CHASE DRIVE"), false);
+  assert.equal(firstStreetIn("3 BEDS 2 BATHS"), "");
+});
+
 test("the page's own structured data is trusted before its body text", () => {
   const facts = {
     url: "https://patty.test/listings/4497-chase-drive",
@@ -247,6 +264,50 @@ test("an IDX details page is one house, not a search, map or index", () => {
   });
   assert.equal(verdict.kind, "detail");
   assert.equal(verdict.address.street, "1908 SW MILES ST");
+});
+
+/*
+ * The other side of the same fix: the site's own search pages are still search
+ * pages. Only the details paths were being wrongly condemned.
+ */
+test("the IDX search and results pages are still search pages", () => {
+  for (const url of [
+    "https://andyharrisrealestate.idxbroker.com/idx/search",
+    "https://andyharrisrealestate.idxbroker.com/idx/results/listing",
+    "https://homes.dukecitysunrise.com/idx/search",
+    "https://x.idxbroker.com/idx/map/mapsearch",
+  ]) {
+    const verdict = classifyPage({ ...SEARCH_PAGE, url });
+    assert.equal(verdict.kind, "search", url);
+  }
+});
+
+/*
+ * Point 2 of the diagnosis: one search signal used to be enough whenever the
+ * listing markers were thin and the URL had no street slug. IDX Broker uses a
+ * feed code and a numeric id, so there is never a street slug to save it.
+ */
+test("a details URL with thin markers is still one house, not a search", () => {
+  const verdict = classifyPage({
+    url: "https://andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774",
+    title: "Residential for sale in Portland, Oregon, 114051774",
+    h1s: [],
+    jsonLd: [],
+    microdata: {},
+    bodyText: "Real Estate Search ADVANCED SEARCH BASIC SEARCH New Search Add to Favorites",
+    priceCount: 0,
+    listingLinkCount: 3,
+    addressCount: 0,
+    mapAreaFraction: 0.35,
+    searchInputCount: 6,
+    galleryImageCount: 0,
+    hasBeds: false,
+    hasBaths: false,
+    hasSqft: false,
+    mlsId: "",
+  });
+  assert.notEqual(verdict.kind, "search");
+  assert.notEqual(verdict.kind, "index");
 });
 
 test("a shouted address in a heading is read, and the similar-listings rail is not", () => {
