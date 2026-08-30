@@ -86,16 +86,24 @@ function clickTab({ label, key, names }) {
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
 
-  const wanted = [label].concat(names || []).map(tidy).filter(Boolean);
   const chips = Array.from(
     document.querySelectorAll('.main-tab-item, [data-view], [role="tab"], button[id$="-switch"]')
   );
 
-  // By what it says.
-  for (const chip of chips) {
-    if (wanted.includes(tidy(chip.innerText))) {
+  /*
+   * The current label first, then what the chip used to be called.
+   *
+   * Tried in that order rather than whichever chip happens to come first in the
+   * DOM, so a staging box still showing an old label cannot win over a current
+   * one. Both are accepted, because staging and production are not always on the
+   * same build.
+   */
+  const wanted = [label].concat(names || []).map(tidy).filter(Boolean);
+  for (const name of wanted) {
+    const chip = chips.find((candidate) => tidy(candidate.innerText) === name);
+    if (chip) {
       chip.click();
-      return { clicked: true, how: "label" };
+      return { clicked: true, how: name === tidy(label) ? "label" : "old label" };
     }
   }
   // By the key behind it, which did not change when the labels did.

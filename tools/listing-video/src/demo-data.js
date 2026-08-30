@@ -133,7 +133,7 @@ const NE_TABS = [
  */
 const NE_TAB_ALIASES = {
   "Walk & Bike": { key: "mobility", wasCalled: ["Mobility", "Walk and Bike"] },
-  "What's Nearby": { key: "points-of-interest", wasCalled: ["Points of Interest"] },
+  "What's Nearby": { key: "points-of-interest", wasCalled: ["Points of Interest", "POI"] },
   "Map and Summary": { key: "map-and-summary", wasCalled: ["Map & Summary", "Summary"] },
   Demographics: { key: "demographics", wasCalled: [] },
   Schools: { key: "schools", wasCalled: [] },

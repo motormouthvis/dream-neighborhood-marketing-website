@@ -14,6 +14,7 @@ process.env.LISTING_VIDEO_DATA_DIR = dataDir;
 process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const templates = require("../src/templates");
+const { NE_TABS } = require("../src/demo-data");
 
 test("first run seeds all three shipped templates", async () => {
   const seeded = await templates.ensureSeeded();
@@ -35,6 +36,76 @@ test("the school-only script never mentions Neighborhood Explorer", async () => 
     .map((beat) => `${beat.text} ${beat.caption ? `${beat.caption.headline} ${beat.caption.subline}` : ""}`)
     .join(" ");
   assert.ok(!/neighborhood explorer/i.test(everything), "school-only script must not mention Neighborhood Explorer");
+});
+
+/*
+ * Bill's staging job died on "The Neighborhood Explorer has no 'Mobility' tab
+ * any more". No shipped script may ask for a chip the product does not have -
+ * not in the chip it pins, not in what the voice says, not in the caption.
+ */
+test("no shipped script names a chip the product no longer has", async () => {
+  for (const template of await templates.listTemplates()) {
+    const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" });
+
+    for (const beat of beats) {
+      if (beat.scene !== "ne") continue;
+      assert.ok(
+        NE_TABS.includes(beat.neTabName),
+        `${template.id} pins a chip that does not exist: ${JSON.stringify(beat.neTabName)}`
+      );
+    }
+
+    const written = [
+      templates.beatsToText(beats),
+      beats.map((beat) => (beat.caption ? `${beat.caption.headline} ${beat.caption.subline}` : "")).join(" "),
+    ].join(" ");
+    assert.doesNotMatch(written, /Mobility/i, `${template.id} still says Mobility`);
+    assert.doesNotMatch(written, /Points of Interest/i, `${template.id} still says Points of Interest`);
+  }
+});
+
+/*
+ * The voice has to name the chip that is on screen while it is said. The chip
+ * carries an ampersand because that is what the product draws; the spoken line
+ * says "and", because that is how anybody reads it aloud.
+ */
+test("the voice says Walk and Bike while the Walk & Bike chip is showing", async () => {
+  const upgrade = await templates.getTemplate("se-to-ne-upgrade");
+  const beats = templates.renderBeats(upgrade, { firstName: "Vanessa", company: "DOMO" });
+
+  const walk = beats.find((beat) => beat.neTabName === "Walk & Bike");
+  assert.ok(walk, "the upgrade script walks the Walk & Bike chip");
+  assert.match(walk.text, /Walk and Bike/, "the spoken line reads it aloud");
+  assert.equal(walk.caption.headline, "Walk & Bike.", "the caption matches the chip");
+
+  const nearby = beats.find((beat) => beat.neTabName === "What's Nearby");
+  assert.ok(nearby, "and the What's Nearby chip");
+  assert.match(nearby.text, /What's Nearby/);
+  assert.equal(nearby.caption.headline, "What's Nearby.");
+});
+
+test("a script saved with Bill's spelling points at the same chip", async () => {
+  const mine = await templates.createTemplate({
+    name: "Bill's spelling",
+    explorers: "se-ne",
+    beats: [
+      { scene: "listing", seconds: 6, text: "Take a look at this one." },
+      { scene: "se", seconds: 6, text: "Here it is with School Explorer." },
+      { scene: "ne", tab: "Walk and Bike", seconds: 3, text: "Walk and Bike." },
+      { scene: "ne", tab: "POI", seconds: 3, text: "What's Nearby." },
+    ],
+  });
+  try {
+    // Stored under the name the product uses, however it was typed in.
+    assert.equal(mine.beats[2].tab, "Walk & Bike");
+    assert.equal(mine.beats[3].tab, "What's Nearby");
+
+    const beats = templates.renderBeats(mine, { firstName: "Vanessa", company: "DOMO" });
+    const tabs = beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName);
+    assert.deepEqual(tabs, ["Walk & Bike", "What's Nearby"]);
+  } finally {
+    await templates.deleteTemplate(mine.id);
+  }
 });
 
 test("the shipped scripts keep the approved words and the v11 durations", async () => {

@@ -404,11 +404,25 @@ than filmed from the wrong panel. Left to right:
 
 Two chips were renamed, and their internal keys did not change — `data-view=mobility`
 with `#mobility-switch`, and `data-view=points-of-interest` with
-`#points-of-interest-switch`. So a chip is found by its visible text first, and by
-that key when a label is being flaky; the job log says when it fell back to the key.
-The old names are still accepted from a script, and a script saved before the
-rename is brought up to date on boot: the pin, the spoken line and the caption.
-Anything reworded by hand is left alone.
+`#points-of-interest-switch`. A chip is looked for in this order:
+
+1. its **current label**, so a box still showing an old label cannot win over a
+   current one,
+2. **what it used to be called** — `Mobility`, `Points of Interest`, `POI` — because
+   staging and production are not always on the same build,
+3. the **key** behind it, when a label is being flaky. The job log says when it
+   fell back to the key.
+
+Whichever name a script asks by, the shots come back under the current names, so a
+frame and its caption cannot disagree with the product. A script saved before the
+rename is brought up to date on boot — the pin, the spoken line and the caption —
+and anything reworded by hand is left alone.
+
+**On `&` versus the word "and":** the live widget draws `Walk & Bike` with an
+ampersand, and there is a test that reads the chips off the product and fails if
+that changes. Typing `Walk and Bike` into a script works anyway, because matching
+treats the two as the same thing — but the stored chip, and the caption, use the
+ampersand the product uses.
 
 The **spoken** line says "Walk and Bike", because that is how anybody reads it
 aloud. The **chip** is "Walk & Bike". Those are deliberately different.

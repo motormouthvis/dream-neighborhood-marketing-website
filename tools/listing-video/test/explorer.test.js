@@ -26,6 +26,7 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const config = require("../src/config");
 const { captureExplorerTabs, widgetUrlFor } = require("../src/explorer");
+const { launchExplorerBrowser, closeBrowser } = require("../src/browser");
 const { queriesFor } = require("../src/geocode");
 const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("../src/demo-data");
 
@@ -106,6 +107,7 @@ test("the seven chips are spelled the way the product spells them", () => {
 test("a script written against the old chip names still points at the right chip", () => {
   assert.equal(canonicalTabName("Mobility"), "Walk & Bike");
   assert.equal(canonicalTabName("Points of Interest"), "What's Nearby");
+  assert.equal(canonicalTabName("POI"), "What's Nearby");
   // Written either way round, and by the internal key, which did not change.
   assert.equal(canonicalTabName("Walk and Bike"), "Walk & Bike");
   assert.equal(canonicalTabName("Walk & Bike"), "Walk & Bike");
@@ -172,6 +174,93 @@ test("the seven tabs are seven different pictures of the real product", async (t
   };
   for (const [tab, pattern] of Object.entries(signatures)) {
     assert.match(walk.texts[tab] || "", pattern, `the ${tab} tab does not read like ${tab}`);
+  }
+});
+
+/*
+ * The failure Bill hit on staging:
+ *
+ *   "The Neighborhood Explorer has no 'Mobility' tab any more, so that beat
+ *    cannot be filmed."
+ *
+ * It cannot come back for any of these, because the chip is found by the current
+ * label, by what it used to be called, or by the key behind it - and the key did
+ * not change with the labels. Staging and production are not always on the same
+ * build, so both spellings have to work.
+ */
+test("no name a script might use brings back the missing-tab failure", async (t) => {
+  if (!liveSkip && !(await explorerReachable())) liveSkip = "the live Neighborhood Explorer is not reachable";
+  if (liveSkip) return t.skip(liveSkip);
+
+  const naming = {
+    "what the product says now": ["Walk & Bike", "What's Nearby"],
+    "what Bill wrote": ["Walk and Bike", "What's Nearby"],
+    "what they used to be called": ["Mobility", "Points of Interest"],
+    "the short form": ["Mobility", "POI"],
+  };
+
+  for (const [how, tabs] of Object.entries(naming)) {
+    const outDir = await fsp.mkdtemp(path.join(dataDir, "naming-"));
+    const walk = await captureExplorerTabs({
+      lat: 33.8574,
+      lng: -84.5107,
+      tabs,
+      outDir,
+      log: () => {},
+    });
+
+    // Whatever they were asked for by, the shots come back under the current
+    // names, so the frames and the captions cannot disagree with the product.
+    assert.deepEqual(
+      Object.keys(walk.shots),
+      ["Walk & Bike", "What's Nearby"],
+      `asking by ${how} did not reach both chips`
+    );
+    for (const file of Object.values(walk.shots)) {
+      assert.ok(fs.statSync(file).size > 1000, `${how}: the shot is empty`);
+    }
+  }
+});
+
+test("the chips are named with an ampersand, because that is what the product shows", async (t) => {
+  if (!liveSkip && !(await explorerReachable())) liveSkip = "the live Neighborhood Explorer is not reachable";
+  if (liveSkip) return t.skip(liveSkip);
+
+  // Read off the live widget rather than trusted from a note, because a chip is
+  // clicked by what it says.
+  const browser = await launchExplorerBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.goto(widgetUrlFor({ lat: 33.8574, lng: -84.5107 }), {
+      waitUntil: "networkidle2",
+      timeout: 60000,
+    });
+    await page.waitForFunction(() => document.querySelectorAll(".main-tab-item").length > 0, {
+      timeout: 30000,
+      polling: 500,
+    });
+    const chips = await page.evaluate(() =>
+      Array.from(document.querySelectorAll(".main-tab-item")).map((el) => ({
+        label: (el.innerText || "").trim(),
+        key: el.getAttribute("data-view") || "",
+      }))
+    );
+
+    assert.deepEqual(chips.map((chip) => chip.label), NE_TABS, "the live chips are not what NE_TABS says");
+    assert.ok(
+      chips.some((chip) => chip.label === "Walk & Bike"),
+      `the live chip is an ampersand, not the word "and": ${JSON.stringify(chips.map((c) => c.label))}`
+    );
+    assert.ok(!chips.some((chip) => /Mobility|Points of Interest/.test(chip.label)));
+
+    // The keys behind them did not change when the labels did, which is what
+    // makes the fallback safe.
+    const keyed = Object.fromEntries(chips.map((chip) => [chip.label, chip.key]));
+    assert.equal(keyed["Walk & Bike"], NE_TAB_ALIASES["Walk & Bike"].key);
+    assert.equal(keyed["What's Nearby"], NE_TAB_ALIASES["What's Nearby"].key);
+  } finally {
+    await closeBrowser(browser);
   }
 });
 
