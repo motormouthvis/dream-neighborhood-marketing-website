@@ -173,12 +173,14 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
   // and for checking a tab really loaded its own content.
   const texts = {};
   let browser = null;
+  let walkPage = null;
   let place = "";
 
   try {
     log(`Opening the Neighborhood Explorer for ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     browser = await launchExplorerBrowser();
     const page = await browser.newPage();
+    walkPage = page;
     await page.setViewport({ ...TAB_VIEWPORT, deviceScaleFactor: 1 });
     page.setDefaultNavigationTimeout(LOAD_TIMEOUT_MS);
     page.on("error", () => {});
@@ -277,6 +279,25 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
     }
 
     return { shots, texts, place, url };
+  } catch (error) {
+    /*
+     * Photograph the widget as it stood. A refused walk is usually the Explorer
+     * showing an empty state or a chip that is not there, and the picture says
+     * which far quicker than the message does.
+     */
+    error.explorerUrl = url;
+    error.explorerPlace = place;
+    if (walkPage) {
+      const shot = path.join(outDir, "explorer-failure.png");
+      try {
+        await walkPage.screenshot({ path: shot, type: "png", captureBeyondViewport: false });
+        error.screenshot = shot;
+        log("Saved a picture of the Explorer as it stopped");
+      } catch (_) {
+        /* nothing to photograph */
+      }
+    }
+    throw error;
   } finally {
     if (browser) await closeBrowser(browser).catch(() => {});
   }

@@ -412,6 +412,50 @@ app.get(`${TOOL_PATH}/api/jobs/:id/video.mp4`, auth.requireSession, async (req, 
 });
 
 /* ---------------------------------------------------------------- */
+/* what went wrong, kept so it can be read afterwards               */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The picture of the page a capture stopped on.
+ *
+ * Only ever a file this job wrote, checked against its own directory, so a
+ * doctored path cannot read anything else off the disk.
+ */
+app.get(`${TOOL_PATH}/api/jobs/:id/failure.png`, auth.requireSession, async (req, res) => {
+  const job = await store.getJob(req.params.id);
+  if (!job || !job.failure || !job.failure.screenshot) return res.status(404).send("Not found");
+
+  const file = path.resolve(job.failure.screenshot);
+  const dir = path.resolve(store.jobDir(job.id));
+  if (file !== dir && !file.startsWith(`${dir}${path.sep}`)) return res.status(404).send("Not found");
+  if (!fs.existsSync(file)) return res.status(404).send("Not found");
+
+  res.setHeader("Cache-Control", "no-store");
+  return res.sendFile(file);
+});
+
+/**
+ * Recent capture failures, newest first.
+ *
+ * Behind the same password as everything else. This is the report - there is no
+ * Slack from here, because this app has no bot token.
+ */
+app.get(`${TOOL_PATH}/api/failures`, auth.requireSession, async (req, res) => {
+  const asked = Number.parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), 200) : 50;
+  const failures = await store.listFailures({ limit });
+  return res.json({
+    failures: failures.map((failure) => ({
+      ...failure,
+      // The absolute path is no use to a browser; the route that serves it is.
+      screenshot: undefined,
+      screenshotUrl: failure.screenshot ? `${TOOL_PATH}/api/jobs/${failure.jobId}/failure.png` : "",
+      jobUrl: failure.jobId ? `${TOOL_PATH}/api/jobs/${failure.jobId}` : "",
+    })),
+  });
+});
+
+/* ---------------------------------------------------------------- */
 /* the library                                                      */
 /* ---------------------------------------------------------------- */
 app.get(`${TOOL_PATH}/api/videos`, auth.requireSession, async (req, res) => {

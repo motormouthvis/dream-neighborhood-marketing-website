@@ -496,6 +496,54 @@ date, status and watch link. Play it, copy the link, open it to send it, or
 delete it. Delete asks for confirmation and then removes the mp4, the poster,
 the stills and the record that makes `/v/{id}` work.
 
+### When it fails, it says so afterwards
+
+A capture that fails is not thrown away. The red box in the browser is gone as
+soon as the tab is closed, and by the time anybody asks about it the dyno has
+usually moved on, so every failure leaves three things behind.
+
+**The job stays in the Library, marked "Did not finish."** Its card carries the
+same message the maker showed, the error code, the HTTP status if the site gave
+one, what the page was read as (search, wall, marketing, index), and the page it
+stopped on.
+
+**A picture of what Chrome actually saw**, taken before the browser closes,
+because afterwards is too late. That is the useful part: "No single listing page
+could be found" reads very differently next to a screenshot of a search form, an
+account wall, or a 403. It lives in the job's own directory, so deleting the job
+takes it too, and it is served only from there — a doctored path cannot read
+anything else off the disk.
+
+**A line in `failures.jsonl`** under the data dir. One JSON object per line,
+appended, so a crash halfway through a write costs one record rather than the
+lot, and it can be read with `tail`. Each line has:
+
+| Field | What it is |
+| --- | --- |
+| `at` | when it happened |
+| `jobId` | the job, so the Library card and the picture can be found |
+| `firstName`, `company` | who it was for |
+| `websiteUrl`, `listingUrl` | what it was given |
+| `stage` | `capture`, `explorer-walk`, `geocode` or `render` |
+| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, and so on |
+| `reason` | the message Bill saw, cut to one line |
+| `httpStatus` | only when a status caused it. A refusal that was not about a status does not claim one — the last page to load might have been a 404 on a path we guessed at |
+| `pageKind` | what the page was classified as, if it was |
+| `pageUrl` | the page it stopped on, which is the page in the screenshot |
+| `pagesChecked` | how many were looked at |
+| `screenshot` | where the picture is |
+
+`GET /tools/listing-video/api/failures` lists them newest first, behind the same
+password as everything else, with `screenshotUrl` instead of the path on disk.
+`?limit=` takes 1 to 200 and defaults to 50.
+
+**There is no Slack from here.** This app has no bot token, and one is not being
+added. The log and that endpoint are the report.
+
+Both of these live on the dyno's own disk, so they go when it restarts — the same
+as the jobs and the videos. They answer "what happened on that job just now", not
+"what happened last month". See [Disk](#disk).
+
 ---
 
 ## Editing scripts
@@ -692,6 +740,8 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |
 | `GET /tools/listing-video/api/videos`, `DELETE .../videos/:id` | Signed in only |
+| `GET /tools/listing-video/api/failures` | Signed in only |
+| `GET /tools/listing-video/api/jobs/:id/failure.png` | Signed in only |
 | `GET /v/:id` | Public watch page |
 | `GET /v/:id/video.mp4`, `GET /v/:id/poster.jpg` | Public |
 

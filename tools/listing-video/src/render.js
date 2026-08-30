@@ -20,6 +20,17 @@ const store = require("./store");
  * process being killed for memory. So there is an outer deadline that does not
  * depend on Chrome replying, and it takes the browser down with it.
  */
+/** Which part of making the video gave up, so the log can be read at a glance. */
+function stageOf(error) {
+  const code = String((error && error.code) || "");
+  if (code.startsWith("EXPLORER_")) return "explorer-walk";
+  if (code.startsWith("GEOCODE_") || code === "ADDRESS_NOT_FOUND") return "geocode";
+  if (/^(SITE_|LISTING_|PAGE_|NO_LISTING|COOKIE_|OVERLAY_|REGISTRATION_|ALL_LISTINGS|CAPTURE_)/.test(code)) {
+    return "capture";
+  }
+  return code ? "render" : "render";
+}
+
 async function withDeadline(work, ms, onTimeout) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -61,6 +72,7 @@ async function renderSilent(job) {
   job.error = null;
   job.errorCode = null;
   job.retryable = false;
+  job.failure = null;
   await store.persist(job);
 
   let browser = null;
@@ -158,6 +170,30 @@ async function renderSilent(job) {
     job.errorCode = error.code || null;
     job.retryable = Boolean(error.isCaptureRefusal);
     log(`Stopped: ${job.error}`);
+
+    /*
+     * The job stays in the library as failed, and the failure is written down.
+     *
+     * Whatever went wrong - no listing, a search page, an account wall, a 403, a
+     * timeout, Chrome dying, the Explorer walk giving up - it goes in the log with
+     * the picture of the page it stopped on, so it can be read afterwards without
+     * having been watching at the time.
+     */
+    job.failure = await store.recordFailure({
+      jobId: job.id,
+      firstName: job.input.firstName,
+      company: job.input.company,
+      websiteUrl: job.input.websiteUrl,
+      listingUrl: job.input.listingUrl || "",
+      stage: stageOf(error),
+      errorCode: error.code || "",
+      reason: error.message || String(error),
+      httpStatus: error.httpStatus || null,
+      pageKind: error.pageKind || "",
+      pageUrl: error.pageUrl || error.explorerUrl || "",
+      checked: error.checked || [],
+      screenshot: error.screenshot || "",
+    });
   } finally {
     // Always, on every path: a leaked Chrome on a small dyno is the next crash.
     if (browser) {

@@ -555,31 +555,28 @@ function statusError(status, { pastedListing = false } = {}) {
     ? "Try a different listing URL."
     : "Paste one listing URL and try again.";
 
+  let code = "SITE_UNREACHABLE";
+  let message = `That address came back as ${status}. ${ask}`;
+
   if (status === 401 || status === 403 || status === 451) {
-    return captureError(
-      "SITE_BLOCKED",
-      `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${ask}`
-    );
+    code = "SITE_BLOCKED";
+    message = `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${ask}`;
+  } else if (status === 429) {
+    code = "SITE_BLOCKED";
+    message = `That site is rate limiting us (HTTP 429), so it would not load the page. Wait a minute, then ${ask.toLowerCase()}`;
+  } else if (status === 404 || status === 410) {
+    code = "PAGE_NOT_FOUND";
+    message = `There is no page at that address (HTTP ${status}). Check it and try again.`;
+  } else if (status >= 500) {
+    code = "SITE_ERROR";
+    message = `That site returned an error (HTTP ${status}), so nothing could be filmed. Try again in a minute, or ${ask.toLowerCase()}`;
   }
-  if (status === 429) {
-    return captureError(
-      "SITE_BLOCKED",
-      `That site is rate limiting us (HTTP 429), so it would not load the page. Wait a minute, then ${ask.toLowerCase()}`
-    );
-  }
-  if (status === 404 || status === 410) {
-    return captureError(
-      "PAGE_NOT_FOUND",
-      `There is no page at that address (HTTP ${status}). Check it and try again.`
-    );
-  }
-  if (status >= 500) {
-    return captureError(
-      "SITE_ERROR",
-      `That site returned an error (HTTP ${status}), so nothing could be filmed. Try again in a minute, or ${ask.toLowerCase()}`
-    );
-  }
-  return captureError("SITE_UNREACHABLE", `That address came back as ${status}. ${ask}`);
+
+  const error = captureError(code, message);
+  // The status travels with the refusal, so the failure log can record the one
+  // that actually caused it rather than whatever the last page happened to say.
+  error.httpStatus = status;
+  return error;
 }
 
 /*
@@ -607,6 +604,14 @@ async function waitForListingHrefs(page, ms) {
   } catch (_) {
     return false;
   }
+}
+
+/** A refusal about a search page, which is what it stopped on. */
+function searchOnlyError(pageUrl, message) {
+  const error = captureError("SITE_IS_SEARCH_ONLY", message);
+  error.pageKind = "search";
+  error.pageUrl = pageUrl || "";
+  return error;
 }
 
 /** The same page, allowing for a trailing slash or a redirect to itself. */
@@ -1461,6 +1466,8 @@ async function captureListing({
   /* Where we are, and whether it arrived with its photos, so nothing is loaded twice. */
   let loadedUrl = "";
   let loadedHeavy = false;
+  /* The last status a navigation came back with, so a refusal can name it. */
+  let lastStatus = 0;
 
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
@@ -1474,6 +1481,7 @@ async function captureListing({
     registrationGate = opened.registrationGate || null;
     loadedUrl = page.url();
     loadedHeavy = heavy;
+    lastStatus = opened.status || 0;
     return opened.status;
   };
 
@@ -1742,8 +1750,16 @@ async function captureListing({
         `${new URL(home).hostname} blocked the capture (HTTP 403) on the pages that hold its listings. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
       );
     }
-    throw captureError(
-      "SITE_IS_SEARCH_ONLY",
+    /*
+     * Go back to the search page before giving up, so the picture kept with the
+     * failure is the page being refused rather than the last path that was tried
+     * on the way. Best effort: if it will not load, the refusal stands anyway.
+     */
+    if (!sameTarget(loadedUrl, searchUrl) && !outOfTime()) {
+      await visit(searchUrl).catch(() => 0);
+    }
+    throw searchOnlyError(
+      searchUrl,
       `${new URL(home).hostname} opens on its property search (${new URL(searchUrl).pathname}), and no single listing could be reached from it - its map and results came back empty. A search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
     );
   };
@@ -2071,6 +2087,31 @@ async function captureListing({
     // debugging can see how it got there.
     error.checked = checked;
     error.tally = tally;
+
+    /*
+     * Photograph whatever Chrome was actually looking at.
+     *
+     * "No single listing page could be found" is not much to go on. The picture
+     * of the search page, the account wall or the 403 is the thing that says why,
+     * and it cannot be got afterwards - by the time anybody reads the error the
+     * browser is closed.
+     */
+    // Only a refusal that really was about a status has one. The last page to
+    // load might have been a 404 on a guessed path, which caused nothing.
+    if (error.httpStatus == null) error.httpStatus = null;
+    error.pageUrl = error.pageUrl || loadedUrl || "";
+    const last = checked.length ? checked[checked.length - 1] : null;
+    if (!error.pageKind) error.pageKind = last ? last.kind : "";
+    if (page) {
+      const shot = path.join(outDir, "failure.png");
+      try {
+        await page.screenshot({ path: shot, type: "png", captureBeyondViewport: false });
+        error.screenshot = shot;
+        log("Saved a picture of the page it stopped on");
+      } catch (_) {
+        /* a crashed or closed page cannot be photographed; the record says so */
+      }
+    }
     throw error;
   } finally {
     await closePage(page);

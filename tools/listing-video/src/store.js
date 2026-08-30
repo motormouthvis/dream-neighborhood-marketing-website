@@ -24,6 +24,84 @@ function jobDir(id) {
   return path.join(config.jobsDir, id);
 }
 
+/*
+ * The failure log.
+ *
+ * One JSON object per line, appended, newest last. A line per failure rather
+ * than one big document, so a crash halfway through a write costs one record
+ * instead of the lot, and so it can be read with `tail`.
+ *
+ * On Heroku this lives on the dyno's own disk, so it goes when the dyno
+ * restarts - the same as the jobs themselves. It is there to answer "what
+ * happened on that job just now", not to be a permanent archive.
+ */
+function failureLogPath() {
+  return path.join(config.dataDir, "failures.jsonl");
+}
+
+const MAX_FAILURES_KEPT = 500;
+
+/**
+ * Write down a capture that did not work.
+ *
+ * Everything here is what somebody would ask next: which job, whose site, which
+ * URL, what the site said, what we called the page, and the picture of it.
+ */
+async function recordFailure(entry) {
+  fs.mkdirSync(config.dataDir, { recursive: true });
+  const record = {
+    at: new Date().toISOString(),
+    jobId: entry.jobId || "",
+    firstName: entry.firstName || "",
+    company: entry.company || "",
+    websiteUrl: entry.websiteUrl || "",
+    listingUrl: entry.listingUrl || "",
+    stage: entry.stage || "capture",
+    errorCode: entry.errorCode || "",
+    reason: shortReason(entry.reason),
+    httpStatus: entry.httpStatus || null,
+    pageKind: entry.pageKind || "",
+    pageUrl: entry.pageUrl || "",
+    pagesChecked: Array.isArray(entry.checked) ? entry.checked.length : 0,
+    screenshot: entry.screenshot || "",
+  };
+  try {
+    await fsp.appendFile(failureLogPath(), `${JSON.stringify(record)}\n`, "utf8");
+  } catch (_) {
+    /* a log that cannot be written must not take the job's own error with it */
+  }
+  return record;
+}
+
+/** One line of it, so a list of failures stays readable. */
+function shortReason(reason) {
+  const text = String(reason == null ? "" : reason)
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
+}
+
+/** Recent failures, newest first. */
+async function listFailures({ limit = 50 } = {}) {
+  let text = "";
+  try {
+    text = await fsp.readFile(failureLogPath(), "utf8");
+  } catch (_) {
+    return [];
+  }
+  const out = [];
+  // From the end, because the newest are wanted and the file only grows.
+  const lines = text.split("\n").filter(Boolean).slice(-MAX_FAILURES_KEPT);
+  for (let index = lines.length - 1; index >= 0 && out.length < limit; index -= 1) {
+    try {
+      out.push(JSON.parse(lines[index]));
+    } catch (_) {
+      /* a half-written line is skipped rather than breaking the list */
+    }
+  }
+  return out;
+}
+
 async function createJob({ input, template, beats }) {
   ensureDirs();
   const id = newId();
@@ -132,6 +210,7 @@ function publicView(job) {
     error: job.error,
     errorCode: job.errorCode || null,
     retryable: Boolean(job.retryable),
+    failure: failureView(job),
     template: job.template,
     beats: (job.beats || []).map((beat) => ({
       scene: beat.scene,
@@ -190,6 +269,27 @@ function libraryView(job) {
     reviewed: Boolean(job.review && job.review.reviewed),
     emailSent: Boolean(job.email && job.email.sent),
     emailTo: job.email && job.email.sent ? job.email.to : "",
+    // A failed job stays in the library, and says why and what it was looking at.
+    error: job.error || "",
+    errorCode: job.errorCode || null,
+    failure: failureView(job),
+  };
+}
+
+/** What is worth showing about a failure, without the absolute file paths. */
+function failureView(job) {
+  const failure = job.failure;
+  if (!failure) return null;
+  return {
+    at: failure.at || "",
+    stage: failure.stage || "",
+    errorCode: failure.errorCode || "",
+    reason: failure.reason || "",
+    httpStatus: failure.httpStatus || null,
+    pageKind: failure.pageKind || "",
+    pageUrl: failure.pageUrl || "",
+    pagesChecked: failure.pagesChecked || 0,
+    hasScreenshot: Boolean(failure.screenshot && fs.existsSync(failure.screenshot)),
   };
 }
 
@@ -205,4 +305,8 @@ module.exports = {
   jobDir,
   publicView,
   libraryView,
+  failureView,
+  recordFailure,
+  listFailures,
+  failureLogPath,
 };
