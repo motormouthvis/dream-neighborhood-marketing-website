@@ -355,6 +355,7 @@ const SEARCH_ONLY_SITE = {
   "/idx/homevaluation": page("What Is Your Home Worth?", '<div class="wrap"><h1>What Is Your Home Worth?</h1></div>'),
 };
 
+
 /** A site that refuses an automated browser outright, the way Andy Harris's did. */
 const FORBIDDEN_SITE = {
   ...ROUTES,
@@ -483,6 +484,95 @@ const NO_LISTINGS = {
   ),
 };
 
+/*
+ * A rural listing on a numbered county road, titled in caps with the state
+ * spelled out - which is how homes.dukecitysunrise.com titles its listings.
+ *
+ * Both of those broke the address: the route number was dropped, leaving "252
+ * County Rd", and "NEW MEXICO" was not recognised as a state, so the town came
+ * from the site's own tagline instead - Placitas, 150 miles from the house.
+ */
+const COUNTY_ROAD = page(
+  "Farm for sale in Abiquiu, New Mexico, 1100245",
+  `<div class="wrap">
+     <h2>PLACITAS REAL ESTATE EXPERT SERVING ALBUQUERQUE, SANTA FE &amp; SURROUNDING COMMUNITIES</h2>
+     <h1>252 COUNTY RD 156, ABIQUIU, NEW MEXICO 87510</h1>
+     <p class="price">$1,250,000</p>
+     <p>3 beds &middot; 2 baths &middot; 2,400 sq ft</p>
+     <div class="gallery">
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+     </div>
+     <div id="map" style="height:300px"><p>Map data &middot; Zoom in</p></div>
+     <h2>Property Details</h2>
+     <table>
+       <tr><td>MLS #</td><td>1100245</td></tr>
+       <tr><td>Property Type</td><td>Farm</td></tr>
+       <tr><td>Year Built</td><td>1994</td></tr>
+       <tr><td>Days on Market</td><td>21</td></tr>
+     </table>
+   </div>`,
+  { extraHead: "<style>footer{display:none}</style>" }
+);
+
+const IDX_LISTING_PATH = "/idx/details/listing/c038/1100245/252-County-Rd-156-Abiquiu-NM-87510";
+
+/** The IDX map search: a form with a Search button that never fills the map in. */
+const IDX_MAP_SEARCH = page(
+  "Map Search",
+  `<div class="wrap">
+     <a href="/idx/search">Advanced Search</a> <a href="/idx/map/mapsearch">Map Search</a>
+     <input placeholder="Fly to city, county, or zipcode" name="location" />
+     <select name="beds"><option>Beds</option></select>
+     <select name="baths"><option>Baths</option></select>
+     <button>Search</button>
+     <p>Found 0 of 0</p>
+     <div id="map" style="height:420px"></div>
+   </div>`
+);
+
+/*
+ * A site that opens on its IDX search, the way homes.dukecitysunrise.com does.
+ * Its Map Search comes back empty, as IDX's does to a headless browser, and its
+ * plain results list is where the listings actually are.
+ */
+const SEARCH_TO_LISTING_SITE = {
+  "/": { redirect: "/idx/search" },
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH.replace(
+    "<h1>",
+    '<a href="/idx/signup">MY SEARCH &amp; LOGIN</a><a href="/idx/map/mapsearch">Map Search</a><h1>'
+  ),
+  "/idx/map/mapsearch": IDX_MAP_SEARCH,
+  "/idx/results/listings": page(
+    "Listing Results",
+    `<div class="wrap">
+       <h1>Listing Results</h1>
+       <div class="card"><a href="${IDX_LISTING_PATH}">252 County Rd 156</a>
+         <p>$1,250,000 &middot; 3 beds &middot; 2 baths</p></div>
+       <div class="card"><a href="/idx/details/listing/c038/1097951/7011-Rio-Grande-Boulevard-NW">7011 Rio Grande Blvd NW</a>
+         <p>$890,000 &middot; 4 beds &middot; 3 baths</p></div>
+     </div>`
+  ),
+  [IDX_LISTING_PATH]: COUNTY_ROAD,
+  "/idx/details/listing/c038/1097951/7011-Rio-Grande-Boulevard-NW": MAIN_ST,
+};
+
+/** The same site, but the one listing it reaches wants an account. */
+const SEARCH_TO_WALL_SITE = {
+  ...SEARCH_TO_LISTING_SITE,
+  [IDX_LISTING_PATH]: REGISTRATION_WALL_PAGE,
+};
+
+/** A site on IDX search whose Map Search and results list are both empty. */
+const SEARCH_WITH_NO_LISTINGS = {
+  "/": { redirect: "/idx/search" },
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH.replace("<h1>", '<a href="/idx/map/mapsearch">Map Search</a><h1>'),
+  "/idx/map/mapsearch": IDX_MAP_SEARCH,
+  "/idx/results/listings": page("Listing Results", '<div class="wrap"><h1>No listings found</h1></div>'),
+};
+
 function createServer(routes = ROUTES, hits = {}) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -542,6 +632,10 @@ module.exports = {
   IDX_SITE_WITH_EXPLORER,
   IDX_DETAILS_PATH: "/idx/details/listing/b001/114051774",
   SEARCH_ONLY_SITE,
+  SEARCH_TO_LISTING_SITE,
+  SEARCH_TO_WALL_SITE,
+  SEARCH_WITH_NO_LISTINGS,
+  IDX_LISTING_PATH,
   FORBIDDEN_SITE,
   createServer,
   listen,

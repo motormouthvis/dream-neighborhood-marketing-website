@@ -96,12 +96,68 @@ const STREET_RE = new RegExp(
     `(?:(?:${DIR_GROUP})\\.?\\s+)?` +
     "((?:[A-Z][A-Za-z0-9.'\\u2019-]{0,20}\\s+){1,4})" +
     `(${TYPE_GROUP})\\b\\.?` +
+    // A numbered rural road: "252 County Rd 156", "1420 State Route 9". Without
+    // this the route number was dropped and the house became "252 County Rd".
+    "(?:\\s+(\\d{1,4})\\b)?" +
     `(?:\\s+(${DIR_GROUP})\\b\\.?)?`,
   "g"
 );
 
+/*
+ * A road that is named by a number rather than by a word.
+ *
+ * "1420 Highway 50 W" and "8500 FM 1960 Rd W" have no capitalised name word
+ * between the house number and the street type, so the pattern above cannot see
+ * them at all.
+ */
+const NUMBERED_ROAD_RE = new RegExp(
+  "(?<![\\w.,$-])" +
+    "(\\d{1,6})\\s+" +
+    `(?:(?:${DIR_GROUP})\\.?\\s+)?` +
+    "((?:US|U\\.S\\.|State|County|Farm|Ranch|FM|RR|SR|CR|Route|Rte|Highway|Hwy|Hiway|Road|Rd)" +
+    "(?:\\s+(?:Route|Rte|Highway|Hwy|Road|Rd|Line))?)\\s+" +
+    "(\\d{1,4})\\b" +
+    `(?:\\s+(${TYPE_GROUP})\\b\\.?)?` +
+    `(?:\\s+(${DIR_GROUP})\\b\\.?)?`,
+  "gi"
+);
+
+/*
+ * Every state, by code and by name.
+ *
+ * A listing heading reads "252 COUNTY RD 156, ABIQUIU, NEW MEXICO 87510" as
+ * often as it reads "NM". With only two-letter codes accepted, that heading
+ * yielded no town at all and the town was then taken from the site's own tagline
+ * - "Placitas, NM 87043", the agent's patch, 150 miles from the house.
+ */
+const STATE_CODES = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA",
+  colorado: "CO", connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA",
+  hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA",
+  kansas: "KS", kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD",
+  massachusetts: "MA", michigan: "MI", minnesota: "MN", mississippi: "MS",
+  missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV",
+  "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+  "north carolina": "NC", "north dakota": "ND", ohio: "OH", oklahoma: "OK",
+  oregon: "OR", pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC",
+  "south dakota": "SD", tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT",
+  virginia: "VA", washington: "WA", "west virginia": "WV", wisconsin: "WI",
+  wyoming: "WY", "district of columbia": "DC",
+};
+const STATE_ABBREVIATIONS = new Set(Object.values(STATE_CODES));
+
+/** The two-letter code for a state written either way, or "" if it is not one. */
+function stateCodeFor(value) {
+  const text = tidy(value).replace(/\./g, "");
+  if (!text) return "";
+  if (text.length === 2 && STATE_ABBREVIATIONS.has(text.toUpperCase())) return text.toUpperCase();
+  return STATE_CODES[text.toLowerCase()] || "";
+}
+
+/* City, then something that might be a state, then a ZIP. The state is checked
+ * against the list above rather than by its shape. */
 const CITY_STATE_RE =
-  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3}),\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?\b/;
+  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3}),\s*([A-Za-z][A-Za-z.'\u2019 -]{0,18}?)\s+(\d{5})(?:-\d{4})?\b/;
 
 /* ---------------------------------------------------------------- */
 /* addresses                                                        */
@@ -111,6 +167,15 @@ function tidy(value) {
   return String(value == null ? "" : value)
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** "ABIQUIU" reads as "Abiquiu" in a caption; a mixed-case name is left alone. */
+function titleCase(value) {
+  const text = tidy(value);
+  if (!text || text !== text.toUpperCase()) return text;
+  return text
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
 /**
@@ -142,6 +207,16 @@ function looksLikeStreetAddress(value) {
 function firstStreetIn(value) {
   const text = tidy(value);
   if (!text) return "";
+
+  // A road named by a number is tried first, because the ordinary pattern would
+  // match a shorter piece of it - "252 County Rd" out of "252 County Rd 156".
+  NUMBERED_ROAD_RE.lastIndex = 0;
+  let numbered;
+  while ((numbered = NUMBERED_ROAD_RE.exec(text)) !== null) {
+    const candidate = tidy(numbered[0]);
+    if (looksLikeStreetAddress(candidate)) return candidate;
+  }
+
   STREET_RE.lastIndex = 0;
   let match;
   while ((match = STREET_RE.exec(text)) !== null) {
@@ -152,8 +227,12 @@ function firstStreetIn(value) {
 }
 
 function cityStateIn(value) {
-  const match = tidy(value).match(CITY_STATE_RE);
+  const text = tidy(value);
+  const match = text.match(CITY_STATE_RE);
   if (!match) return null;
+  const state = stateCodeFor(match[2]);
+  // Something in the shape of a state that is not one, e.g. "Suite 200 87510".
+  if (!state) return null;
   // "2135 Bellflower Blvd Long Beach, CA" would otherwise report the city as
   // "Bellflower Blvd Long Beach". Drop everything up to the street type.
   const words = match[1].split(/\s+/);
@@ -162,7 +241,7 @@ function cityStateIn(value) {
     if (STREET_TYPE_SET.has(words[index].toLowerCase().replace(/\.$/, ""))) start = index + 1;
   }
   const city = words.slice(start).join(" ") || match[1];
-  return { cityState: `${city}, ${match[2]}`, zip: match[3] };
+  return { cityState: `${titleCase(city)}, ${state}`, zip: match[3] };
 }
 
 /**

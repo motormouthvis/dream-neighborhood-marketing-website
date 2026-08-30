@@ -143,14 +143,43 @@ Two things had this refusing URLs Bill had pasted himself:
   from the "Similar Listings" rail further down the page was used instead. IDX
   headings shout, so both spellings are matched.
 
-#### A site that has nothing but search
+Two more things an IDX heading does, both of which put the wrong place in the
+video:
 
-A homepage that bounces straight onto the site's own IDX search — as
-`homes.dukecitysunrise.com` does, landing on IDX advanced search — is refused on
-the spot and asks for a listing URL. Its listings are only reachable by walking
-the search results, and walking IDX results is the thing that raises the account
-wall. That site loads perfectly well and its "MY SEARCH & LOGIN" link is optional,
-so the refusal says it is a search page, not that the site is missing or gated.
+- **A road named by a number.** `252 COUNTY RD 156` came out as `252 County Rd`,
+  because the pattern stopped at the street type. Numbered rural roads are matched
+  first now, so `Highway 50 W`, `FM 1960 Rd W` and `State Route 9 N` parse too.
+- **A state spelled out.** `ABIQUIU, NEW MEXICO 87510` was not recognised, because
+  only two-letter codes were accepted, so the town fell through to whatever the
+  page said elsewhere — `Placitas, NM 87043`, the agent's own patch, 150 miles from
+  the house and where the Explorer would have been pointed. Full state names are
+  accepted and normalised to the code, and a state-shaped string that is not a
+  state gives no town at all rather than a wrong one.
+
+#### A site that opens on its own search
+
+A homepage that bounces straight onto the site's IDX search — as
+`homes.dukecitysunrise.com` does — has no listing on the page it lands on. Its
+listings are still there, so one is fetched the site's own way rather than
+refusing on the spot:
+
+1. **Map Search** first, because that is the control on the page. On IDX the map
+   is an Azure/Leaflet canvas that reports "Found 0 of 0" to a headless browser
+   however long it is given, with or without WebGL, so this usually comes back
+   empty — but it is still tried, because it is what a person would click.
+2. Then their plain results list (`/idx/results/listings`), which is one page and
+   is where the listing links actually are.
+3. Then **exactly one** listing detail page is opened, cookies accepted, filmed.
+
+One listing, because that is the number IDX counts. If the first one it reaches
+is unusable — an account wall, an Explorer already on it, an overlay that will not
+close — that is the end of it; there is no going back for a second, which is what
+raises the wall. No account is created, no form is filled in, and nothing that
+could register anybody is clicked.
+
+If neither route reaches a listing, it refuses and asks for a listing URL. That
+site loads perfectly well and its "MY SEARCH & LOGIN" link is optional, so the
+refusal says its search came back empty — not that the site is missing or gated.
 
 #### A brand-new browser every time
 

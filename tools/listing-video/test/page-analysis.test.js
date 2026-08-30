@@ -15,6 +15,7 @@ const {
   extractAddress,
   looksLikeStreetAddress,
   firstStreetIn,
+  cityStateIn,
   urlNamesTheSameHouse,
   looksLikeSingleListingUrl,
   looksLikeIdxSearchUrl,
@@ -193,6 +194,44 @@ test("a listing page keeps its verdict even with a location map and similar home
     bodyText: `${DETAIL_PAGE.bodyText} Similar homes for sale in Smyrna`,
   });
   assert.equal(verdict.kind, "detail");
+});
+
+/*
+ * A rural listing: "252 COUNTY RD 156, ABIQUIU, NEW MEXICO 87510". The route
+ * number was dropped, leaving "252 County Rd", and "NEW MEXICO" was not
+ * recognised as a state, so the town came from the site's own tagline instead -
+ * Placitas, 150 miles from the house, which is where the Explorer would have gone.
+ */
+test("a road named by a number keeps its number", () => {
+  assert.equal(firstStreetIn("252 County Rd 156, Abiquiu, NM 87510"), "252 County Rd 156");
+  assert.equal(firstStreetIn("252 COUNTY RD 156, ABIQUIU, NEW MEXICO 87510"), "252 COUNTY RD 156");
+  assert.equal(firstStreetIn("1420 Highway 50 W"), "1420 Highway 50 W");
+  assert.equal(firstStreetIn("8500 FM 1960 Rd W"), "8500 FM 1960 Rd W");
+  assert.equal(firstStreetIn("77 State Route 9 N"), "77 State Route 9 N");
+  assert.equal(firstStreetIn("14 US Highway 1"), "14 US Highway 1");
+});
+
+test("a state spelled out is still a state, and the listing's own town wins", () => {
+  const address = extractAddress({
+    url: "https://homes.test/idx/details/listing/c038/1100245/252-County-Rd-156-Abiquiu-NM-87510",
+    h1s: ["252 COUNTY RD 156, ABIQUIU, NEW MEXICO 87510"],
+    jsonLd: [],
+    // The agent's own patch is all over the page furniture.
+    bodyText:
+      "Placitas Real Estate Expert Serving Albuquerque, Santa Fe & Surrounding Communities " +
+      "Placitas, NM 87043 252 County Rd 156, Abiquiu, New Mexico NM 87510",
+  });
+  assert.equal(address.street, "252 COUNTY RD 156");
+  assert.equal(address.cityState, "Abiquiu, NM");
+  assert.equal(address.zip, "87510");
+  assert.notEqual(address.cityState, "Placitas, NM");
+});
+
+test("something shaped like a state but is not one gives no town", () => {
+  assert.equal(cityStateIn("Suite 200, Placitas 87043"), null);
+  assert.equal(cityStateIn("Long Beach, ZZ 90803"), null);
+  assert.deepEqual(cityStateIn("Long Beach, CA 90803"), { cityState: "Long Beach, CA", zip: "90803" });
+  assert.deepEqual(cityStateIn("SMYRNA, GEORGIA 30082"), { cityState: "Smyrna, GA", zip: "30082" });
 });
 
 /* ---------------------------------------------------------------- */

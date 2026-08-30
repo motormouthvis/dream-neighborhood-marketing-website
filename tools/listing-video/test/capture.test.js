@@ -206,21 +206,65 @@ test("a pasted listing is opened once, and no other page is touched", options, a
 });
 
 /*
- * homes.dukecitysunrise.com bounces its homepage onto /idx/search. Crawling the
- * results is what puts up the "create an account" wall, so it stops here.
+ * homes.dukecitysunrise.com bounces its homepage onto /idx/search, which is a
+ * form rather than a listing. Its listings are still reachable, so one is
+ * fetched the site's own way - and only one, because that is what IDX counts.
  */
-test("a homepage that bounces onto IDX search is refused, not crawled", options, async () => {
-  const shot = await capture(fixture.SEARCH_ONLY_SITE);
-  assert.ok(shot.error, "a search page is never filmed");
+test("a site that opens on IDX search still gets one house filmed", options, async () => {
+  const shot = await capture(fixture.SEARCH_TO_LISTING_SITE);
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, fixture.IDX_LISTING_PATH);
+
+  // Its own Map Search is tried first, because that is the control on the page.
+  assert.equal(shot.hits["/idx/map/mapsearch"], 1);
+  assert.equal(shot.hits["/idx/results/listings"], 1);
+
+  // Exactly one listing detail page, and not the second one on the list.
+  assert.equal(shot.checked.length, 1);
+  assert.equal(shot.hits["/idx/details/listing/c038/1097951/7011-Rio-Grande-Boulevard-NW"], undefined);
+  assert.equal(shot.hits[fixture.IDX_LISTING_PATH], 1, "the listing is fetched once");
+});
+
+/*
+ * The address on that page is titled in caps with the state spelled out, on a
+ * numbered county road. Both of those used to break it: the route number was
+ * dropped and the town came from the site's tagline, 150 miles away.
+ */
+test("a numbered county road keeps its number, and the town is the listing's own", options, async () => {
+  const shot = await capture(fixture.SEARCH_TO_LISTING_SITE);
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.address.street, "252 COUNTY RD 156");
+  assert.equal(shot.address.cityState, "Abiquiu, NM");
+  assert.equal(shot.address.zip, "87510");
+});
+
+test("if the one listing behind their search wants an account, that is the end of it", options, async () => {
+  const shot = await capture(fixture.SEARCH_TO_WALL_SITE);
+  assert.ok(shot.error, "an account wall is never worked around");
+  assert.equal(shot.error.code, "REGISTRATION_WALL");
+  assert.match(shot.error.message, /paste a listing url/i);
+  // One listing opened, and no going back for another.
+  assert.equal(shot.hits[fixture.IDX_LISTING_PATH], 1);
+  assert.equal(shot.hits["/idx/details/listing/c038/1097951/7011-Rio-Grande-Boulevard-NW"], undefined);
+});
+
+test("a search with no listings behind it asks for a listing URL", options, async () => {
+  const shot = await capture(fixture.SEARCH_WITH_NO_LISTINGS);
+  assert.ok(shot.error, "a search or map page is never filmed");
   assert.equal(shot.error.code, "SITE_IS_SEARCH_ONLY");
   assert.match(shot.error.message, /paste that URL/i);
   assert.match(shot.error.message, /single house/i);
+  // "MY SEARCH & LOGIN" is optional, so this is a search page we will not film,
+  // not a site demanding an account.
+  assert.doesNotMatch(shot.error.message, /account/i);
+});
+
+test("no IDX utility page is wandered into on the way", options, async () => {
+  const shot = await capture(fixture.SEARCH_ONLY_SITE);
+  assert.ok(shot.error, "that site has no listings to reach");
+  assert.equal(shot.error.code, "SITE_IS_SEARCH_ONLY");
   assert.equal(shot.hits["/idx/mortgage"], undefined, "no wandering around the IDX pages");
   assert.equal(shot.hits["/idx/homevaluation"], undefined);
-  // "MY SEARCH & LOGIN" in the header is optional, so this is a search page we
-  // will not film, not a site demanding an account.
-  assert.notEqual(shot.error.code, "REGISTRATION_WALL");
-  assert.doesNotMatch(shot.error.message, /account/i);
 });
 
 /*

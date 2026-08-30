@@ -582,6 +582,33 @@ function statusError(status, { pastedListing = false } = {}) {
   return captureError("SITE_UNREACHABLE", `That address came back as ${status}. ${ask}`);
 }
 
+/*
+ * Where an IDX site keeps a plain list of its listings.
+ *
+ * Their Map Search is tried before any of these, because it is the control on
+ * the page, but it draws into a canvas that stays empty in a headless browser.
+ */
+const IDX_RESULT_PATHS = ["/idx/results/listings", "/idx/featured"];
+
+/** Wait for listing links to be drawn, since IDX fills its cards in after load. */
+async function waitForListingHrefs(page, ms) {
+  if (!page || ms <= 0) return false;
+  try {
+    await page.waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll("a[href]")).some((anchor) =>
+          /\/(idx\/details\/listing|details\/listing|listing|listings|property|properties)\/[^/?#]+/i.test(
+            anchor.getAttribute("href") || ""
+          )
+        ),
+      { timeout: ms, polling: 250 }
+    );
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /** The same page, allowing for a trailing slash or a redirect to itself. */
 function sameTarget(a, b) {
   if (!a || !b) return false;
@@ -1417,6 +1444,8 @@ async function captureListing({
   const wantExplorer = explorerRule === "prefer-present";
   const home = normalizeUrl(url);
   const origin = new URL(home).origin;
+  /* Pages holding their listings that the site refused outright. */
+  let blockedFromSearch = 0;
   const start = listingUrl ? normalizeUrl(listingUrl) : home;
   const startedAt = Date.now();
   const deadline = startedAt + budgetMs;
@@ -1617,6 +1646,108 @@ async function captureListing({
     };
   };
 
+  /**
+   * Get one house off a site that opens on its own IDX search.
+   *
+   * homes.dukecitysunrise.com bounces its homepage onto /idx/search, which is a
+   * form, not a listing. Its listings are still there, so this walks the site's
+   * own way to them and opens exactly ONE - the thing IDX counts - rather than
+   * refusing on the spot or wandering through results.
+   *
+   * Map Search is tried first, because that is the control on the page. On IDX
+   * the map is an Azure/Leaflet canvas that reports "Found 0 of 0" to a headless
+   * browser however long it is given, with or without WebGL, so their plain
+   * results list is tried after it. Both are one page load each.
+   *
+   * No account is created, no form is filled in, and nothing that could register
+   * anybody is clicked.
+   */
+  const filmOneFromIdxSearch = async (searchUrl) => {
+    log("Their site opens on its own property search - looking for one of their listings");
+
+    const routes = [];
+    const mapHref = await page
+      .evaluate(() => {
+        const control = Array.from(document.querySelectorAll("a[href]")).find((el) =>
+          /map\s*search/i.test(`${el.innerText || ""} ${el.getAttribute("href") || ""}`)
+        );
+        return control ? new URL(control.getAttribute("href"), location.href).toString() : "";
+      })
+      .catch(() => "");
+    if (mapHref) routes.push({ label: "their Map Search", url: mapHref });
+    for (const path of IDX_RESULT_PATHS) {
+      routes.push({ label: `their listings list (${path})`, url: new URL(path, origin).toString() });
+    }
+
+    for (const route of routes) {
+      if (outOfTime()) break;
+      log(`Opening ${route.label} (${secondsLeft()}s left)`);
+
+      let status;
+      try {
+        status = await visit(route.url);
+      } catch (_) {
+        continue;
+      }
+      if (!status || status >= 400) {
+        if (status === 401 || status === 403 || status === 429 || status === 451) blockedFromSearch += 1;
+        continue;
+      }
+
+      // Their cards are drawn after load, so give the pins and cards a moment.
+      await waitForListingHrefs(page, Math.min(8000, Math.max(0, deadline - Date.now())));
+
+      const links = (await collectListingLinks(page, origin))
+        .filter((entry) => looksLikeSingleListingUrl(entry.href))
+        .sort((a, b) => b.score - a.score);
+      if (!links.length) {
+        log(`No listings could be reached from ${route.label}`);
+        continue;
+      }
+
+      // One listing. This is the counter that puts the account wall up, so there
+      // is no trying a second if the first turns out to be no good.
+      const target = links[0].href;
+      log(`Opening one listing: ${new URL(target).pathname}`);
+      let listingStatus;
+      try {
+        listingStatus = await visit(target, { heavy: true });
+      } catch (_) {
+        listingStatus = 0;
+      }
+      if (listingStatus >= 400) throw statusError(listingStatus);
+      if (!listingStatus) {
+        throw captureError(
+          "LISTING_URL_UNREACHABLE",
+          "The listing on their search would not open. Try again, or paste one listing URL."
+        );
+      }
+
+      const verdict = await assess(target);
+      if (verdict.reason === "wall") throw registrationWallError();
+      if (verdict.ok) return await shoot(target, verdict.verdict, verdict.preferred ? [] : fallbackNote);
+      if (verdict.reason === "blocked") throw blockedError(verdict.left);
+      if (verdict.reason === "explorer") throw captureError("LISTING_HAS_EXPLORER", EXPLORER_ALREADY_THERE);
+      throw captureError(
+        "LISTING_NOT_USABLE",
+        `The one listing opened from their search cannot be filmed as it is (${
+          (verdict.verdict.reasons || []).join("; ") || verdict.reason
+        }). Paste one listing URL instead.`
+      );
+    }
+
+    if (blockedFromSearch > 0) {
+      throw captureError(
+        "SITE_BLOCKED",
+        `${new URL(home).hostname} blocked the capture (HTTP 403) on the pages that hold its listings. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
+      );
+    }
+    throw captureError(
+      "SITE_IS_SEARCH_ONLY",
+      `${new URL(home).hostname} opens on its property search (${new URL(searchUrl).pathname}), and no single listing could be reached from it - its map and results came back empty. A search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
+    );
+  };
+
   try {
     /* ---- the page we were pointed at ---- */
     const startedOnListingUrl = Boolean(listingUrl);
@@ -1660,16 +1791,11 @@ async function captureListing({
       startedOnListingUrl && (looksLikeSingleListingUrl(start) || looksLikeSingleListingUrl(startUrl));
 
     /*
-     * A homepage that bounces straight onto the site's IDX search has no listing
-     * to offer without walking its results, and walking IDX results is what
-     * trips the "create an account" counter. Ask for a listing URL instead.
+     * A site that opens on its own IDX search still has listings behind it, so
+     * one of them is fetched by hand rather than refusing on the spot.
      */
     if (!pastedOneListing && looksLikeIdxSearchUrl(startUrl) && !looksLikeSingleListingUrl(startUrl)) {
-      log("Their website goes straight to its search page, which is never filmed");
-      throw captureError(
-        "SITE_IS_SEARCH_ONLY",
-        `${new URL(home).hostname} sends visitors straight to its property search (${new URL(startUrl).pathname}), and a search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
-      );
+      return await filmOneFromIdxSearch(startUrl);
     }
 
     const first = await assess(startUrl);
