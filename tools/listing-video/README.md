@@ -103,8 +103,46 @@ The whole search is capped at 60 seconds. When the budget runs out it refuses an
 asks for a listing URL rather than wandering. Progress lines say which page is
 being checked and how long is left, so a wait is never a silent hang.
 
+#### A pasted listing URL is taken at its word
+
 If you paste a listing URL, that one page is opened and nothing else: cookies
 accepted, screenshot, done. No other listing links are followed from it.
+
+A URL is treated as one house on its **shape alone** — `/idx/details/listing/...`,
+`/listing/...`, `/listings/123-main-st`, `/properties/listing/...`, `/property/...`,
+`/homes/...`. No search or index page looks like that, and somebody who pastes one
+has said exactly which house they mean. So the page furniture cannot overrule
+them: an IDX details page carries the site's own search box in its header and a
+neighbourhood map in the middle of the page, and neither makes it a page of search
+results.
+
+It still has to be free of an [account wall](#the-account-wall), free of
+[our own Explorer](#which-listing-gets-filmed) and free of overlays. Those are
+about whether the page can be filmed, not about which page you meant.
+
+A pasted listing is also loaded **with its photos on the first pass**, so it is
+fetched once. Loading it lean and then again for the shutter costs a second
+listing view on a site that counts them, and it is the repeat hit that gets
+noticed: Andy Harris's IDX answered the first request with a 200 and the second
+with a 403.
+
+Two things had this refusing URLs Bill had pasted himself:
+
+- `/idx/` was in the pattern for "this URL looks like a search", which condemned
+  every page on an idxbroker-hosted site, details pages included. The IDX search
+  paths — `/idx/search`, `/idx/results`, `/idx/map`, `/idx/city` and so on — are
+  named individually now.
+- street types only matched in mixed case, so the heading
+  `1908 SW MILES ST, Portland, OR 97219` yielded no address at all and an address
+  from the "Similar Listings" rail further down the page was used instead. IDX
+  headings shout, so both spellings are matched.
+
+#### A site that has nothing but search
+
+A homepage that bounces straight onto the site's own IDX search — as
+`homes.dukecitysunrise.com` does — is refused on the spot and asks for a listing
+URL. Its listings are only reachable by walking the search results, and walking
+IDX results is the thing that raises the account wall.
 
 #### A brand-new browser every time
 
@@ -157,7 +195,9 @@ gets photographed is loaded again with everything allowed. See
 [Memory](#memory) for why all of that matters.
 
 If you paste a URL it is used when it is a listing, and crawled from when it is
-not, so pasting a homepage or a search page still gets you a listing.
+not, so pasting a homepage still gets you a listing.
+
+#### What a refusal says
 
 If it cannot open a clean listing detail page it **stops and says so**, naming
 what it found instead, with a box to paste one listing URL and try again. The
@@ -167,6 +207,19 @@ last DOMO listing that worked was 4697 Wehunt Commons Drive SE, Smyrna, GA
 A page with our script, iframe or `data-dn-*` attribute on it is refused
 outright. A page that only *mentions* School Explorer in its copy is skipped
 during the search, but allowed with a warning if you pasted that URL yourself.
+
+An HTTP status is reported as what it means, because "there is no page there" sent
+Bill looking for a typo in a URL that was fine:
+
+| Status | What it says |
+| --- | --- |
+| 401, 403, 451 | The site blocked the capture. Sites refuse automated browsers even when the page opens fine in your own browser. Paste a listing URL. |
+| 429 | The site is rate limiting us. Wait a minute. |
+| 404, 410 | There really is no page at that address. |
+| 5xx | The site errored. Try again in a minute. |
+
+When every page a site served was a 403, the refusal says the site blocked us
+rather than that it has no listings.
 
 #### Cookie banners
 
@@ -293,6 +346,16 @@ It refuses rather than falling back to anything drawn by us:
 | it reports "Unknown location" | same, and it names what the Explorer reported |
 | a tab is missing, or the walk runs over its budget | which tab, and how far it got |
 | every tab came out the same picture | nothing is rendered, because that is the bug this replaces |
+
+**If a tab beat is refused, the product has moved and the script has to follow.**
+The tab names in a script are matched against the live widget, so a tab that gets
+renamed or dropped stops that script rather than filming the wrong panel. As of
+this writing the widget walks Map and Summary, Demographics, Schools,
+Housing & Market Trends and Commutes; the approved v11 cut also named Mobility and
+Points of Interest, and those two no longer answer. Edit the beats on the Scripts
+page to match what the widget shows — that is a decision about the pitch, so the
+tool will not quietly pick a different tab. The school-only script has no tab
+beats and is unaffected.
 
 No `/popup/{address}` or `/embed/{address}` page is created for any of this. The
 widget is opened at coordinates through the parameters it already supports —
