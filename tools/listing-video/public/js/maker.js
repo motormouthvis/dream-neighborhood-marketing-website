@@ -701,6 +701,30 @@
   el("reviewPlayer").addEventListener("seeked", applyTrimState);
   el("reviewPlayer").addEventListener("loadedmetadata", applyTrimState);
 
+  /*
+   * After a trim, show them the new ending rather than starting over at zero.
+   *
+   * paintReview points the player at the shorter file, so this waits for that
+   * file's own length to arrive before seeking - a hair before the end, because
+   * seeking exactly to it just leaves the player sitting at "ended".
+   */
+  function sitAtTheNewEnd() {
+    var player = el("reviewPlayer");
+    var settle = function () {
+      player.removeEventListener("loadedmetadata", settle);
+      if (!player.duration || !isFinite(player.duration)) return;
+      try {
+        player.currentTime = Math.max(0, player.duration - 0.4);
+      } catch (_) {
+        /* a player that will not seek yet is left where it is */
+      }
+      player.pause();
+      applyTrimState();
+    };
+    player.addEventListener("loadedmetadata", settle);
+    if (player.readyState >= 1) settle();
+  }
+
   el("trimBtn").addEventListener("click", function () {
     var player = el("reviewPlayer");
     var at = player.currentTime || 0;
@@ -725,6 +749,7 @@
       }
       // A different video to the one that was reviewed, so the review starts over.
       paintReview(result.body.job);
+      sitAtTheNewEnd();
       D.setText(el("trimOk"), "Trimmed. Watch it again, then send.");
       D.show(el("trimOk"), true);
     });

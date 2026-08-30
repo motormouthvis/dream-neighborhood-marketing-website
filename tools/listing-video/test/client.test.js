@@ -196,6 +196,148 @@ test("the progress panel shows how long it has been running", options, async () 
   }
 });
 
+/* ---------------------------------------------------------------- */
+/* trimming the end off, on the final review                        */
+/* ---------------------------------------------------------------- */
+
+const store = require("../src/store");
+const templates = require("../src/templates");
+const { buildVideo } = require("../src/video");
+const { buildRecordedTrack } = require("../src/audio");
+const { run } = require("../src/exec");
+
+/** A job sitting on the final review with a real finished video behind it. */
+async function jobOnFinalReview(durations, voiceSeconds) {
+  await templates.ensureSeeded();
+  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const input = {
+    templateId: template.id,
+    firstName: "Bill",
+    company: "Trim Realty",
+    websiteUrl: "https://example.test/",
+    listingUrl: "",
+    customerEmail: "fixture@example.test",
+    fromId: "bill",
+  };
+  const job = await store.createJob({ input, template, beats: templates.renderBeats(template, input) });
+  const dir = store.jobDir(job.id);
+  await fsp.mkdir(dir, { recursive: true });
+
+  const raw = path.join(dir, "raw.wav");
+  await run(config.ffmpegPath, [
+    "-y", "-f", "lavfi", "-i", `sine=frequency=320:duration=${voiceSeconds}`,
+    "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", raw,
+  ]);
+  const track = await buildRecordedTrack({ uploadPath: raw, workDir: dir, log: () => {} });
+
+  const frames = [];
+  for (let i = 0; i < durations.length; i += 1) {
+    const frame = path.join(dir, `f${i}.jpg`);
+    await run(config.ffmpegPath, [
+      "-y", "-f", "lavfi", "-i", `color=c=0x2${i}4${i}3${i}:s=1920x1080`, "-frames:v", "1", frame,
+    ]);
+    frames.push(frame);
+  }
+  const video = await buildVideo({
+    frames, durations, audioFile: track.audioFile, workDir: dir,
+    outFile: path.join(dir, "video.mp4"), log: () => {},
+  });
+
+  job.silent = { frames, posterFile: "", capturedPageUrl: "", capturedAddress: null, notes: [] };
+  job.result = {
+    videoFile: video.file, posterFile: "", durationSeconds: Math.round(video.duration),
+    voice: { mode: "recorded", engine: "recorded", label: "Your recorded voice" },
+    templateName: template.name, sceneCount: durations.length, notes: [],
+  };
+  job.status = "ready";
+  await store.persist(job);
+  return { job, duration: video.duration };
+}
+
+test("the trim button is the exact label, and only works from a pause", options, async () => {
+  const { job } = await jobOnFinalReview([4, 4, 4], 12);
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 15000 });
+    await tool.page.waitForFunction(() => (document.getElementById("reviewPlayer").duration || 0) > 1, {
+      timeout: 15000,
+    });
+
+    // Bill asked for this label, exactly.
+    assert.equal(
+      await tool.page.$eval("#trimBtn", (button) => button.textContent),
+      "Trim Remainder of Video"
+    );
+
+    // Not paused, so there is nothing to trim at - and no trimming at 0 by accident.
+    assert.equal(await tool.page.$eval("#trimBtn", (button) => button.disabled), true);
+
+    await tool.page.evaluate(() => {
+      const player = document.getElementById("reviewPlayer");
+      player.currentTime = 9;
+      player.pause();
+    });
+    await tool.page.waitForFunction(() => !document.getElementById("trimBtn").disabled, { timeout: 10000 });
+    const hint = await tool.page.evaluate(() => document.getElementById("trimHint").textContent.trim());
+    assert.match(hint, /would end at/i, `the hint should say what it will do, got ${JSON.stringify(hint)}`);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("after a trim the player holds the shorter file, sitting at its new end", options, async () => {
+  const { job, duration } = await jobOnFinalReview([4, 4, 4], 12);
+  const tool = await openTool();
+  try {
+    tool.page.on("dialog", (dialog) => dialog.accept());
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 15000 });
+    await tool.page.waitForFunction(() => (document.getElementById("reviewPlayer").duration || 0) > 1, {
+      timeout: 15000,
+    });
+
+    await tool.page.evaluate(() => {
+      const player = document.getElementById("reviewPlayer");
+      player.currentTime = 9;
+      player.pause();
+    });
+    await tool.page.waitForFunction(() => !document.getElementById("trimBtn").disabled, { timeout: 10000 });
+    await tool.page.click("#trimBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("trimOk").hidden, { timeout: 90000 });
+
+    // The player reloads the shorter file and sits just before its new end.
+    await tool.page.waitForFunction(
+      () => {
+        const player = document.getElementById("reviewPlayer");
+        return player.duration > 1 && player.duration < 10 && player.currentTime > player.duration - 1;
+      },
+      { timeout: 20000 }
+    );
+
+    const shown = await tool.page.evaluate(() => {
+      const player = document.getElementById("reviewPlayer");
+      return {
+        duration: player.duration,
+        at: player.currentTime,
+        paused: player.paused,
+        sendOff: document.getElementById("sendBtn").disabled,
+      };
+    });
+    assert.ok(Math.abs(shown.duration - 9) < 0.4, `player has a ${shown.duration.toFixed(2)}s file, wanted 9s`);
+    assert.ok(shown.at > shown.duration - 1, "it sits at the new end, not back at zero");
+    assert.equal(shown.paused, true, "and it is not playing the last second at them");
+    assert.equal(shown.sendOff, true, "send is off until the shorter video is reviewed");
+
+    // The old, longer file is gone; this is what would be sent.
+    const fresh = await store.getJob(job.id);
+    assert.ok(duration - fresh.result.durationSeconds > 5, "the file really is shorter now");
+    assert.equal(fresh.review.reviewed, false);
+  } finally {
+    await tool.close();
+  }
+});
+
 test.after(async () => {
   await fsp.rm(dataDir, { recursive: true, force: true }).catch(() => {});
 });

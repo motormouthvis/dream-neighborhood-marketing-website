@@ -7,15 +7,16 @@ const { run } = require("./exec");
 const { probeDuration } = require("./audio");
 
 /*
- * The silent cut's length is the length of the video.
+ * How long a finished video is: the longer of the silent cut and the voice plus
+ * a five second tail.
  *
- * That is the picture that was approved, so that is what gets sent. A voice
- * shorter than the picture does not shorten it - the picture holds and the audio
- * stops - and nothing is padded on after the last word. An earlier version did
- * both, and threw away picture that had already been signed off.
+ * The silent cut is the picture that was approved, so a voice shorter than it
+ * does not shorten it - the picture holds and the audio stops. A take that runs
+ * to the end of the script gets five seconds of picture after its last word,
+ * rather than the video stopping dead on it.
  *
- * A voice that outruns the script holds the last scene. The only thing that makes
- * a video shorter is a person trimming it on the final review: trimVideoAt below.
+ * The only thing that makes a video shorter is a person trimming it on the final
+ * review: trimVideoAt below.
  */
 
 const ENCODE = [
@@ -83,19 +84,30 @@ async function buildSilentVideo({ frames, durations, workDir, outFile, log }) {
   return { file: outFile, duration: await probeDuration(outFile) };
 }
 
+/*
+ * How long the picture runs on after the last spoken word.
+ *
+ * A take recorded against the silent video usually ends about where the script
+ * does, and the video then stopped dead on the last word. This is the pause at
+ * the end so it does not.
+ */
+const TAIL_AFTER_VOICE_SECONDS = 5;
+
 /**
  * The same stills, this time with a voice track laid over them.
  *
- * The silent cut's length is the source of truth. A 60 second picture with a 30
- * second voice over it is still a 60 second video: the picture runs to the end
- * and the audio simply stops. The video is never cut down to the voice, and
- * nothing is padded on after the last word.
+ * Two rules, and the longer of the two wins:
  *
- * The one thing that can make it longer is a voice that outruns the script, and
- * then the last scene is held to cover it rather than the picture running out.
+ *   - the silent cut's length, because that is the picture that was approved. A
+ *     60 second cut with a 30 second voice over it is still 60 seconds: the
+ *     picture runs to the end and the audio stops. It is never cut back to the
+ *     voice.
+ *   - five seconds after the last spoken word. A take that runs to the end of
+ *     the script would otherwise finish on the last word with no pause at all,
+ *     and the last scene is held to give it one.
  *
- * Making it shorter is a person's decision, taken on the final review with
- * "Trim remainder of video" - see trimVideoAt below.
+ * Making a video shorter is a person's decision, taken on the final review with
+ * "Trim Remainder of Video" - see trimVideoAt below.
  */
 async function buildVideo({ frames, durations, audioFile, workDir, outFile, log }) {
   if (frames.length !== durations.length) {
@@ -105,9 +117,9 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
   const audioDuration = await probeDuration(audioFile);
   const scenes = durations.slice();
   const plannedTotal = scenes.reduce((sum, value) => sum + value, 0);
-  // Held only if the voice runs past the script; never trimmed back to it.
-  scenes[scenes.length - 1] += Math.max(0, audioDuration - plannedTotal);
-  const videoDuration = Math.max(plannedTotal, audioDuration);
+  const videoDuration = Math.max(plannedTotal, audioDuration + TAIL_AFTER_VOICE_SECONDS);
+  // Whatever the picture is short by, the last scene holds. Never trimmed back.
+  scenes[scenes.length - 1] += Math.max(0, videoDuration - plannedTotal);
 
   const listFile = await writeConcatList({ frames, durations: scenes, workDir, name: "frames-voiced.txt" });
 
@@ -217,4 +229,11 @@ async function buildPoster({ frames, outFile }) {
   return outFile;
 }
 
-module.exports = { buildSilentVideo, buildVideo, buildPoster, trimVideoAt, MIN_TRIMMED_SECONDS };
+module.exports = {
+  buildSilentVideo,
+  buildVideo,
+  buildPoster,
+  trimVideoAt,
+  MIN_TRIMMED_SECONDS,
+  TAIL_AFTER_VOICE_SECONDS,
+};

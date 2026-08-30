@@ -25,7 +25,13 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const config = require("../src/config");
 const { run } = require("../src/exec");
-const { buildVideo, buildSilentVideo, trimVideoAt, MIN_TRIMMED_SECONDS } = require("../src/video");
+const {
+  buildVideo,
+  buildSilentVideo,
+  trimVideoAt,
+  MIN_TRIMMED_SECONDS,
+  TAIL_AFTER_VOICE_SECONDS,
+} = require("../src/video");
 const { buildRecordedTrack, probeDuration } = require("../src/audio");
 
 /** How many seconds of silence a file ends with. */
@@ -149,12 +155,19 @@ test("a voice shorter than the picture does not shorten the video", async () => 
   assert.ok(gap > 5, `only ${gap.toFixed(2)}s of held picture after the voice; it was cut back to the voice`);
 });
 
-test("a voice longer than the script holds the last scene rather than running out", async () => {
+/*
+ * The other rule: the picture runs on for five seconds after the last word.
+ *
+ * A take recorded against the silent video ends about where the script does, and
+ * the video used to stop dead on the last word - no pause at all.
+ */
+test("a voice that reaches the end of the script gets five seconds after it", async () => {
   const dir = await fsp.mkdtemp(path.join(dataDir, "long-voice-"));
   const raw = await takeThatTrailsOff(dir, 6, 1);
   const track = await buildRecordedTrack({ uploadPath: raw, workDir: dir, log: () => {} });
   const frames = await stills(dir, 2);
 
+  // Four seconds of script against about six and a half seconds of voice.
   const video = await buildVideo({
     frames,
     durations: [2, 2],
@@ -164,8 +177,22 @@ test("a voice longer than the script holds the last scene rather than running ou
     log: () => {},
   });
 
-  assert.ok(video.duration > 6, `video is only ${video.duration.toFixed(2)}s for a ${track.totalDuration.toFixed(2)}s voice`);
-  assert.ok(Math.abs(video.duration - track.totalDuration) < 0.35);
+  const wanted = track.totalDuration + TAIL_AFTER_VOICE_SECONDS;
+  assert.ok(
+    Math.abs(video.duration - wanted) < 0.35,
+    `video is ${video.duration.toFixed(2)}s for a ${track.totalDuration.toFixed(2)}s voice; wanted ${wanted.toFixed(2)}s`
+  );
+
+  // Which is five seconds of picture with nothing on the sound track.
+  const tail = await trailingSilence(path.join(dir, "video.mp4"));
+  assert.ok(
+    Math.abs(tail - TAIL_AFTER_VOICE_SECONDS) < 0.6,
+    `${tail.toFixed(2)}s of picture after the last word, wanted ${TAIL_AFTER_VOICE_SECONDS}s`
+  );
+});
+
+test("the tail is five seconds, not the old one second and not none", () => {
+  assert.equal(TAIL_AFTER_VOICE_SECONDS, 5);
 });
 
 /*
@@ -185,7 +212,11 @@ test("room tone after the last word is not left to stretch the video", async () 
   assert.ok(track.totalDuration > 3.2, `voice track is ${track.totalDuration.toFixed(2)}s, so the speech was cut into`);
   assert.ok((await trailingSilence(track.audioFile)) < 0.3, "nothing is padded on after the last word");
 
-  // A 4s script with a 3.6s voice comes out 4s, not 9s and not 3.6s.
+  /*
+   * The video is the voice plus the five second tail. Had the room tone been
+   * left on, the take would have been about 9.4s and the video about 14.4s -
+   * six seconds of nothing on the end, on top of the tail.
+   */
   const frames = await stills(dir, 2);
   const video = await buildVideo({
     frames,
@@ -195,7 +226,12 @@ test("room tone after the last word is not left to stretch the video", async () 
     outFile: path.join(dir, "video.mp4"),
     log: () => {},
   });
-  assert.ok(Math.abs(video.duration - 4) < 0.35, `video is ${video.duration.toFixed(2)}s, wanted the script's 4s`);
+  const wanted = track.totalDuration + TAIL_AFTER_VOICE_SECONDS;
+  assert.ok(
+    Math.abs(video.duration - wanted) < 0.35,
+    `video is ${video.duration.toFixed(2)}s, wanted ${wanted.toFixed(2)}s`
+  );
+  assert.ok(video.duration < 11, `video is ${video.duration.toFixed(2)}s, so the room tone was left on`);
 });
 
 /* ---------------------------------------------------------------- */

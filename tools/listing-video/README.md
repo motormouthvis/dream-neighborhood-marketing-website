@@ -469,18 +469,24 @@ so re-recording is free and does not cost a render.
 
 #### How long the finished video is
 
-**Exactly as long as the silent cut.** That is the picture that was approved, so
-that is the video. A 60 second silent cut with a 30 second voice over it is still
-a 60 second video: the picture runs to the end and the audio simply stops.
+**The longer of two things**, and only a person can make it shorter:
 
-It is **never cut back to the voice**, and **nothing is padded on after the last
-word**. An earlier version did both — it set the video's length to the voice
-track's and added a breath on the end — and that threw away picture Bill had
-already signed off.
+| | |
+| --- | --- |
+| the silent cut's length | That is the picture that was approved, so a 60 second cut with a 30 second voice over it is still a 60 second video — the picture runs to the end and the audio stops. It is **never cut back to the voice**. |
+| the voice plus **5 seconds** | A take recorded against the silent video usually ends about where the script does, and the video then stopped dead on the last word. The last scene is held to give it a pause. |
 
-One thing can make it longer: a voice that outruns the script. Then the last
-scene is held to cover it, rather than the picture running out before the voice
-does.
+So a 12 second script with a 12 second voice comes out about 17 seconds, and a 60
+second script with a 30 second voice comes out 60.
+
+Neither number is a guess at what Bill wants — if a video ends later than it
+should, he ends it where he likes with [the trim](#trimming-the-end-off). Between
+them, the two rules mean the picture is never thrown away and the voice never
+finishes on a hard cut.
+
+Dead air is still cut off the end of the voice *track*, for a recorded take and
+for the AI voice. That is about the audio, not the picture: a take stopped ten
+seconds late would otherwise put ten seconds of nothing before the 5 second tail.
 
 One thing can make it shorter, and it is a person: [trimming on the final
 review](#trimming-the-end-off).
@@ -509,7 +515,7 @@ and send yourself. It never reports a send that did not happen.
 The only thing that shortens a video, and it is deliberate rather than automatic.
 
 On the final review, **pause the player exactly where you want the video to
-finish** and press **Trim remainder of video**. Everything after the playhead
+finish** and press **Trim Remainder of Video**. Everything after the playhead
 goes, picture and audio together. It asks first, and it cannot be undone.
 
 The button is only live while the player is paused, because the playhead *is* the
@@ -522,6 +528,12 @@ wanted rid of. It writes over the finished file, so the watch link keeps working
 and it **clears the review** — what you approved is not what the file is now, so
 send switches off until you have watched it again. Nothing shorter than three
 seconds, and trimming at the end is refused rather than re-encoding for nothing.
+
+Afterwards the player reloads the shorter file and **sits just before its new
+end**, paused, so you can see where it now finishes without hunting for it.
+
+That is the whole feature: pause, one button. There are no in and out handles, no
+timeline, and no box to type a number of seconds into.
 
 ### 8. Hosting
 
