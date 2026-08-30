@@ -17,14 +17,20 @@
  */
 
 const path = require("path");
-const { classifyPage, extractAddress, REGISTRATION_GATE_RE } = require("./page-analysis");
+const {
+  classifyPage,
+  extractAddress,
+  looksLikeSingleListingUrl,
+  looksLikeIdxSearchUrl,
+  REGISTRATION_GATE_RE,
+} = require("./page-analysis");
 const { closeStartupPage } = require("./browser");
 
 const LISTING_HREF_HINTS =
   /(listing|listings|property|properties|homes?-for-sale|for-sale|home-details|homedetail|idx|mls|\/p\/|\/home\/|\/l\/|realestate|real-estate)/i;
 
 const NON_LISTING_HREF =
-  /(blog|about|contact|privacy|terms|careers|team|agents?\/|login|signin|sign-in|register|\.pdf$|mailto:|tel:)/i;
+  /(blog|about|contact|privacy|terms|careers|team|agents?\/|login|signin|sign-in|register|\.pdf$|mailto:|tel:|\/idx\/(mortgage|home-?valuation|contact|roster|saved|signup|forgot|emailupdate))/i;
 
 // Links that lead to another search rather than to a house.
 const SEARCH_HREF =
@@ -535,6 +541,59 @@ function registrationWallError() {
     "REGISTRATION_WALL",
     "This site asks for an account after a few listing views. Paste a listing URL."
   );
+}
+
+/**
+ * What an HTTP status actually means, in words.
+ *
+ * A 403 is the site refusing an automated browser, not a missing page. Telling
+ * somebody "there is no page there" when curl gets a 302 from their laptop sends
+ * them looking for a typo that is not there.
+ */
+function statusError(status, { pastedListing = false } = {}) {
+  const ask = pastedListing
+    ? "Try a different listing URL."
+    : "Paste one listing URL and try again.";
+
+  if (status === 401 || status === 403 || status === 451) {
+    return captureError(
+      "SITE_BLOCKED",
+      `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${ask}`
+    );
+  }
+  if (status === 429) {
+    return captureError(
+      "SITE_BLOCKED",
+      `That site is rate limiting us (HTTP 429), so it would not load the page. Wait a minute, then ${ask.toLowerCase()}`
+    );
+  }
+  if (status === 404 || status === 410) {
+    return captureError(
+      "PAGE_NOT_FOUND",
+      `There is no page at that address (HTTP ${status}). Check it and try again.`
+    );
+  }
+  if (status >= 500) {
+    return captureError(
+      "SITE_ERROR",
+      `That site returned an error (HTTP ${status}), so nothing could be filmed. Try again in a minute, or ${ask.toLowerCase()}`
+    );
+  }
+  return captureError("SITE_UNREACHABLE", `That address came back as ${status}. ${ask}`);
+}
+
+/** The same page, allowing for a trailing slash or a redirect to itself. */
+function sameTarget(a, b) {
+  if (!a || !b) return false;
+  const tidy = (value) => {
+    try {
+      const parsed = new URL(value);
+      return `${parsed.host}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`.toLowerCase();
+    } catch (_) {
+      return String(value).toLowerCase();
+    }
+  };
+  return tidy(a) === tidy(b);
 }
 
 /** One refusal for "something is over the page", naming a cookie bar as such. */
@@ -1359,14 +1418,22 @@ async function captureListing({
   // the renderer's memory goes back rather than piling up.
   let page = null;
   let registrationGate = null;
+  /* Where we are, and whether it arrived with its photos, so nothing is loaded twice. */
+  let loadedUrl = "";
+  let loadedHeavy = false;
+
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
     page = null;
     registrationGate = null;
+    loadedUrl = "";
+    loadedHeavy = false;
     if (outOfTime()) return 0;
     page = await preparePage(browser, { heavy });
     const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
     registrationGate = opened.registrationGate || null;
+    loadedUrl = page.url();
+    loadedHeavy = heavy;
     return opened.status;
   };
 
@@ -1457,14 +1524,49 @@ async function captureListing({
    * everything allowed and at full size. That reload happens once per capture.
    */
   const shoot = async (target, verdict, notes) => {
+    /*
+     * Already here with the photos loaded, so it is not fetched again.
+     *
+     * Loading a page twice costs a second listing view on sites that count them,
+     * and Andy Harris's IDX answered 200 the first time and 403 the second - its
+     * bot protection reacting to the repeat hit.
+     */
+    if (loadedHeavy && sameTarget(loadedUrl, target)) {
+      log("The listing is already open with its photos");
+      return finishShot(verdict, notes);
+    }
     log("Loading the listing with its photos");
-    const status = await visit(target, { heavy: true }).catch(() => 0);
-    if (!status || status >= 400) {
+    /*
+     * This page already loaded once during the crawl, so a failure here is a
+     * hiccup rather than a verdict on the page. It gets one more go before we
+     * give up, and a refusal that says which of the two things went wrong.
+     */
+    let status = 0;
+    let trouble = null;
+    for (const attempt of [1, 2]) {
+      try {
+        status = await visit(target, { heavy: true });
+      } catch (error) {
+        status = 0;
+        trouble = error;
+      }
+      if (status && status < 400) break;
+      if (attempt === 1) log("The page did not come back with its photos - one more try");
+    }
+    if (status >= 400) throw statusError(status, { pastedListing: Boolean(listingUrl) });
+    if (!status) {
       throw captureError(
         "LISTING_URL_UNREACHABLE",
-        `That listing page stopped answering while it was being photographed. Try again, or paste a listing URL.`
+        `That listing page stopped answering while it was being photographed${
+          trouble ? ` (${trouble.message})` : ""
+        }. Try again, or paste a listing URL.`
       );
     }
+    return finishShot(verdict, notes);
+  };
+
+  /** Clear the late overlays, then take the picture. */
+  const finishShot = async (verdict, notes) => {
     await settle(page, { forShot: true });
 
     /*
@@ -1508,9 +1610,18 @@ async function captureListing({
     /* ---- the page we were pointed at ---- */
     const startedOnListingUrl = Boolean(listingUrl);
     log(startedOnListingUrl ? `Opening the listing page you gave me` : `Opening ${new URL(home).hostname}`);
+    /*
+     * A pasted listing is loaded with its photos straight away.
+     *
+     * Blocking images pays for itself while crawling a site, but there is no
+     * crawl when we have been handed the page: loading it lean and then loading
+     * it again for the shutter costs a second listing view on sites that count
+     * them, and it is the repeat hit that Andy Harris's IDX answered with a 403.
+     */
+    const startHeavy = Boolean(listingUrl) && looksLikeSingleListingUrl(start);
     let startStatus;
     try {
-      startStatus = await visit(start);
+      startStatus = await visit(start, { heavy: startHeavy });
     } catch (error) {
       throw captureError(
         startedOnListingUrl ? "LISTING_URL_UNREACHABLE" : "SITE_UNREACHABLE",
@@ -1520,10 +1631,7 @@ async function captureListing({
       );
     }
     if (startStatus >= 400) {
-      throw captureError(
-        startedOnListingUrl ? "LISTING_URL_UNREACHABLE" : "SITE_UNREACHABLE",
-        `That address came back as ${startStatus}, so there is no page there. Check it and try again.`
-      );
+      throw statusError(startStatus, { pastedListing: startedOnListingUrl });
     }
 
     const fallbackNote = [
@@ -1531,6 +1639,28 @@ async function captureListing({
     ];
 
     const startUrl = page.url();
+
+    /*
+     * Whether we were handed one property. Judged on the URL we landed on, so a
+     * pasted listing that redirects to itself still counts and a pasted homepage
+     * that bounces onto a search page does not.
+     */
+    const pastedOneListing =
+      startedOnListingUrl && (looksLikeSingleListingUrl(start) || looksLikeSingleListingUrl(startUrl));
+
+    /*
+     * A homepage that bounces straight onto the site's IDX search has no listing
+     * to offer without walking its results, and walking IDX results is what
+     * trips the "create an account" counter. Ask for a listing URL instead.
+     */
+    if (!pastedOneListing && looksLikeIdxSearchUrl(startUrl) && !looksLikeSingleListingUrl(startUrl)) {
+      log("Their website goes straight to its search page, which is never filmed");
+      throw captureError(
+        "SITE_IS_SEARCH_ONLY",
+        `${new URL(home).hostname} sends visitors straight to its property search (${new URL(startUrl).pathname}), and a search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
+      );
+    }
+
     const first = await assess(startUrl);
     if (first.reason === "wall") throw registrationWallError();
 
@@ -1553,6 +1683,30 @@ async function captureListing({
     if (startedOnListingUrl && first.reason === "blocked") {
       throw blockedError(first.left);
     }
+
+    /*
+     * A pasted URL shaped like one property is taken at its word.
+     *
+     * Bill pasted /idx/details/listing/b001/114051774 and was told to paste a
+     * listing URL. An IDX detail page carries a neighbourhood map and the site's
+     * own search box in its header, and that furniture is not grounds for
+     * overruling somebody who has told us exactly which house they mean. The
+     * page still has to be free of an account wall, of our own Explorer and of
+     * overlays, all checked above.
+     */
+    if (pastedOneListing) {
+      // Still never film through a cookie bar, whatever the page was classified as.
+      if (first.left && first.left.length) throw blockedError(first.left);
+      if (first.explorer && first.explorer.found && !wantExplorer) {
+        throw captureError(
+          "LISTING_HAS_EXPLORER",
+          "That page already has a Dream Neighborhood Explorer embedded on it, so it cannot be the \u201cbefore\u201d shot. Pick one of their listings that does not have it yet."
+        );
+      }
+      log("That URL is one property, so it is being filmed as it is");
+      return await shoot(startUrl, first.verdict, first.preferred ? [] : fallbackNote);
+    }
+
     // A pasted URL that was a listing but is unusable stops here: opening
     // another listing is exactly what trips the account wall.
     if (listingViews >= MAX_LISTING_VIEWS) {
@@ -1567,8 +1721,23 @@ async function captureListing({
 
     /* ---- follow links into an actual listing ---- */
     log(`Looking for one of their listing pages (${secondsLeft()}s left to find one)`);
-    const tried = new Set([start, startUrl]);
+    /*
+     * One key per page, so the same page reached by two slightly different links
+     * is opened once. Without this the crawl spent three of its visits on the
+     * same /idx/mortgage page.
+     */
+    const keyFor = (href) => {
+      try {
+        const parsed = new URL(href);
+        return `${parsed.host}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`.toLowerCase();
+      } catch (_) {
+        return String(href).toLowerCase();
+      }
+    };
+    const tried = new Set([keyFor(start), keyFor(startUrl)]);
     const queue = [];
+    /* Pages the site refused outright, which is a different story to not finding one. */
+    let blockedPages = 0;
     let visits = 0;
 
     /**
@@ -1598,7 +1767,7 @@ async function captureListing({
       await waitForCards(2500);
       const found = await collectListingLinks(page, origin);
       for (const entry of found) {
-        if (tried.has(entry.href) || queue.some((queued) => queued.href === entry.href)) continue;
+        if (tried.has(keyFor(entry.href)) || queue.some((queued) => keyFor(queued.href) === keyFor(entry.href))) continue;
         queue.push({ ...entry, depth });
       }
       // Best-looking link first: a concrete listing URL with a price and beds
@@ -1615,8 +1784,8 @@ async function captureListing({
         if (listingViews >= MAX_LISTING_VIEWS) return null;
 
         const candidate = queue.shift();
-        if (tried.has(candidate.href)) continue;
-        tried.add(candidate.href);
+        if (tried.has(keyFor(candidate.href))) continue;
+        tried.add(keyFor(candidate.href));
         visits += 1;
         // Keep the progress list moving: a long wait must never look silent.
         log(`Checking ${new URL(candidate.href).pathname || "/"} (${secondsLeft()}s left)`);
@@ -1626,7 +1795,13 @@ async function captureListing({
         } catch (_) {
           continue;
         }
-        if (!status || status >= 400) continue;
+        if (!status || status >= 400) {
+          if (status === 401 || status === 403 || status === 429 || status === 451) {
+            blockedPages += 1;
+            log(`Their site blocked that page (HTTP ${status})`);
+          }
+          continue;
+        }
 
         const verdict = await assess(candidate.href);
         if (verdict.reason === "wall") return { wall: true };
@@ -1674,8 +1849,8 @@ async function captureListing({
       if (outOfTime() || navVisits >= MAX_NAV_VISITS) break;
       if (listingViews >= MAX_LISTING_VIEWS) break;
       const indexUrl = new URL(indexPath, origin).toString();
-      if (tried.has(indexUrl)) continue;
-      tried.add(indexUrl);
+      if (tried.has(keyFor(indexUrl))) continue;
+      tried.add(keyFor(indexUrl));
       navVisits += 1;
       log(`Trying ${indexPath} (${secondsLeft()}s left)`);
       let indexStatus;
@@ -1700,6 +1875,16 @@ async function captureListing({
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
     if (tally.wall) throw registrationWallError();
+    // Every page it tried was refused outright. That is the site turning an
+    // automated browser away, not a site without any listings on it.
+    if (blockedPages > 0 && !tally.detail) {
+      throw captureError(
+        "SITE_BLOCKED",
+        `${host} blocked the capture on ${blockedPages} page${
+          blockedPages === 1 ? "" : "s"
+        } (HTTP 403), so none of them could be read. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
+      );
+    }
     if (outOfTime()) {
       log("Could not find a listing in time");
       throw captureError(
