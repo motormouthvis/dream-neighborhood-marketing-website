@@ -195,6 +195,62 @@ test("the upgrade script films that same listing, School Explorer and all", opti
   assert.deepEqual(shot.notes, []);
 });
 
+/*
+ * The listing that blocked Bill: melidafilpo.idxbroker.com/idx/details/listing/
+ * d003/O6424875, 14918 Cranes Nest Court. It failed with "The listing page did
+ * not give an address to look up" because the overlay pass clicked the flood
+ * zone value - the letter "X", rendered by IDX as a link to a search - and the
+ * search results page got filmed instead of the house.
+ */
+test("the flood zone 'X' is a link, not a close button, so the listing stays put", options, async () => {
+  const shot = await capture(fixture.IDX_SPAN_SITE, { listingUrl: fixture.CRANES_NEST_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+
+  // Still on the house, not on the results page that "X" links to.
+  assert.equal(new URL(shot.pageUrl).pathname, fixture.CRANES_NEST_PATH);
+  assert.equal(shot.hits["/idx/results/listings"], undefined, "the X link must not be followed");
+});
+
+test("an address split across IDX's own spans is read whole", options, async () => {
+  const shot = await capture(fixture.IDX_SPAN_SITE, { listingUrl: fixture.CRANES_NEST_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.address.street, "14918 Cranes Nest Court");
+  assert.equal(shot.address.cityState, "Orlando, FL");
+  assert.equal(shot.address.zip, "32824");
+  assert.equal(shot.address.isSubject, true);
+});
+
+/*
+ * IDX also answers a details URL by bouncing to its search results, seeded with
+ * that listing's county and city. Trusting the URL we asked for meant filming
+ * that page as though it were the house.
+ */
+test("a pasted listing that bounces to search is refused, not filmed as the house", options, async () => {
+  const shot = await capture(fixture.IDX_REDIRECTS_TO_SEARCH, { listingUrl: fixture.CRANES_NEST_PATH });
+  assert.ok(shot.error, "a search results page is never the house");
+  assert.equal(shot.error.code, "LISTING_URL_REDIRECTED");
+  assert.match(shot.error.message, /did not stay put/i);
+  assert.match(shot.error.message, /search results/i);
+  // And the failure carries the picture of where it ended up.
+  assert.ok(shot.error.screenshot, "the page it stopped on is photographed");
+});
+
+test("a listing whose address cannot be read is refused rather than filmed blank", options, async () => {
+  // A details URL is trusted on its shape, so without this guard a page with no
+  // readable address would be filmed - a blank tooltip, and an Explorer with
+  // nothing to be pointed at, discovered only after the render.
+  const noAddress = {
+    ...fixture.IDX_SPAN_SITE,
+    [fixture.CRANES_NEST_PATH]: fixture.IDX_SPAN_SITE[fixture.CRANES_NEST_PATH]
+      .replace(/<h1 id="IDX-detailsAddress">[\s\S]*?<\/h1>/, "<h1>Residential for sale</h1>")
+      .replace(/14918 Cranes Nest Court/g, "this home"),
+  };
+  const shot = await capture(noAddress, { listingUrl: fixture.CRANES_NEST_PATH });
+  assert.ok(shot.error, "no address means no video");
+  assert.equal(shot.error.code, "ADDRESS_NOT_READ");
+  assert.match(shot.error.message, /street address could not be read/i);
+});
+
 test("a pasted listing is opened once, and no other page is touched", options, async () => {
   const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");

@@ -234,6 +234,44 @@ test("something shaped like a state but is not one gives no town", () => {
   assert.deepEqual(cityStateIn("SMYRNA, GEORGIA 30082"), { cityState: "Smyrna, GA", zip: "30082" });
 });
 
+/*
+ * IDX Broker builds its heading out of one span per part, and depending on how
+ * those spans lay out the text arrives with spaces around the commas:
+ *
+ *   "14918 Cranes Nest Court , Orlando , FL 32824"
+ *
+ * The pattern wanted the comma tight against the city, so no town was found at
+ * all - and a street with no town produced no geocode query, which is the dead
+ * end Bill hit on 14918 Cranes Nest Court.
+ */
+test("a comma with a space in front of it is still a comma", () => {
+  assert.deepEqual(cityStateIn("Orlando , FL 32824"), { cityState: "Orlando, FL", zip: "32824" });
+  assert.deepEqual(cityStateIn("Orlando, FL 32824"), { cityState: "Orlando, FL", zip: "32824" });
+  assert.deepEqual(cityStateIn("Long Beach , CA 90803"), { cityState: "Long Beach, CA", zip: "90803" });
+  assert.deepEqual(cityStateIn("SMYRNA , GEORGIA 30082"), { cityState: "Smyrna, GA", zip: "30082" });
+});
+
+test("the IDX heading that blocked Bill reads as one address", () => {
+  for (const heading of [
+    "14918 Cranes Nest Court , Orlando , FL 32824",
+    "14918 Cranes Nest Court, Orlando, FL 32824",
+    "14918 Cranes Nest Court ,  Orlando ,  FL  32824",
+  ]) {
+    const address = extractAddress({
+      url: "https://melidafilpo.idxbroker.com/idx/details/listing/d003/O6424875",
+      h1s: [heading],
+      jsonLd: [],
+      // These pages carry no structured data, and the title has no street in it.
+      title: "Residential for sale in Orlando, Florida, O6424875",
+      bodyText: `${heading} Listing ID: O6424875 Price $530,000 SqFt 3,024 Bed 4 Bath 3`,
+    });
+    assert.equal(address.street, "14918 Cranes Nest Court", heading);
+    assert.equal(address.cityState, "Orlando, FL", heading);
+    assert.equal(address.zip, "32824", heading);
+    assert.equal(address.isSubject, true, heading);
+  }
+});
+
 /* ---------------------------------------------------------------- */
 /* a URL that is already one house                                  */
 /* ---------------------------------------------------------------- */

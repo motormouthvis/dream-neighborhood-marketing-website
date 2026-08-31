@@ -76,6 +76,8 @@ async function renderSilent(job, { budgetMs } = {}) {
   await store.persist(job);
 
   let browser = null;
+  /* The shot of the listing, kept so a failure after the capture can show it. */
+  let filmed = null;
   try {
     await fsp.mkdir(workDir, { recursive: true });
     browser = await launch();
@@ -102,6 +104,8 @@ async function renderSilent(job, { budgetMs } = {}) {
         return closeBrowser(browser, { graceMs: 2000 });
       }
     );
+
+    filmed = { screenshot: capture.screenshot, pageUrl: capture.pageUrl };
 
     /*
      * Film the Neighborhood Explorer, if this script walks its tabs.
@@ -191,9 +195,12 @@ async function renderSilent(job, { budgetMs } = {}) {
       reason: error.message || String(error),
       httpStatus: error.httpStatus || null,
       pageKind: error.pageKind || "",
-      pageUrl: error.pageUrl || error.explorerUrl || "",
       checked: error.checked || [],
-      screenshot: error.screenshot || "",
+      // Nothing to photograph once the capture browser has gone, so the shot of
+      // the listing that was filmed stands in. On the job Bill lost, that picture
+      // is the search results page IDX sent us instead of the house.
+      screenshot: error.screenshot || (filmed && filmed.screenshot) || "",
+      pageUrl: error.pageUrl || error.explorerUrl || (filmed && filmed.pageUrl) || "",
     });
   } finally {
     // Always, on every path: a leaked Chrome on a small dyno is the next crash.

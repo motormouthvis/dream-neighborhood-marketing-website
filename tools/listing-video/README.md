@@ -156,6 +156,59 @@ video:
   accepted and normalised to the code, and a state-shaped string that is not a
   state gives no town at all rather than a wrong one.
 
+#### A pasted listing has to stay put
+
+The URL is judged on **where the browser landed**, not on where it was sent. IDX
+sometimes answers a details URL by bouncing to its own search results, seeded with
+that listing's county and city — `/idx/results/listings?county[]=146&city[]=34718`.
+Trusting the pasted URL meant filming that results page as though it were the
+house, and since a results page has no address on it, the job then died at the
+Explorer with "did not give an address to look up".
+
+Now that is a refusal that says what happened, with a picture of the page it
+landed on.
+
+#### Nothing that goes somewhere gets clicked
+
+The overlay pass will not click a link with a real destination. A close control is
+a button, or an anchor going nowhere — no `href`, `#`, or `javascript:`.
+
+This is not hypothetical. IDX renders a listing's own field values as links to a
+search for other listings with that value, and one of those values is the flood
+zone: **`X`**. "X" is also the commonest close-button glyph there is, so the pass
+clicked it, IDX navigated to `?a_floodZoneCode=X`, and the search results page got
+filmed instead of 14918 Cranes Nest Court, Orlando.
+
+#### No address, no video
+
+The address is the tooltip on the house button and it is where the Neighborhood
+Explorer gets pointed, so a page that gives up no street address is refused rather
+than filmed. Otherwise the failure lands *after* the render, which is a far worse
+place to find out. Nothing is guessed at.
+
+It is read twice: once when the page is judged, and again just before the shutter,
+because on a client-drawn listing the heading can arrive in between.
+
+**IDX headings are assembled from spans**, one per part:
+
+```html
+<h1 id="IDX-detailsAddress">
+  <span class="IDX-detailsAddressNumber">14918 </span>
+  <span class="IDX-detailsAddressName">Cranes Nest Court</span>
+  <span class="IDX-detailsEndAddressComma">,&nbsp;</span>
+  <span class="IDX-detailsAddressCity">Orlando</span>
+  <span class="IDX-detailsAddressStateAbrv">FL&nbsp;</span>
+  <span class="IDX-detailsAddressZipcode">32824</span>
+</h1>
+```
+
+Those parts are read individually and assembled, so no amount of whitespace
+between the spans can change the answer — and the city/state pattern now accepts
+a space in front of the comma, because that markup can lay out as
+`14918 Cranes Nest Court , Orlando , FL 32824`. These pages carry no structured
+data at all and their title has no street in it, so the heading is the only place
+the address exists.
+
 #### A site that opens on its own search
 
 A homepage that bounces straight onto the site's IDX search — as
@@ -379,6 +432,7 @@ It refuses rather than falling back to anything drawn by us:
 | What happened | What it says |
 | --- | --- |
 | the address cannot be placed on the map | that address could not be found, try a different listing |
+| the page gave a street but no town | it is looked up on the street alone, and the job log says so, because there was nothing to check the answer against |
 | the Explorer never loads data for it | it has no neighborhood data for that address |
 | it reports "Unknown location" | same, and it names what the Explorer reported |
 | a tab is missing, or the walk runs over its budget | which tab, and how far it got |

@@ -154,10 +154,24 @@ function stateCodeFor(value) {
   return STATE_CODES[text.toLowerCase()] || "";
 }
 
-/* City, then something that might be a state, then a ZIP. The state is checked
- * against the list above rather than by its shape. */
+/*
+ * City, then something that might be a state, then a ZIP. The state is checked
+ * against the list above rather than by its shape.
+ *
+ * The whitespace before the comma is not cosmetic. IDX Broker builds its heading
+ * out of one span per part:
+ *
+ *   <span class="IDX-detailsAddressName">Cranes Nest Court</span>
+ *   <span class="IDX-detailsEndAddressComma">,&nbsp;</span>
+ *   <span class="IDX-detailsAddressCity">Orlando</span>
+ *
+ * Depending on how those spans lay out, the text can come through as
+ * "Cranes Nest Court , Orlando , FL 32824". Requiring the comma to sit tight
+ * against the city meant no town was found at all, and a street with no town
+ * produced no geocode query - the dead end Bill hit on 14918 Cranes Nest Court.
+ */
 const CITY_STATE_RE =
-  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3}),\s*([A-Za-z][A-Za-z.'\u2019 -]{0,18}?)\s+(\d{5})(?:-\d{4})?\b/;
+  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3})\s*,\s*([A-Za-z][A-Za-z.'\u2019 -]{0,18}?)\s+(\d{5})(?:-\d{4})?\b/;
 
 /* ---------------------------------------------------------------- */
 /* addresses                                                        */

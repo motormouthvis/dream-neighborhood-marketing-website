@@ -148,6 +148,19 @@ function queriesFor(address) {
   if (cityState && zip) add(`${cityState} ${zip}`, "neighborhood");
   if (cityState) add(cityState, "town");
 
+  /*
+   * A street on its own, last, when the page gave up no town.
+   *
+   * There is nothing to check the answer against, so this is the least trusted
+   * query and it goes after every other one - but it is worth having. Refusing
+   * outright was a dead end: the listing was right there on the page, and the
+   * job stopped with "did not give an address to look up".
+   */
+  if (street && !cityState) {
+    add(street, "street-only");
+    if (withoutUnit && withoutUnit !== street) add(withoutUnit, "street-only");
+  }
+
   return queries;
 }
 
@@ -169,7 +182,11 @@ async function locateAddress(address, { log = () => {}, timeoutMs = 12000 } = {}
   for (const { query, precision } of queries) {
     const found = await askNominatim(query, expect, timeoutMs);
     if (!found) continue;
-    if (precision !== "address") {
+    if (precision === "street-only") {
+      // Say so plainly: with no town on the page there was nothing to check the
+      // answer against, so whoever reviews the video should look at the map.
+      log(`The listing page gave no town, so the Explorer was placed on "${query}" alone - check the map in the review`);
+    } else if (precision !== "address") {
       log(`Could not place "${queries[0].query}" exactly, so the Explorer is centred on ${query}`);
     }
     return { ...found, precision, query };

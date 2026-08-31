@@ -62,6 +62,31 @@ test("an address is looked up precisely first, then loosened", () => {
 test("with no address there is nothing to look up", () => {
   assert.deepEqual(queriesFor({}), []);
   assert.deepEqual(queriesFor(null), []);
+  // A ZIP on its own is not something to point the Explorer at either.
+  assert.deepEqual(queriesFor({ street: "", cityState: "", zip: "32824" }), []);
+});
+
+/*
+ * A street with no town used to produce no query at all, and the job died with
+ * "The listing page did not give an address to look up" - with the address
+ * sitting right there on the page. It is the least trusted query, so it goes
+ * last, but a dead end is worse than a loose answer somebody can see on the map.
+ */
+test("a street with no town is still worth looking up", () => {
+  const queries = queriesFor({ street: "14918 Cranes Nest Court", cityState: "", zip: "" });
+  assert.ok(queries.length, "a street on its own has to give something to look up");
+  assert.equal(queries[queries.length - 1].query, "14918 Cranes Nest Court");
+  assert.equal(queries[queries.length - 1].precision, "street-only");
+
+  // With a ZIP as well, the pair is tried before the street alone.
+  const withZip = queriesFor({ street: "14918 Cranes Nest Court", cityState: "", zip: "32824" });
+  assert.equal(withZip[0].query, "14918 Cranes Nest Court, 32824");
+  assert.equal(withZip[withZip.length - 1].precision, "street-only");
+
+  // And when the town is known, street-only is not used at all.
+  const full = queriesFor({ street: "14918 Cranes Nest Court", cityState: "Orlando, FL", zip: "32824" });
+  assert.equal(full[0].query, "14918 Cranes Nest Court, Orlando, FL 32824");
+  assert.ok(!full.some((entry) => entry.precision === "street-only"), JSON.stringify(full));
 });
 
 /* ---------------------------------------------------------------- */

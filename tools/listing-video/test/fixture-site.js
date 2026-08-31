@@ -573,6 +573,87 @@ const SEARCH_WITH_NO_LISTINGS = {
   "/idx/results/listings": page("Listing Results", '<div class="wrap"><h1>No listings found</h1></div>'),
 };
 
+/*
+ * The listing that blocked Bill, built the way IDX Broker builds it.
+ *
+ * Two things on this page each broke capture on their own:
+ *
+ *   - the heading is one span per part, so its text arrives with spaces around
+ *     the commas: "14918 Cranes Nest Court , Orlando , FL 32824"
+ *   - the flood zone value is the letter "X", and IDX renders a field value as a
+ *     link to a search for other listings with that value. "X" is also the
+ *     commonest close-button glyph there is, so the overlay pass clicked it and
+ *     the site navigated to its search results.
+ *
+ * There is no structured data, and the title carries no street.
+ */
+const IDX_SPAN_HEADING = `
+  <h1 id="IDX-detailsAddress">
+    <div class="IDX-detailsAddressInfo">
+      <span class="IDX-detailsAddressNumber">14918 </span>
+      <span class="IDX-detailsAddressName">Cranes Nest Court</span>
+      <span class="IDX-detailsEndAddressComma">,&nbsp;</span>
+    </div>
+    <div class="IDX-detailsAddressLocationInfo">
+      <span class="IDX-detailsAddressCity">Orlando</span>
+      <span class="IDX-detailsAddressCitySeparator">,&nbsp;</span>
+      <span class="IDX-detailsAddressStateAbrv">FL&nbsp;</span>
+      <span class="IDX-detailsAddressZipcode">32824</span>
+    </div>
+  </h1>`;
+
+const CRANES_NEST = page(
+  "Residential for sale in Orlando, Florida, O6424875",
+  `<div class="wrap">
+     ${IDX_SPAN_HEADING}
+     <p>Listing ID: O6424875</p>
+     <p class="price">$530,000</p>
+     <p>4 beds &middot; 3 baths &middot; 3,024 sq ft</p>
+     <div class="gallery">
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+     </div>
+     <div id="map" style="height:280px"><p>Map data</p></div>
+     <h2>Property Details</h2>
+     <table>
+       <tr><td>MLS #</td><td>O6424875</td></tr>
+       <tr><td>Property Type</td><td>Residential</td></tr>
+       <tr><td>Year Built</td><td>2005</td></tr>
+       <tr><td>Days on Market</td><td>9</td></tr>
+     </table>
+     <div class="IDX-fieldContainer">
+       <div class="IDX-field" id="IDX-field-floodZoneCode">
+         <span class="IDX-label">Flood Zone</span>
+         <span class="IDX-text"><a href="/idx/results/listings?a_floodZoneCode=X">X</a></span>
+       </div>
+     </div>
+   </div>`
+);
+
+const CRANES_NEST_PATH = "/idx/details/listing/d003/O6424875";
+
+/** That listing, on an IDX site, reachable and well behaved. */
+const IDX_SPAN_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH,
+  "/idx/results/listings": page(
+    "Listing Results",
+    '<div class="wrap"><h1>Listing Results</h1><div class="card"><a href="/idx/details/listing/d003/O6424875">14918 Cranes Nest Court</a></div></div>'
+  ),
+  [CRANES_NEST_PATH]: CRANES_NEST,
+};
+
+/*
+ * The same listing URL, but the site bounces it to its own search results the
+ * way IDX does when it will not serve the page - seeded with that listing's own
+ * county and city, which is what made it look plausible.
+ */
+const IDX_REDIRECTS_TO_SEARCH = {
+  ...IDX_SPAN_SITE,
+  [CRANES_NEST_PATH]: { redirect: "/idx/results/listings?county[]=146&city[]=34718&a_floodZoneCode=X" },
+};
+
 function createServer(routes = ROUTES, hits = {}) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -633,6 +714,9 @@ module.exports = {
   IDX_DETAILS_PATH: "/idx/details/listing/b001/114051774",
   SEARCH_ONLY_SITE,
   SEARCH_TO_LISTING_SITE,
+  IDX_SPAN_SITE,
+  IDX_REDIRECTS_TO_SEARCH,
+  CRANES_NEST_PATH,
   SEARCH_TO_WALL_SITE,
   SEARCH_WITH_NO_LISTINGS,
   IDX_LISTING_PATH,

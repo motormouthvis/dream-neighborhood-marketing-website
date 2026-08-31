@@ -160,6 +160,31 @@ test("a timed-out capture is still written down, and still gives up on time", op
   assert.ok(elapsed < 40000, `it took ${Math.round(elapsed / 1000)}s, so the picture cost the budget`);
 });
 
+/*
+ * Bill's job on 14918 Cranes Nest Court. A listing URL that bounces to search
+ * has to be in the log like anything else, with the picture of where it landed -
+ * that picture is the whole explanation.
+ */
+test("a listing URL that bounces to search is logged, with the page it landed on", options, async () => {
+  const job = await failingJob(fixture.IDX_REDIRECTS_TO_SEARCH, {
+    company: "Melida Filpo",
+    listingPath: fixture.CRANES_NEST_PATH,
+  });
+
+  assert.equal(job.status, "failed");
+  assert.equal(job.failure.errorCode, "LISTING_URL_REDIRECTED");
+  assert.equal(job.failure.stage, "capture");
+  assert.match(job.failure.reason, /did not stay put/i);
+  // The URL it ended up on, not the one we asked for.
+  assert.match(job.failure.pageUrl, /\/idx\/results\/listings/);
+  assert.ok(fs.existsSync(job.failure.screenshot), "and a picture of that page");
+
+  const listed = await store.listFailures({ limit: 5 });
+  const mine = listed.find((entry) => entry.jobId === job.id);
+  assert.ok(mine, "it is in the log");
+  assert.equal(mine.listingUrl.endsWith(fixture.CRANES_NEST_PATH), true, "the URL he pasted is recorded");
+});
+
 test("a search page we would not film is recorded as a search page", options, async () => {
   const job = await failingJob(fixture.SEARCH_WITH_NO_LISTINGS, { company: "Search Only Realty" });
   assert.equal(job.failure.errorCode, "SITE_IS_SEARCH_ONLY");

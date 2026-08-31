@@ -759,6 +759,34 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
     return false;
   };
 
+  /*
+   * A link that goes somewhere is never a close button.
+   *
+   * IDX renders a listing's own field values as links to a search for other
+   * listings with that value, and one of those values is the flood zone - "X".
+   * "X" is also the commonest close-button glyph there is, so this pass clicked
+   * it, IDX navigated to /idx/results/listings?a_floodZoneCode=X, and the search
+   * results page got filmed instead of 14918 Cranes Nest Court.
+   *
+   * A real close control is a button, or an anchor going nowhere (no href, "#",
+   * or javascript:). Anything with a genuine destination is page content.
+   */
+  const goesSomewhere = (el) => {
+    if (el.tagName !== "A") return false;
+    const href = el.getAttribute("href");
+    if (!href) return false;
+    const target = href.trim();
+    if (!target || target === "#" || /^javascript:/i.test(target)) return false;
+    try {
+      // Same page, different anchor, is still going nowhere.
+      const resolved = new URL(target, document.baseURI);
+      const here = new URL(document.baseURI);
+      return resolved.href.split("#")[0] !== here.href.split("#")[0];
+    } catch (_) {
+      return true;
+    }
+  };
+
   const clickable = document.querySelectorAll(
     "button, a, [role=button], input[type=button], input[type=submit], [aria-label]"
   );
@@ -767,6 +795,7 @@ function dismissPass(selectors, overlayTextSource, dismissLabelSource) {
     if (!label || label.length > 30) continue;
     if (!dismissLabel.test(label)) continue;
     if (inSignupForm(el)) continue;
+    if (goesSomewhere(el)) continue;
     try {
       el.click();
     } catch (_) {
@@ -1054,6 +1083,43 @@ function readPageFacts() {
     if (!value || value.length > 200) return;
     addressCandidates.push({ text: value, where, inFooter: el ? inFooter(el) : false });
   };
+  /*
+   * IDX Broker names every part of the address, so it is assembled from the
+   * parts rather than read as text.
+   *
+   *   <h1 id="IDX-detailsAddress">
+   *     <span class="IDX-detailsAddressNumber">14918 </span>
+   *     <span class="IDX-detailsAddressName">Cranes Nest Court</span>
+   *     <span class="IDX-detailsEndAddressComma">,&nbsp;</span>
+   *     <span class="IDX-detailsAddressCity">Orlando</span>
+   *     <span class="IDX-detailsAddressStateAbrv">FL&nbsp;</span>
+   *     <span class="IDX-detailsAddressZipcode">32824</span>
+   *   </h1>
+   *
+   * These pages carry no structured data at all, and their title is only
+   * "Residential for sale in Orlando, Florida, O6424875" - no street - so this
+   * heading is the only place the address exists. Reading the parts means no
+   * amount of whitespace between the spans can change the answer. Pushed first
+   * so it is preferred over the same heading read as text.
+   */
+  const idxPart = (selector) => {
+    const el = document.querySelector(`#IDX-detailsAddress ${selector}, ${selector}`);
+    return el ? clean(el.innerText || el.textContent) : "";
+  };
+  const idxStreet = clean(
+    `${idxPart(".IDX-detailsAddressNumber")} ${idxPart(".IDX-detailsAddressName")}`
+  );
+  if (idxStreet) {
+    const idxCity = idxPart(".IDX-detailsAddressCity");
+    const idxState = idxPart(".IDX-detailsAddressStateAbrv") || idxPart(".IDX-detailsAddressState");
+    const idxZip = idxPart(".IDX-detailsAddressZipcode");
+    // "14918 Cranes Nest Court, Orlando, FL 32824" - comma after the city, a
+    // space before the ZIP, which is the shape the address reader expects.
+    const tail = clean(`${idxState} ${idxZip}`);
+    const assembled = [idxStreet, idxCity, tail].filter(Boolean).join(", ");
+    pushCandidate(assembled, "address-element", document.querySelector("#IDX-detailsAddress"));
+  }
+
   for (const el of Array.from(document.querySelectorAll("h1")).slice(0, 3)) {
     pushCandidate(el.innerText, "heading", el);
   }
@@ -1642,10 +1708,42 @@ async function captureListing({
     const left = await blockers(page);
     if (left.length) throw blockedError(left);
 
-    const address = verdict.address && verdict.address.street ? verdict.address : extractAddress(null);
+    /*
+     * One last read of the address, off the page as it stands.
+     *
+     * The verdict was formed before the overlays were cleared and the page was
+     * scrolled, and on a client-drawn listing the heading can arrive in between.
+     */
+    let address = verdict.address && verdict.address.street ? verdict.address : extractAddress(null);
+    if (!address.street) {
+      const late = extractAddress(await collectPageFacts(page));
+      if (late.street) {
+        address = late;
+        log(`Read the address once the page had settled: ${late.street}`);
+      }
+    }
+
+    /*
+     * No address, no video.
+     *
+     * The address is the tooltip on the house button and it is where the
+     * Neighborhood Explorer gets pointed. Filming without one produces a blank
+     * tooltip and, on any script with Explorer beats, a job that dies later with
+     * "did not give an address to look up" - after the render, which is a much
+     * worse place to find out. Nothing here guesses at an address.
+     */
+    if (!address.street) {
+      throw captureError(
+        "ADDRESS_NOT_READ",
+        `The street address could not be read off ${
+          new URL(page.url()).hostname
+        }, and it is what the house button and the Neighborhood Explorer need, so nothing was filmed. Paste a listing URL whose page shows the street address as its heading.`
+      );
+    }
+
     const shotPath = path.join(outDir, "site.png");
     await page.screenshot({ path: shotPath, type: "png", captureBeyondViewport: false });
-    log(address.street ? `Filmed ${address.street}` : "Screenshot captured");
+    log(`Filmed ${address.street}`);
     return {
       screenshot: shotPath,
       pageUrl: page.url(),
@@ -1806,8 +1904,26 @@ async function captureListing({
      * pasted listing that redirects to itself still counts and a pasted homepage
      * that bounces onto a search page does not.
      */
-    const pastedOneListing =
-      startedOnListingUrl && (looksLikeSingleListingUrl(start) || looksLikeSingleListingUrl(startUrl));
+    /*
+     * Judged on where we LANDED, not on where we were sent.
+     *
+     * IDX sometimes answers a details URL by bouncing to its own search results,
+     * seeded with that listing's county and city - /idx/results/listings?county[]=
+     * 146&city[]=34718. Trusting the pasted URL meant filming that results page as
+     * though it were the house: no address on it, so the Explorer had nothing to
+     * be pointed at and the job died with "did not give an address to look up".
+     */
+    const pastedOneListing = startedOnListingUrl && looksLikeSingleListingUrl(startUrl);
+
+    if (startedOnListingUrl && looksLikeSingleListingUrl(start) && !pastedOneListing) {
+      log(`That listing URL sent us to ${new URL(startUrl).pathname} instead`);
+      throw captureError(
+        "LISTING_URL_REDIRECTED",
+        `That listing URL did not stay put - their site sent us to ${new URL(startUrl).pathname}${
+          looksLikeIdxSearchUrl(startUrl) || /\/results\//i.test(startUrl) ? ", which is their search results" : ""
+        }. That happens on IDX sites when they will not serve the page to us, and it is not the house, so nothing was filmed. Try that listing again in a minute, or paste a different one.`
+      );
+    }
 
     /*
      * A site that opens on its own IDX search still has listings behind it, so
