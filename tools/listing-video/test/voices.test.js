@@ -182,6 +182,7 @@ async function signedIn() {
   const cookie = signin.headers.getSetCookie()[0].split(";")[0];
   return {
     get: (url) => realFetch(`${origin}${url}`, { headers: { cookie } }),
+    plain: (url) => realFetch(`${origin}${url}`),
     post: (url, body) =>
       realFetch(`${origin}${url}`, {
         method: "POST",
@@ -338,4 +339,173 @@ test("a voice that answers 401 while speaking is dropped from the picker", async
   const after = await voices.listVoices({ fresh: true });
   assert.ok(!after.some((voice) => voice.id === man.id), "and it is off the picker");
   assert.ok(after.length >= 3, "the ones that work are still there");
+});
+
+/* ---------------------------------------------------------------- */
+/* the allowance, and when to upgrade                                */
+/* ---------------------------------------------------------------- */
+
+const usage = require("../src/voice-usage");
+
+/** Answer /v1/user/subscription however a test wants. */
+function stubSubscription({ status = 200, body = {} } = {}) {
+  const calls = { asked: 0, keySeen: [] };
+  global.fetch = async (url, options) => {
+    const target = String(url);
+    if (target.endsWith("/v1/user/subscription")) {
+      calls.asked += 1;
+      calls.keySeen.push((options && options.headers && options.headers["xi-api-key"]) || "");
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (target.endsWith("/v1/voices")) {
+      return new Response(JSON.stringify({ voices: PREMADE }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return realFetch(url, options);
+  };
+  return calls;
+}
+
+/* What a real subscription answer looks like, including fields we must not pass on. */
+const CREATOR_PLAN = {
+  tier: "creator",
+  status: "active",
+  character_count: 42000,
+  character_limit: 100000,
+  next_character_count_reset_unix: Math.floor(Date.UTC(2026, 8, 21) / 1000),
+  voice_limit: 30,
+  can_extend_character_limit: true,
+  currency: "usd",
+  next_invoice: { amount_due_cents: 2200, currency: "usd" },
+  billing_period: "monthly_period",
+};
+
+test("a readable subscription gives the plan, what is used, and what is left", async () => {
+  usage.reset();
+  const calls = stubSubscription({ body: CREATOR_PLAN });
+
+  const state = await usage.readUsage({ fresh: true });
+  assert.equal(calls.asked, 1);
+  assert.equal(state.state, "ok");
+  assert.equal(state.tier, "Creator");
+  assert.equal(state.used, 42000);
+  assert.equal(state.limit, 100000);
+  assert.equal(state.remaining, 58000, "and a remaining amount, not just the two numbers");
+  assert.equal(state.percentLeft, 58);
+  assert.equal(state.resetOn, "2026-09-21", "the reset date, as a date");
+  assert.equal(state.upgradeSoon, false, "58% left is not an upgrade");
+});
+
+test("nothing from the subscription response is passed on except those fields", async () => {
+  usage.reset();
+  stubSubscription({ body: CREATOR_PLAN });
+  const state = await usage.readUsage({ fresh: true });
+
+  // A whitelist, so a billing field added upstream cannot leak into the page.
+  assert.deepEqual(
+    Object.keys(state).sort(),
+    ["checkUrl", "limit", "percentLeft", "remaining", "resetOn", "state", "status", "tier", "upgradeSoon", "used"]
+  );
+  const asText = JSON.stringify(state);
+  assert.equal(asText.includes("amount_due"), false);
+  assert.equal(asText.includes("next_invoice"), false);
+  assert.equal(asText.includes(config.elevenLabsKey), false, "and never the key");
+});
+
+test("time to upgrade when the allowance is nearly gone", async () => {
+  // Under 20% left.
+  usage.reset();
+  stubSubscription({ body: { ...CREATOR_PLAN, character_count: 850000, character_limit: 1000000 } });
+  const thin = await usage.readUsage({ fresh: true });
+  assert.equal(thin.percentLeft, 15);
+  assert.equal(thin.upgradeSoon, true, "15% left is an upgrade");
+
+  // Plenty of percent, but under ten thousand characters, which is a script or two.
+  usage.reset();
+  stubSubscription({ body: { ...CREATOR_PLAN, character_count: 22000, character_limit: 30000 } });
+  const few = await usage.readUsage({ fresh: true });
+  assert.equal(few.remaining, 8000);
+  assert.ok(few.percentLeft > 20, `percent left is ${few.percentLeft}, so this tests the character rule`);
+  assert.equal(few.upgradeSoon, true, "under 10,000 characters is an upgrade whatever the percentage");
+
+  // And a healthy plan says nothing.
+  usage.reset();
+  stubSubscription({ body: { ...CREATOR_PLAN, character_count: 1000, character_limit: 100000 } });
+  const fine = await usage.readUsage({ fresh: true });
+  assert.equal(fine.upgradeSoon, false);
+});
+
+/*
+ * The state staging is actually in: the key can speak, but /v1/user/subscription
+ * answers 401 missing_permissions user_read.
+ */
+test("a key that cannot read usage says so, and invents no numbers", async () => {
+  usage.reset();
+  stubSubscription({
+    status: 401,
+    body: { detail: { status: "missing_permissions", message: "The API key is missing the permission user_read." } },
+  });
+
+  const state = await usage.readUsage({ fresh: true });
+  assert.equal(state.state, "no-read");
+  assert.match(state.why, /can speak/i);
+  assert.match(state.why, /not allowed to read/i);
+  assert.equal(state.checkUrl, "https://elevenlabs.io/app/usage", "somewhere to look by hand");
+
+  // No counts at all, made up or otherwise.
+  for (const field of ["used", "limit", "remaining", "percentLeft", "tier"]) {
+    assert.equal(state[field], undefined, `${field} must not be invented`);
+  }
+});
+
+test("a wrong key is not reported as a permissions problem", () => {
+  // The fix is a different one, so the two are not run together.
+  assert.equal(usage.meansNoReadPermission(401, { detail: { status: "missing_permissions" } }), true);
+  assert.equal(usage.meansNoReadPermission(401, { detail: { status: "invalid_api_key" } }), false);
+  assert.equal(usage.meansNoReadPermission(500, { detail: { status: "missing_permissions" } }), false);
+});
+
+test("no key at all is the AI voice being off", async () => {
+  usage.reset();
+  const had = config.elevenLabsKey;
+  config.elevenLabsKey = "";
+  try {
+    assert.deepEqual(await usage.readUsage({ fresh: true }), { state: "off" });
+  } finally {
+    config.elevenLabsKey = had;
+  }
+});
+
+test("an unreachable account says that, with somewhere to look", async () => {
+  usage.reset();
+  stubSubscription({ status: 500, body: { detail: "boom" } });
+  const state = await usage.readUsage({ fresh: true });
+  assert.equal(state.state, "unreadable");
+  assert.match(state.why, /500/);
+  assert.equal(state.checkUrl, "https://elevenlabs.io/app/usage");
+  assert.equal(state.used, undefined);
+});
+
+test("usage is behind the password, like everything else", async () => {
+  usage.reset();
+  stubSubscription({ body: CREATOR_PLAN });
+  const tool = await signedIn();
+  try {
+    // Without the cookie there is nothing to see: this is account billing.
+    const refused = await tool.plain(`${TOOL}/api/voice-usage`);
+    assert.equal(refused.status, 401);
+
+    const mine = await (await tool.get(`${TOOL}/api/voice-usage`)).json();
+    assert.equal(mine.usage.state, "ok");
+    assert.equal(mine.usage.used, 42000);
+    assert.equal(mine.usage.remaining, 58000);
+    assert.equal(JSON.stringify(mine).includes(config.elevenLabsKey), false, "and never the key");
+  } finally {
+    await tool.close();
+  }
 });

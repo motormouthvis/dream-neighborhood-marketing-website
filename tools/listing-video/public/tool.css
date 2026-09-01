@@ -191,6 +191,21 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .take__rule { border: 0; border-top: 1px solid #cfe4d8; margin: 4px 0; }
 .take .btn--big { font-size: 19px; padding: 16px 24px; }
 
+/* how much ElevenLabs allowance is left */
+.usage {
+  margin-top: 18px; padding: 13px 15px; border: 1px solid var(--line);
+  border-radius: 11px; background: #f7f9f8;
+}
+.usage__line { font-size: 16px; margin-top: 5px; }
+.usage__line strong { font-weight: 700; }
+.usage__bar {
+  height: 8px; border-radius: 999px; background: #e3e9e6; overflow: hidden; margin-top: 9px;
+}
+.usage__bar span { display: block; height: 100%; background: var(--green); }
+.usage--low { background: var(--amber-bg); border-color: #e8cf9a; }
+.usage--low .usage__bar span { background: #b5761a; }
+.usage--off { color: var(--ink-soft); }
+
 /* a step that cannot be touched while something is running */
 .working { position: absolute; inset: 0; z-index: 40; display: flex;
   align-items: flex-start; justify-content: center;

@@ -15,6 +15,7 @@ const templates = require("./src/templates");
 const { renderSilent, attachAudio, trimFinishedVideo } = require("./src/render");
 const { availableVoiceEngines } = require("./src/audio");
 const elevenVoices = require("./src/voices");
+const voiceUsage = require("./src/voice-usage");
 const { normalizeUrl } = require("./src/capture");
 
 const TOOL_PATH = "/tools/listing-video";
@@ -113,6 +114,18 @@ app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
     })),
     neTabs: templates.NE_TABS,
   });
+});
+
+/**
+ * How much ElevenLabs allowance is left, so an upgrade is not a surprise.
+ *
+ * Behind the password, and only the few fields worth showing - the subscription
+ * response carries billing and invoice detail that has no business in a browser,
+ * and the key never leaves the server.
+ */
+app.get(`${TOOL_PATH}/api/voice-usage`, auth.requireSession, async (req, res) => {
+  const usage = await voiceUsage.readUsage().catch(() => ({ state: "unreadable" }));
+  return res.json({ usage });
 });
 
 /* ---------------------------------------------------------------- */

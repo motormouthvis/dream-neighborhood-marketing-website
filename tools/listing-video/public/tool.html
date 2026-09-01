@@ -109,6 +109,14 @@
               <div class="choices" role="radiogroup" id="fromChoices"></div>
             </fieldset>
 
+            <!-- Filled in from the server; never carries the API key. -->
+            <div class="usage" id="voiceUsage" hidden>
+              <span class="label">ElevenLabs</span>
+              <p class="usage__line" id="usageLine"></p>
+              <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
+              <p class="hint" id="usageNote"></p>
+            </div>
+
             <!-- Only shown when the ElevenLabs account has voices to offer. -->
             <fieldset class="field" id="voiceField" hidden>
               <legend class="label">AI voice, if you use it</legend>

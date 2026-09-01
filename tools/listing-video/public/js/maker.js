@@ -171,6 +171,76 @@
     });
   }
 
+  /* A thousand characters reads better than 1000, and 1.2m better than 1200000. */
+  function characters(count) {
+    var n = Number(count) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1).replace(/\.0$/, "") + "m";
+    if (n >= 1000) return Math.round(n / 1000) + "k";
+    return String(n);
+  }
+
+  /*
+   * How much ElevenLabs allowance is left, so an upgrade is not a surprise.
+   *
+   * The numbers come from the server, which is the only place the key exists. A
+   * key that can speak but cannot read usage says exactly that rather than
+   * showing a number nobody has.
+   */
+  function paintVoiceUsage() {
+    var box = el("voiceUsage");
+    D.json(API + "/voice-usage").then(function (result) {
+      if (!result.ok) return;
+      var usage = (result.body && result.body.usage) || {};
+      box.className = "usage";
+      D.show(el("usageBar"), false);
+      D.show(box, true);
+
+      if (usage.state === "off") {
+        box.className = "usage usage--off";
+        D.setText(el("usageLine"), "The AI voice is switched off on this server.");
+        D.setText(el("usageNote"), "Record your own voice over the silent video, which is the normal way anyway.");
+        return;
+      }
+
+      if (usage.state === "ok") {
+        var head =
+          (usage.tier ? usage.tier + " plan. " : "") +
+          characters(usage.remaining) +
+          " characters left of " +
+          characters(usage.limit) +
+          " (" +
+          usage.percentLeft +
+          "%).";
+        D.setText(el("usageLine"), usage.upgradeSoon ? "Time to upgrade. " + head : head);
+        if (usage.upgradeSoon) box.className = "usage usage--low";
+
+        D.show(el("usageBar"), true);
+        el("usageFill").style.width = Math.max(0, Math.min(100, usage.percentLeft)) + "%";
+
+        D.setText(
+          el("usageNote"),
+          characters(usage.used) +
+            " used so far" +
+            (usage.resetOn ? ", and the allowance resets on " + usage.resetOn : "") +
+            "."
+        );
+        return;
+      }
+
+      // Either it cannot read usage, or the read failed. Say so; do not guess.
+      var why =
+        usage.state === "no-read"
+          ? "This key can speak, but it is not allowed to read the account's usage, so there are no numbers to show here. A key with the user_read permission would fill this in."
+          : (usage.why || "The usage could not be read.") + " No numbers to show.";
+      D.setText(el("usageLine"), why);
+      var note = el("usageNote");
+      note.innerHTML =
+        'Check it by hand at <a href="' +
+        D.escapeHtml(usage.checkUrl || "https://elevenlabs.io/app/usage") +
+        '" target="_blank" rel="noopener">elevenlabs.io/app/usage</a>.';
+    });
+  }
+
   el("form").addEventListener("submit", function (event) {
     event.preventDefault();
     D.showMessage(el("form-error"), "");
@@ -962,6 +1032,7 @@
     paintTemplateChoices();
     paintFromChoices();
     paintVoiceChoices();
+    paintVoiceUsage();
     backToForm();
   });
 
@@ -990,7 +1061,7 @@
       paintTemplateChoices();
       paintFromChoices();
       paintVoiceChoices();
-    paintVoiceChoices();
+      paintVoiceUsage();
       step("form");
     }
   });

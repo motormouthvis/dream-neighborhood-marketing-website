@@ -807,6 +807,25 @@ account cannot be asked at all, so the picker still offers something sensible.
 > rather than hardcoding is what stops that being a breakage — when they go, the
 > picker will offer whatever the account has instead.
 
+### Seeing an upgrade coming
+
+A small **ElevenLabs** card sits on the make-a-video form, above the voice picker,
+so running out of characters is not something you find out halfway through a
+render. `GET /v1/user/subscription`, read server side, behind the password, cached
+for five minutes.
+
+| What it can read | What the card says |
+| --- | --- |
+| the subscription | The plan, characters left of the limit and the percentage, how many are used, and the date the allowance resets. **"Time to upgrade"** in amber when under 20% or under 10,000 characters are left — a script is a couple of thousand, so ten thousand is a handful of videos. |
+| a 401 `missing_permissions` / `user_read` | That the key can *speak* but is not allowed to read usage, that a key with `user_read` would fill it in, and a link to [elevenlabs.io/app/usage](https://elevenlabs.io/app/usage) to check by hand. **No numbers, made up or otherwise.** This is the state staging is in today. |
+| nothing, because there is no key | That the AI voice is switched off, and to record instead. |
+
+Only ten fields ever reach the browser, as a whitelist rather than a copy with a
+few things deleted — the subscription response carries billing dates, currency and
+invoice amounts, and none of that should land in a page because a field was added
+upstream. The key is sent as a header and appears nowhere else: not in a log, not
+in a URL, not in the JSON. There are tests for each of those.
+
 ## Email
 
 The send picker offers three from-addresses:
@@ -943,6 +962,7 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |
 | `GET /tools/listing-video/api/videos`, `DELETE .../videos/:id` | Signed in only |
 | `GET /tools/listing-video/api/failures` | Signed in only |
+| `GET /tools/listing-video/api/voice-usage` | Signed in only |
 | `GET /tools/listing-video/api/jobs/:id/failure.png` | Signed in only |
 | `GET /v/:id` | Public watch page |
 | `GET /v/:id/video.mp4`, `GET /v/:id/poster.jpg` | Public |
