@@ -24,8 +24,16 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dnlv-explorer-test-"));
 process.env.LISTING_VIDEO_DATA_DIR = dataDir;
 process.env.LISTING_VIDEO_TOKEN = "test-token";
 
+const crypto = require("crypto");
 const config = require("../src/config");
-const { captureExplorerTabs, widgetUrlFor } = require("../src/explorer");
+const {
+  captureExplorerTabs,
+  widgetUrlFor,
+  TAB_VIEWPORT,
+  TAB_PIXEL_RATIO,
+  MAX_SHOTS_PER_TAB,
+  SINGLE_SHOT_TABS,
+} = require("../src/explorer");
 const { launchExplorerBrowser, closeBrowser } = require("../src/browser");
 const { queriesFor } = require("../src/geocode");
 const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("../src/demo-data");
@@ -161,13 +169,15 @@ test("the seven tabs are seven different pictures of the real product", async (t
     log: () => {},
   });
 
-  assert.deepEqual(Object.keys(walk.shots).sort(), [...NE_TABS].sort(), "one shot per tab");
+  assert.deepEqual(Object.keys(walk.shots).sort(), [...NE_TABS].sort(), "every tab is filmed");
 
   const sizes = new Map();
   for (const tab of NE_TABS) {
-    const file = walk.shots[tab];
-    assert.ok(fs.existsSync(file), `${tab} has no screenshot`);
-    const bytes = fs.readFileSync(file);
+    // A tab is filmed in one shot or several, depending on how much it has to
+    // show; the first one is the one that has to be its own.
+    const files = walk.shots[tab];
+    assert.ok(Array.isArray(files) && files.length, `${tab} has no screenshot`);
+    const bytes = fs.readFileSync(files[0]);
     assert.ok(bytes.length > 20000, `${tab}'s screenshot is suspiciously small (${bytes.length} bytes)`);
     sizes.set(tab, bytes.toString("base64").slice(0, 4000));
   }
@@ -241,8 +251,10 @@ test("no name a script might use brings back the missing-tab failure", async (t)
       ["Walk & Bike", "What's Nearby"],
       `asking by ${how} did not reach both chips`
     );
-    for (const file of Object.values(walk.shots)) {
-      assert.ok(fs.statSync(file).size > 1000, `${how}: the shot is empty`);
+    for (const files of Object.values(walk.shots)) {
+      for (const file of files) {
+        assert.ok(fs.statSync(file).size > 1000, `${how}: the shot is empty`);
+      }
     }
   }
 });
@@ -315,4 +327,98 @@ test("an address the Explorer cannot place is refused, not faked", async (t) => 
 
 test.after(async () => {
   await fsp.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+});
+
+/* ---------------------------------------------------------------- */
+/* how big and how sharp the popup is                                */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill: on all the tab screens the popup is a little too small, washed out and
+ * hard to read.
+ *
+ * It was taken at 1340x764 at one device pixel per CSS pixel and dropped into a
+ * card that size inside a 1920x1080 frame, so sixteen-pixel text stayed sixteen
+ * pixels and went soft through H.264.
+ */
+test("the popup is filmed bigger than the frame it lands in, and at twice the pixels", () => {
+  assert.ok(TAB_PIXEL_RATIO >= 2, `taken at ${TAB_PIXEL_RATIO}x, which will not read on a screen`);
+  assert.ok(TAB_VIEWPORT.width >= 1500, `only ${TAB_VIEWPORT.width} wide`);
+
+  // The card in the frame template has to be the same shape, or the shot is
+  // cropped or letterboxed instead of mapping one to one.
+  const frame = fs.readFileSync(path.join(config.root, "views", "frame.html"), "utf8");
+  const card = frame.match(/#card\.card--ne\s*\{[^}]*\}/);
+  assert.ok(card, "the frame template needs a Neighborhood Explorer card");
+  const width = Number((card[0].match(/width:\s*(\d+)px/) || [])[1]);
+  const height = Number((card[0].match(/height:\s*(\d+)px/) || [])[1]);
+
+  assert.equal(width, TAB_VIEWPORT.width, "the card is the width the shot is taken at");
+  assert.equal(height, TAB_VIEWPORT.height, "and the height");
+
+  // Bigger than the old 1340x764, and still inside a 1920x1080 frame.
+  assert.ok(width > 1340, `the card is ${width} wide, which is not bigger than it was`);
+  assert.ok(width <= 1920 && height <= 1080 - 112, "it still fits under the caption bar");
+
+  // And it must not cover the house button in the bottom right corner.
+  const left = Number((card[0].match(/left:\s*(\d+)px/) || [])[1]);
+  assert.ok(left + width < 1920 - 86 - 40, "the card stops short of the house button");
+});
+
+test("nothing is faded or tinted over the popup", () => {
+  const frame = fs.readFileSync(path.join(config.root, "views", "frame.html"), "utf8");
+  const card = (frame.match(/#card\.card--ne\s*\{[^}]*\}/) || [""])[0];
+  // No opacity, no filter, no translucent wash on the card itself.
+  assert.doesNotMatch(card, /opacity\s*:/, card);
+  assert.doesNotMatch(card, /filter\s*:/, card);
+  // The scrim over the listing is painted before the card, so it cannot wash it.
+  const scrimAt = frame.indexOf('<div id="scrim">');
+  const cardAt = frame.indexOf('<div id="card">');
+  assert.ok(scrimAt > 0 && cardAt > scrimAt, "the card is painted after the scrim, so it stays crisp");
+});
+
+test("What's Nearby is the one tab that is not scrolled", () => {
+  assert.ok(SINGLE_SHOT_TABS.has("What's Nearby"), "three places make the point without scrolling");
+  assert.ok(MAX_SHOTS_PER_TAB >= 2, "the other tabs get more than one shot when they have more to show");
+  for (const tab of NE_TABS) {
+    if (tab === "What's Nearby") continue;
+    assert.ok(!SINGLE_SHOT_TABS.has(tab), `${tab} should be free to scroll`);
+  }
+});
+
+test("each tab is filmed in shots of its own sections, and What's Nearby in one", async (t) => {
+  if (!liveSkip && !(await explorerReachable())) liveSkip = "the live Neighborhood Explorer is not reachable";
+  if (liveSkip) return t.skip(liveSkip);
+
+  const outDir = await fsp.mkdtemp(path.join(dataDir, "sections-"));
+  const walk = await captureExplorerTabs({
+    lat: 33.8574,
+    lng: -84.5107,
+    outDir,
+    log: () => {},
+  });
+
+  // Every tab hands back a list, so a beat can be spread across its sections.
+  for (const tab of NE_TABS) {
+    const shots = walk.shots[tab];
+    assert.ok(Array.isArray(shots), `${tab} should hand back a list of shots`);
+    assert.ok(shots.length >= 1 && shots.length <= MAX_SHOTS_PER_TAB, `${tab} gave ${shots.length}`);
+    for (const file of shots) {
+      assert.ok(fs.statSync(file).size > 5000, `${tab} has an empty shot`);
+    }
+  }
+
+  // A list does not need scrolling to be read: three places is the point.
+  assert.equal(walk.shots["What's Nearby"].length, 1, "What's Nearby is one shot");
+
+  // At least one tab really did scroll, and its shots differ from each other -
+  // otherwise this is photographing the top of the tab three times.
+  const scrolled = NE_TABS.filter((tab) => (walk.shots[tab] || []).length > 1);
+  assert.ok(scrolled.length, `no tab scrolled: ${JSON.stringify(NE_TABS.map((t2) => (walk.shots[t2] || []).length))}`);
+  for (const tab of scrolled) {
+    const seen = new Set(
+      walk.shots[tab].map((file) => crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex"))
+    );
+    assert.equal(seen.size, walk.shots[tab].length, `${tab} photographed the same section twice`);
+  }
 });

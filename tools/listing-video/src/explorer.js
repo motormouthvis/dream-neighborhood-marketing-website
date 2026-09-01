@@ -30,9 +30,41 @@ const { launchExplorerBrowser, closeBrowser } = require("./browser");
 const config = require("./config");
 const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("./demo-data");
 
-// The card the shots are dropped into is 1340x764, so they are taken at exactly
-// that size and need no scaling.
-const TAB_VIEWPORT = { width: 1340, height: 764 };
+/*
+ * The size and sharpness of the popup in the finished video.
+ *
+ * The shots used to be taken at 1340x764 at one device pixel per CSS pixel and
+ * dropped straight into a card that size inside a 1920x1080 frame. Sixteen-pixel
+ * text in the widget stayed sixteen pixels in the video, which after H.264 read
+ * as small, soft and washed out.
+ *
+ * Now the card is bigger (see views/frame.html) and the shot is taken at twice
+ * the pixels, so the text is drawn at 2x and scaled down into the card. Same
+ * layout, twice the detail.
+ *
+ * The height is measured, not guessed: at this width the widget lays its content
+ * out to about 664px whatever the viewport height, so a taller shot is just white
+ * space, and white space in the card is what made the popup look small.
+ */
+const TAB_VIEWPORT = { width: 1600, height: 700 };
+const TAB_PIXEL_RATIO = 2;
+
+/*
+ * How many pictures a tab is worth.
+ *
+ * A tab is taller than the card, so one still of the top hides most of it. Each
+ * tab is scrolled through its own sections instead, and the beat is split across
+ * the shots. Three is enough for the longest tab and keeps the walk inside its
+ * budget.
+ */
+const MAX_SHOTS_PER_TAB = 3;
+const SCROLL_SETTLE_MS = 650;
+
+/*
+ * What's Nearby is a list, and a list does not need scrolling to be understood -
+ * three places make the point. So it gets one shot of the top, where three sit.
+ */
+const SINGLE_SHOT_TABS = new Set(["What's Nearby"]);
 
 const LOAD_TIMEOUT_MS = 45000;
 // Enough for seven tabs to fetch and draw, and no more.
@@ -125,6 +157,58 @@ function clickTab({ label, key, names }) {
   };
 }
 
+/**
+ * Scroll the tab's own panel. Runs in the page.
+ *
+ * Self-contained on purpose: only this function's own source is sent to the
+ * browser, so it cannot call a helper defined out here.
+ *
+ * The panel is found by which element actually overflows rather than by a class
+ * name that could be renamed - the tallest scrollable box big enough to be the
+ * content. Falls back to the document, which is what scrolls when the widget lets
+ * the page grow instead.
+ *
+ * `to` puts it at an absolute position. `by` moves it on by that fraction of a
+ * panel and answers whether it actually moved, which is how the walk knows a tab
+ * has run out of sections instead of photographing the same thing again.
+ */
+function scrollPanel({ to = null, by = 0 }) {
+  const panelFor = () => {
+    let best = null;
+    let bestOver = 0;
+    for (const el of Array.from(document.querySelectorAll("div, section, main, aside"))) {
+      const box = el.getBoundingClientRect();
+      if (box.height < 200 || box.width < 300) continue;
+      const over = el.scrollHeight - el.clientHeight;
+      if (over < 60) continue;
+      const style = window.getComputedStyle(el);
+      if (!/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`)) continue;
+      if (over > bestOver) {
+        best = el;
+        bestOver = over;
+      }
+    }
+    return best;
+  };
+
+  const panel = panelFor();
+  const seat = () => (panel ? panel.scrollTop : window.scrollY);
+  const goTo = (top) => {
+    if (panel) panel.scrollTop = top;
+    else window.scrollTo(0, top);
+  };
+
+  if (to !== null) {
+    goTo(to);
+    return true;
+  }
+
+  const before = seat();
+  const room = panel ? panel.clientHeight : window.innerHeight;
+  goTo(before + Math.max(120, Math.round(room * by)));
+  return seat() - before > 20;
+}
+
 /** What the widget is showing right now. Runs in the page. */
 function readWidget() {
   const text = (document.body.innerText || "").replace(/\s+/g, " ").trim();
@@ -189,7 +273,7 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
     browser = await launchExplorerBrowser();
     const page = await browser.newPage();
     walkPage = page;
-    await page.setViewport({ ...TAB_VIEWPORT, deviceScaleFactor: 1 });
+    await page.setViewport({ ...TAB_VIEWPORT, deviceScaleFactor: TAB_PIXEL_RATIO });
     page.setDefaultNavigationTimeout(LOAD_TIMEOUT_MS);
     page.on("error", () => {});
 
@@ -262,10 +346,35 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
       previousText = text;
       texts[tab] = text;
 
-      const file = path.join(outDir, `ne-tab-${tab.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`);
-      await page.screenshot({ path: file, type: "png", captureBeyondViewport: false });
-      shots[tab] = file;
-      log(`Filmed the ${tab} tab (${Object.keys(shots).length} of ${wanted.length})`);
+      const slug = tab.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      const wantOne = SINGLE_SHOT_TABS.has(tab);
+      const taken = [];
+
+      await page.evaluate(scrollPanel, { to: 0 });
+      await sleep(SCROLL_SETTLE_MS);
+
+      for (let shot = 0; shot < (wantOne ? 1 : MAX_SHOTS_PER_TAB); shot += 1) {
+        if (Date.now() > deadline) break;
+        const file = path.join(outDir, `ne-tab-${slug}-${shot + 1}.jpg`);
+        // JPEG, because a 2x screenshot of a page of text is several megabytes as
+        // a PNG and there are up to twenty-one of them on a small dyno.
+        await page.screenshot({ path: file, type: "jpeg", quality: 92, captureBeyondViewport: false });
+        taken.push(file);
+
+        if (wantOne) break;
+        // Move on by most of a panel, so a section is never cut in half across
+        // two shots. Stops as soon as the panel will not go any further.
+        const moved = await page.evaluate(scrollPanel, { by: 0.82 });
+        if (!moved) break;
+        await sleep(SCROLL_SETTLE_MS);
+      }
+
+      shots[tab] = taken;
+      log(
+        `Filmed the ${tab} tab in ${taken.length} ${taken.length === 1 ? "shot" : "shots"} (${
+          Object.keys(shots).length
+        } of ${wanted.length})`
+      );
     }
 
     /*
@@ -275,8 +384,13 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
      * every tab showed Map and Summary.
      */
     if (wanted.length > 1) {
+      // The first shot of each tab, since that is the one that has to differ -
+      // two shots of the same tab are meant to look alike.
       const fingerprints = new Set(
-        Object.values(shots).map((file) => crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex"))
+        Object.values(shots)
+          .map((files) => files[0])
+          .filter(Boolean)
+          .map((file) => crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex"))
       );
       if (fingerprints.size < 2) {
         throw explorerError(
@@ -311,4 +425,12 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
   }
 }
 
-module.exports = { captureExplorerTabs, widgetUrlFor, TAB_VIEWPORT, WALK_BUDGET_MS };
+module.exports = {
+  captureExplorerTabs,
+  widgetUrlFor,
+  TAB_VIEWPORT,
+  TAB_PIXEL_RATIO,
+  WALK_BUDGET_MS,
+  MAX_SHOTS_PER_TAB,
+  SINGLE_SHOT_TABS,
+};

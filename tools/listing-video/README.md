@@ -28,6 +28,12 @@ by default:
 | `vanessa-se-ne-v11` | A new customer | School Explorer first, then the seven Neighborhood Explorer tabs. |
 | `se-to-ne-upgrade` | Somebody who **already has** the free School Explorer | Opens on their listing with School Explorer on it, then the same button becomes Neighborhood Explorer and walks every tab in order. |
 
+The line about the same button upgrading plays on a **`listing-tap`** beat, so the
+house button is in frame and being pressed while the words are said, and the
+Neighborhood Explorer popup arrives from the button rather than from nowhere. It
+used to play over a School Explorer card, which covers the button — so the button
+the line is about was never seen. Same words, different scene.
+
 The first two are the approved v11 videos and are a before-and-after: they need a
 listing with nothing on it yet. The upgrade script is the opposite — it wants a
 listing that already has School Explorer, because that is the customer it is
@@ -459,6 +465,42 @@ How it runs, after the listing still is in hand:
    postcode resolves, the job log says the Explorer was centred nearby.
 3. The live widget is opened at those coordinates, and each tab is clicked and
    photographed once its own content has arrived and stopped moving.
+
+#### How big the popup is, and how sharp
+
+The shots used to be taken at **1340x764 at one device pixel per CSS pixel** and
+dropped into a card that size inside a 1920x1080 frame. Sixteen-pixel text in the
+widget stayed sixteen pixels in the video and went soft through H.264 — which is
+why it read as small, washed out and hard to read.
+
+Now the card is **1600x700** and the shot is taken at **twice the pixels**, so the
+text is drawn at 2x and scaled down. Same layout, twice the detail.
+
+That height is measured, not guessed. At 1600 wide the widget lays its content out
+to about 664px whatever the viewport height, so a taller card only adds white
+space — and white space inside the card is most of what made the popup look small.
+The card's right edge stops short of the house button in the corner, and nothing
+is tinted or faded over it: the scrim that dims the listing is painted *before*
+the card, so it cannot wash it out.
+
+School Explorer keeps the size and position the approved v11 cuts used.
+
+#### Each tab is filmed in its own sections
+
+A tab beat is worth **one still per shot of that tab**, and the beat's seconds are
+shared out between them, so a scene is never a single still of the top of a tab
+that carries on below the fold. The scene lengths the script asked for do not
+change, and neither does the timing of a recorded voice.
+
+The panel is found by which element actually overflows rather than by a class name
+that could be renamed, and scrolling stops as soon as the panel will not move — so
+a tab is never photographed twice in the same place. Up to three shots per tab.
+
+In practice the bigger card means most tabs now **fit whole**: only Schools (a long
+list of school cards) and What's Nearby have anything below the fold.
+
+**What's Nearby is one shot on purpose.** It is a list, and three places make the
+point without scrolling through it.
 
 It refuses rather than falling back to anything drawn by us:
 

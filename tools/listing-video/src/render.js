@@ -7,7 +7,7 @@ const { launch, closeBrowser } = require("./browser");
 const { captureListing, CAPTURE_BUDGET_MS } = require("./capture");
 const { captureExplorerTabs, WALK_BUDGET_MS } = require("./explorer");
 const { locateAddress } = require("./geocode");
-const { renderFrames } = require("./frames");
+const { renderFrames, spreadDurations } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
 const { buildSilentVideo, buildVideo, buildPoster, trimVideoAt } = require("./video");
 const store = require("./store");
@@ -134,7 +134,7 @@ async function renderSilent(job, { budgetMs } = {}) {
     }
 
     log("Drawing the scenes");
-    const frames = await renderFrames({
+    const drawn = await renderFrames({
       browser,
       beats: job.beats,
       screenshot: capture.screenshot,
@@ -145,10 +145,14 @@ async function renderSilent(job, { budgetMs } = {}) {
       log,
     });
 
+    // A tab beat is several stills, so each beat's seconds are shared out across
+    // its own stills. The scene lengths the script asked for do not change.
+    const frames = drawn.frames;
+    const frameBeats = drawn.frameBeats;
     const silentPath = path.join(dir, "silent.mp4");
     const silent = await buildSilentVideo({
       frames,
-      durations: job.beats.map((beat) => beat.seconds),
+      durations: spreadDurations(job.beats.map((beat) => beat.seconds), frameBeats),
       workDir,
       outFile: silentPath,
       log,
@@ -162,6 +166,9 @@ async function renderSilent(job, { budgetMs } = {}) {
       posterFile: posterPath,
       durationSeconds: Math.round(silent.duration * 10) / 10,
       frames,
+      // Kept so a voice recorded later can be re-timed against these same
+      // stills without knowing how many of them each beat is worth.
+      frameBeats,
       capturedPageUrl: capture.pageUrl,
       capturedAddress: capture.address || null,
       checkedPages: capture.checked,
@@ -260,7 +267,8 @@ async function attachAudio(job, { source, uploadPath }) {
     const pendingPath = path.join(dir, "video.next.mp4");
     const video = await buildVideo({
       frames: job.silent.frames,
-      durations,
+      // Per still, not per beat: a tab beat is several stills.
+      durations: spreadDurations(durations, job.silent.frameBeats),
       audioFile: track.audioFile,
       workDir,
       outFile: pendingPath,

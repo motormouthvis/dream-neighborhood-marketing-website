@@ -245,7 +245,15 @@ const SE_TO_NE_UPGRADE = {
       caption: { headline: "School Explorer, on your site.", subline: "This is what you have today." },
     },
     {
-      scene: "se",
+      /*
+       * The same words, on the listing with the house button in frame.
+       *
+       * This line used to play over a School Explorer card, which covered the
+       * button - so the button the line is about was never seen, and the
+       * Neighborhood Explorer popup arrived from nowhere. Now the viewer sees
+       * the button being pressed, then the popup it opens.
+       */
+      scene: "listing-tap",
       seconds: 7,
       text:
         "When you are ready, the same button upgrades to Neighborhood Explorer. No new install. Same house icon. It just does more.",

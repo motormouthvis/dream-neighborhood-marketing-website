@@ -84,7 +84,8 @@
       }
       #stage.hide-popup #popup { display: none; }
 
-      /* ---------- explorer card (same size and place for SE and NE) ---------- */
+      /* ---------- explorer card ---------- */
+      /* School Explorer keeps the size and place the approved v11 cuts used. */
       #card {
         position: absolute; left: 290px; top: 208px; width: 1340px; height: 764px;
         background: #f6f7f5; border-radius: 16px;
@@ -92,6 +93,24 @@
         overflow: hidden; display: none;
       }
       #stage.has-card #card { display: block; }
+
+      /*
+       * Neighborhood Explorer gets a bigger card, because its tabs are dense with
+       * numbers and small text and the old one read as washed out on a screen.
+       *
+       * 1600x700 is the size its shots are taken at (src/explorer.js), at twice
+       * the pixels, so the picture maps one to one and is simply sharper. The
+       * shape follows the widget's own content, which lays out about 664px tall
+       * at this width - a taller card would only add white space, and that is
+       * what made the popup look small. The right edge stops short of the house
+       * button in the corner.
+       */
+      #card.card--ne {
+        left: 160px; top: 195px; width: 1600px; height: 700px;
+        background: #ffffff;
+      }
+      /* No tint or fade over the shot: the text in it has to stay readable. */
+      #card.card--ne::after { content: none; }
 
       /* ===== School Explorer ===== */
       .se { padding: 26px 30px 0; height: 100%; }
@@ -181,7 +200,12 @@
       .school__compare span { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
 
       /* ===== Neighborhood Explorer: a photograph of the real product ===== */
-      .ne__shot { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+      .ne__shot {
+        display: block; width: 100%; height: 100%;
+        object-fit: cover; object-position: top center;
+        /* Taken at twice the size, so let the browser downsample it properly. */
+        image-rendering: auto;
+      }
 
     </style>
   </head>
@@ -322,6 +346,7 @@
         const card = document.getElementById("card");
         stage.classList.toggle("has-card", Boolean(spec.card));
         stage.classList.toggle("hide-popup", Boolean(spec.hidePopup));
+        card.className = spec.card ? `card--${spec.card}` : "";
         if (spec.card === "se") card.innerHTML = seCard(spec);
         else if (spec.card === "ne") card.innerHTML = neCard(spec);
         else card.innerHTML = "";
