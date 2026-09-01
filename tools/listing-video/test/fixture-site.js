@@ -654,6 +654,56 @@ const IDX_REDIRECTS_TO_SEARCH = {
   [CRANES_NEST_PATH]: { redirect: "/idx/results/listings?county[]=146&city[]=34718&a_floodZoneCode=X" },
 };
 
+/*
+ * Andy Harris's listing, whose heading puts the direction in its own span:
+ * Number "1908" + Direction "SW" + Name "MILES ST". Leaving the direction out of
+ * the assembly gave "1908 MILES ST" - a different quadrant of Portland - and
+ * because the assembled candidate is tried first, it beat the correct heading.
+ */
+const IDX_DIRECTION_HEADING = `
+  <h1 id="IDX-detailsAddress">
+    <div class="IDX-detailsAddressInfo">
+      <span class="IDX-detailsAddressNumber">1908</span>
+      <span class="IDX-detailsAddressDirection">SW</span>
+      <span class="IDX-detailsAddressName">MILES ST</span>
+      <span class="IDX-detailsEndAddressComma">,</span>
+    </div>
+    <div class="IDX-detailsAddressLocationInfo">
+      <span class="IDX-detailsAddressCity">Portland</span>
+      <span class="IDX-detailsAddressCitySeparator">,</span>
+      <span class="IDX-detailsAddressStateAbrv">OR</span>
+      <span class="IDX-detailsAddressZipcode">97219</span>
+    </div>
+  </h1>`;
+
+const MILES_ST_PATH = "/idx/details/listing/b001/114051774";
+
+const MILES_ST = page(
+  "Residential for sale in Portland, Oregon, 114051774",
+  `<div class="wrap">
+     ${IDX_DIRECTION_HEADING}
+     <p class="price">$560,000</p>
+     <p>3 beds &middot; 2 baths &middot; 1,502 sq ft</p>
+     <div class="gallery">
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+       <img class="photo" src="/photo.svg" alt="" /><img class="photo" src="/photo.svg" alt="" />
+     </div>
+     <h2>Property Details</h2>
+     <table>
+       <tr><td>MLS #</td><td>114051774</td></tr>
+       <tr><td>Property Type</td><td>Residential</td></tr>
+       <tr><td>Days on Market</td><td>6</td></tr>
+     </table>
+   </div>`
+);
+
+const IDX_DIRECTION_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/idx/search": SEARCH,
+  [MILES_ST_PATH]: MILES_ST,
+};
+
 function createServer(routes = ROUTES, hits = {}) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -717,6 +767,8 @@ module.exports = {
   IDX_SPAN_SITE,
   IDX_REDIRECTS_TO_SEARCH,
   CRANES_NEST_PATH,
+  IDX_DIRECTION_SITE,
+  MILES_ST_PATH,
   SEARCH_TO_WALL_SITE,
   SEARCH_WITH_NO_LISTINGS,
   IDX_LISTING_PATH,

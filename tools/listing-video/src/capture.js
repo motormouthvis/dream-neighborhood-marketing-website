@@ -1102,12 +1102,26 @@ function readPageFacts() {
    * amount of whitespace between the spans can change the answer. Pushed first
    * so it is preferred over the same heading read as text.
    */
+  const idxHeading = document.querySelector("#IDX-detailsAddress");
   const idxPart = (selector) => {
     const el = document.querySelector(`#IDX-detailsAddress ${selector}, ${selector}`);
     return el ? clean(el.innerText || el.textContent) : "";
   };
+  /*
+   * The direction is its own span, before or after the street name depending on
+   * the address. Leaving it out turned "1908 SW MILES ST" into "1908 MILES ST",
+   * and because this candidate is tried before the heading it won - so a correct
+   * heading was beaten by an address a whole quadrant of Portland away.
+   */
   const idxStreet = clean(
-    `${idxPart(".IDX-detailsAddressNumber")} ${idxPart(".IDX-detailsAddressName")}`
+    [
+      idxPart(".IDX-detailsAddressNumber"),
+      idxPart(".IDX-detailsAddressDirection"),
+      idxPart(".IDX-detailsAddressName"),
+      idxPart(".IDX-detailsAddressDirectionSuffix") || idxPart(".IDX-detailsAddressSuffixDirection"),
+    ]
+      .filter(Boolean)
+      .join(" ")
   );
   if (idxStreet) {
     const idxCity = idxPart(".IDX-detailsAddressCity");
@@ -1117,7 +1131,18 @@ function readPageFacts() {
     // space before the ZIP, which is the shape the address reader expects.
     const tail = clean(`${idxState} ${idxZip}`);
     const assembled = [idxStreet, idxCity, tail].filter(Boolean).join(", ");
-    pushCandidate(assembled, "address-element", document.querySelector("#IDX-detailsAddress"));
+
+    /*
+     * The assembly has to agree with what is on the screen.
+     *
+     * If a span this does not know about carries part of the address, the pieces
+     * it did read will not appear in the heading as written - and in that case
+     * the heading itself is the better candidate, so this one is dropped rather
+     * than allowed to win with something incomplete.
+     */
+    const onScreen = clean(idxHeading ? idxHeading.innerText : "").replace(/\s+/g, " ").toLowerCase();
+    const agrees = !onScreen || onScreen.includes(idxStreet.toLowerCase());
+    if (agrees) pushCandidate(assembled, "address-element", idxHeading);
   }
 
   for (const el of Array.from(document.querySelectorAll("h1")).slice(0, 3)) {

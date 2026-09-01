@@ -85,6 +85,10 @@ const STREET_TYPE_SET = new Set(STREET_TYPES.map((type) => type.toLowerCase()));
  * A house number, then one to four capitalised street-name words, then a street
  * type, then an optional trailing direction.
  *
+ * The house number may be hyphenated: Hawaii writes "73-4474 ANIANI ST", where
+ * the part before the hyphen is the district. Requiring a bare number meant that
+ * heading yielded nothing, and the page only survived on its structured data.
+ *
  * The lookbehind is what rejects "1,032 SQFT ..." - the "032" is preceded by a
  * comma, so it is part of a number, not a house number. The name words must
  * start with a letter, so a second number like "4497" can never be swallowed
@@ -92,14 +96,20 @@ const STREET_TYPE_SET = new Set(STREET_TYPES.map((type) => type.toLowerCase()));
  */
 const STREET_RE = new RegExp(
   "(?<![\\w.,$-])" +
-    "(\\d{1,6})\\s+" +
+    "((?:\\d{1,4}-)?\\d{1,6})\\s+" +
     `(?:(?:${DIR_GROUP})\\.?\\s+)?` +
     "((?:[A-Z][A-Za-z0-9.'\\u2019-]{0,20}\\s+){1,4})" +
     `(${TYPE_GROUP})\\b\\.?` +
     // A numbered rural road: "252 County Rd 156", "1420 State Route 9". Without
     // this the route number was dropped and the house became "252 County Rd".
-    "(?:\\s+(\\d{1,4})\\b)?" +
-    `(?:\\s+(${DIR_GROUP})\\b\\.?)?`,
+    // The lookahead keeps it off a spec row: "4497 Chase Drive 3 beds" is not
+    // Chase Drive number 3.
+    "(?:\\s+(\\d{1,4})\\b(?!\\s*(?:bed|bd|br|bath|ba|bth|sq|sf|acre|car|story|stories)))?" +
+    `(?:\\s+(${DIR_GROUP})\\b\\.?)?` +
+    // The unit, when the heading carries one: "850 E Ocean Boulevard B3", "#1".
+    // Kept deliberately tight - a letter-then-digits token, a #, or the words -
+    // so a spec row following the street cannot be swallowed as a unit.
+    "(?:\\s*(?:#\\s?[\\w-]{1,6}|[AaUuSs](?:pt|nit|te|uite)\\.?\\s?[\\w-]{1,6}|[A-Z]\\d{1,4})\\b)?",
   "g"
 );
 
@@ -112,7 +122,7 @@ const STREET_RE = new RegExp(
  */
 const NUMBERED_ROAD_RE = new RegExp(
   "(?<![\\w.,$-])" +
-    "(\\d{1,6})\\s+" +
+    "((?:\\d{1,4}-)?\\d{1,6})\\s+" +
     `(?:(?:${DIR_GROUP})\\.?\\s+)?` +
     "((?:US|U\\.S\\.|State|County|Farm|Ranch|FM|RR|SR|CR|Route|Rte|Highway|Hwy|Hiway|Road|Rd)" +
     "(?:\\s+(?:Route|Rte|Highway|Hwy|Road|Rd|Line))?)\\s+" +
@@ -158,6 +168,11 @@ function stateCodeFor(value) {
  * City, then something that might be a state, then a ZIP. The state is checked
  * against the list above rather than by its shape.
  *
+ * kvCORE titles put a comma between the state and the ZIP - "1978 Arvis Circle W,
+ * Clearwater, FL, 33764" - so that separator is optional too. Without it the town
+ * could not be parsed from the title and an office address from further down the
+ * page supplied Trinity, FL 34655 instead, 20 miles away.
+ *
  * The whitespace before the comma is not cosmetic. IDX Broker builds its heading
  * out of one span per part:
  *
@@ -171,7 +186,7 @@ function stateCodeFor(value) {
  * produced no geocode query - the dead end Bill hit on 14918 Cranes Nest Court.
  */
 const CITY_STATE_RE =
-  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3})\s*,\s*([A-Za-z][A-Za-z.'\u2019 -]{0,18}?)\s+(\d{5})(?:-\d{4})?\b/;
+  /\b([A-Z][A-Za-z.'\u2019-]+(?:\s+[A-Z][A-Za-z.'\u2019-]+){0,3})\s*,\s*([A-Za-z][A-Za-z.'\u2019 -]{0,18}?)\s*,?\s*(\d{5})(?:-\d{4})?\b/;
 
 /* ---------------------------------------------------------------- */
 /* addresses                                                        */
@@ -203,10 +218,13 @@ function looksLikeStreetAddress(value) {
   if (!text || text.length > 70) return false;
   if (!/\d/.test(text) || !/[A-Za-z]/.test(text)) return false;
 
-  const houseNumber = text.match(/^(\d{1,6})\b/);
+  // Hyphenated house numbers are real: "73-4474 ANIANI ST" in Hawaii.
+  const houseNumber = text.match(/^(?:(\d{1,4})-)?(\d{1,6})\b/);
   if (!houseNumber) return false;
   // "032 SQFT ..." - a real house number does not have a leading zero.
-  if (houseNumber[1].length > 1 && houseNumber[1].startsWith("0")) return false;
+  const last = houseNumber[2];
+  if (last.length > 1 && last.startsWith("0")) return false;
+  if (houseNumber[1] && houseNumber[1].length > 1 && houseNumber[1].startsWith("0")) return false;
 
   const words = text.split(/[\s,]+/).slice(1);
   if (words.length === 0) return false;
@@ -289,6 +307,22 @@ const OFFICE_TYPES = new Set(
 // "#organization". Those are never the listing.
 const SITE_WIDE_ID_RE = /#(place|organization|website|localbusiness|person|logo|breadcrumb|schema-)/i;
 
+/*
+ * Containers that hold OTHER things, so nothing inside one is what this page is
+ * about.
+ *
+ * A Coldwell Banker city page - /ca/long-beach/ - carries an ItemList of open
+ * house Events, each with the address of somebody's house. Reading one of those
+ * made a city landing page look like a listing for that house, and it would have
+ * been filmed as though the page were about it.
+ */
+const COLLECTION_TYPES = new Set(
+  [
+    "itemlist", "listitem", "collection", "event", "salesevent", "publicationevent",
+    "eventseries", "dataset", "carousel", "faqpage", "itemlistorderascending",
+  ].map((type) => type.toLowerCase())
+);
+
 function typesOf(node) {
   return []
     .concat(node["@type"] || [])
@@ -326,6 +360,14 @@ function walkForAddress(node, depth) {
     types.some((type) => OFFICE_TYPES.has(type)) || SITE_WIDE_ID_RE.test(String(node["@id"] || ""));
   const isResidence = types.some((type) => ADDRESS_TYPES.has(type));
   const address = node.address;
+
+  /*
+   * A list or an event is about other things. Its contents are not this page's
+   * subject, so the walk does not go inside one - not even for a node that calls
+   * itself a residence, because an open house Event on a city page names a real
+   * house that the page is not about.
+   */
+  if (types.some((type) => COLLECTION_TYPES.has(type))) return null;
 
   // Only a node that says it is a home gets to name the address. An untyped
   // node with an address is as likely to be the office as the house.
@@ -417,9 +459,25 @@ function extractAddress(facts) {
     if (!candidate || candidate.inFooter) continue;
     const street = firstStreetIn(candidate.text);
     if (!street) continue;
-    const place = cityStateIn(candidate.text) || cityStateIn(facts.mainText || facts.bodyText);
+
+    /*
+     * The town comes from the same string as the street wherever possible.
+     *
+     * Falling back to the page text is how a kvCORE listing in Clearwater got
+     * the brokerage's own town, Trinity, 20 miles away: the title's own place
+     * would not parse, so an office address further down the page supplied one.
+     * So a ZIP sitting in the candidate is kept even when the town will not
+     * parse, rather than importing a different one from elsewhere.
+     */
+    const own = cityStateIn(candidate.text);
+    const ownZip = (candidate.text.match(/\b(\d{5})(?:-\d{4})?\b/) || [])[1] || "";
+    const place = own || (ownZip ? null : cityStateIn(facts.mainText || facts.bodyText));
     return finish(
-      { street, cityState: place ? place.cityState : "", zip: place ? place.zip : "" },
+      {
+        street,
+        cityState: place ? place.cityState : "",
+        zip: place ? place.zip : ownZip,
+      },
       candidate.where === "address-element" ? "address-element" : "heading"
     );
   }
@@ -453,13 +511,14 @@ const SEARCH_URL_RE =
  * A URL that is one house, by its shape alone.
  *
  * /idx/details/listing/b001/114051774, /listing/12345, /properties/listing/...
+ * ShowingTime writes /pid_1234567/ instead, so that shape counts too.
  * A path like this is a single property on every IDX and every agent site I have
  * seen, and no search or index page looks like it. Somebody pasting one of these
  * has told us exactly which house they mean, and that is not overruled by a map
  * widget or a search box sitting in the page furniture.
  */
 const SINGLE_LISTING_PATH_RE =
-  /\/(?:idx\/)?(?:details\/)?(?:listing|listings|property|properties|home|homes|mls|estate)\/[^/?#]+/i;
+  /\/(?:idx\/)?(?:details\/)?(?:listing|listings|property|properties|home|homes|mls|estate)\/[^/?#]+|\/pid_\d+/i;
 
 /** Somewhere on the site's own search, rather than on one property. */
 const IDX_SEARCH_PATH_RE = /\/idx\/(search|results|map|city|area|zipcode|county|subdivision|neighborhood|community|advanced)\b/i;

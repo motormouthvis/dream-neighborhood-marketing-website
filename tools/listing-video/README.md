@@ -202,12 +202,45 @@ because on a client-drawn listing the heading can arrive in between.
 </h1>
 ```
 
-Those parts are read individually and assembled, so no amount of whitespace
-between the spans can change the answer — and the city/state pattern now accepts
-a space in front of the comma, because that markup can lay out as
-`14918 Cranes Nest Court , Orlando , FL 32824`. These pages carry no structured
-data at all and their title has no street in it, so the heading is the only place
-the address exists.
+Those parts are read individually and assembled — **including the direction**,
+which is its own span and sits either before or after the street name. Leaving it
+out turned `1908 SW MILES ST` into `1908 MILES ST`, a different quadrant of
+Portland, and because the assembled candidate is tried before the heading it won.
+
+The assembly now has to **agree with what is on the screen**: if the pieces it
+read do not appear in the heading as written, some span it does not know about is
+carrying part of the address, so the assembly is dropped and the heading is used
+instead. That makes it safe by construction rather than by knowing every span
+name.
+
+The city/state pattern also accepts a space in front of the comma (that markup can
+lay out as `14918 Cranes Nest Court , Orlando , FL 32824`) and a comma between the
+state and the ZIP, which is how kvCORE writes a title:
+`1978 Arvis Circle W, Clearwater, FL, 33764`. Without that, the town could not be
+parsed from the title and an office address further down the page supplied
+`Trinity, FL 34655` — 20 miles from the house, and where the Explorer would have
+been pointed. **The town now comes from the same string as the street**, and a ZIP
+in that string is kept even when the town will not parse, rather than importing a
+different one from elsewhere on the page.
+
+These pages carry no structured data at all and their title has no street in it,
+so the heading is the only place the address exists.
+
+#### Addresses that are not simply "number street type"
+
+| Written as | Why it needed handling |
+| --- | --- |
+| `73-4474 ANIANI ST` | Hawaii puts the district before a hyphen. A bare house number was required, so the heading yielded nothing and the page only survived on its structured data. |
+| `850 E Ocean Boulevard B3`, `1200 Main St #1`, `77 Harbor Way Unit 5` | A unit on the heading is part of the address, so it stays. The geocoder drops it for a looser lookup if the pair will not resolve. |
+| `252 County Rd 156`, `1420 State Route 9` | A road named by a number. The route number is not taken when a spec row follows it, so `4497 Chase Drive 3 beds` is not Chase Drive number 3. |
+
+#### A list of other things is not this page's subject
+
+`ItemList`, `Event`, `ListItem` and friends are skipped in structured data, and the
+walk does not go inside one. A Coldwell Banker city page carries an `ItemList` of
+open house `Event`s, each naming a real house — reading one made a city landing
+page look like a listing for that house. Now the search furniture on the page
+decides, and it is correctly refused as a search page.
 
 #### A site that opens on its own search
 
@@ -433,6 +466,7 @@ It refuses rather than falling back to anything drawn by us:
 | --- | --- |
 | the address cannot be placed on the map | that address could not be found, try a different listing |
 | the page gave a street but no town | it is looked up on the street alone, and the job log says so, because there was nothing to check the answer against |
+| the street is not on the map at all | the town or the ZIP is used instead, and the video is still made. The job log says the Explorer was only centred nearby, and `job.explorer.precision` records it. A missing street is common on new builds and rural roads, and refusing would block a video over something the reviewer can see for themselves. |
 | the Explorer never loads data for it | it has no neighborhood data for that address |
 | it reports "Unknown location" | same, and it names what the Explorer reported |
 | a tab is missing, or the walk runs over its budget | which tab, and how far it got |

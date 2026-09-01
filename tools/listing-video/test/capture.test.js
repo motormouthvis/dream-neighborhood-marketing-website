@@ -251,6 +251,21 @@ test("a listing whose address cannot be read is refused rather than filmed blank
   assert.match(shot.error.message, /street address could not be read/i);
 });
 
+/*
+ * IDX puts the direction in a span of its own, and the assembled candidate is
+ * tried before the heading. Dropping the direction turned 1908 SW MILES ST into
+ * 1908 MILES ST - a different quadrant of Portland, and where the Explorer would
+ * have been pointed.
+ */
+test("a direction in its own span stays in the address", options, async () => {
+  const shot = await capture(fixture.IDX_DIRECTION_SITE, { listingUrl: fixture.MILES_ST_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(shot.address.street, "1908 SW MILES ST");
+  assert.notEqual(shot.address.street, "1908 MILES ST");
+  assert.equal(shot.address.cityState, "Portland, OR");
+  assert.equal(shot.address.zip, "97219");
+});
+
 test("a pasted listing is opened once, and no other page is touched", options, async () => {
   const shot = await capture(fixture.IDX_SITE, { listingUrl: fixture.IDX_DETAILS_PATH });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");

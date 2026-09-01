@@ -272,6 +272,117 @@ test("the IDX heading that blocked Bill reads as one address", () => {
   }
 });
 
+/*
+ * A live sweep of realtor stacks turned up four more ways a heading was misread.
+ */
+
+test("a hyphenated house number is a house number", () => {
+  // Hawaii writes the district before the hyphen.
+  assert.equal(firstStreetIn("73-4474 ANIANI ST"), "73-4474 ANIANI ST");
+  assert.equal(firstStreetIn("73-4474 Aniani St, Kailua-Kona, HI 96740"), "73-4474 Aniani St");
+  assert.equal(looksLikeStreetAddress("73-4474 ANIANI ST"), true);
+  // And the leading-zero rule still applies to both halves.
+  assert.equal(looksLikeStreetAddress("032 SQFT 4497 Chase Drive"), false);
+  assert.equal(looksLikeStreetAddress("073-0474 Aniani St"), false);
+});
+
+test("a comma between the state and the ZIP is allowed", () => {
+  // kvCORE titles are written this way.
+  assert.deepEqual(cityStateIn("1978 Arvis Circle W, Clearwater, FL, 33764"), {
+    cityState: "Clearwater, FL",
+    zip: "33764",
+  });
+  assert.deepEqual(cityStateIn("Clearwater, FL 33764"), { cityState: "Clearwater, FL", zip: "33764" });
+});
+
+/*
+ * The town has to come from the same string as the street. A kvCORE listing in
+ * Clearwater was given the brokerage's own town, Trinity - 20 miles away, and
+ * where the Explorer would have been pointed.
+ */
+test("the heading's own town beats an office address further down the page", () => {
+  const address = extractAddress({
+    url: "https://www.bhhsfloridaproperties.com/property/24-TB8403890-1978-arvis-circle-w-clearwater-FL-33764",
+    title: "1978 Arvis Circle W, Clearwater, FL, 33764",
+    h1s: ["1978 Arvis Circle W, Clearwater, FL, 33764"],
+    jsonLd: [],
+    bodyText:
+      "1978 Arvis Circle W 4 beds 3 baths Berkshire Hathaway HomeServices Florida Properties Group " +
+      "3131 Little Rd Trinity, FL 34655 (727) 555-0100",
+  });
+  assert.equal(address.street, "1978 Arvis Circle W");
+  assert.equal(address.cityState, "Clearwater, FL");
+  assert.equal(address.zip, "33764");
+  assert.notEqual(address.cityState, "Trinity, FL");
+  assert.notEqual(address.zip, "34655");
+});
+
+/*
+ * A Coldwell Banker city page carries an ItemList of open house Events, each
+ * naming somebody's house. Reading one made a city landing page look like a
+ * listing for that house.
+ */
+test("an open house in a list is not what a city page is about", () => {
+  const facts = {
+    url: "https://www.coldwellbankerhomes.com/ca/long-beach/",
+    title: "Long Beach, CA Real Estate & Homes for Sale",
+    h1s: ["Long Beach, CA Real Estate"],
+    jsonLd: [
+      JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        itemListElement: [
+          {
+            "@type": "Event",
+            name: "Open House",
+            location: {
+              "@type": "SingleFamilyResidence",
+              address: {
+                "@type": "PostalAddress",
+                streetAddress: "2135 Bellflower Blvd",
+                addressLocality: "Long Beach",
+                addressRegion: "CA",
+                postalCode: "90815",
+              },
+            },
+          },
+        ],
+      }),
+    ],
+    bodyText:
+      "Long Beach CA Real Estate. 1,482 homes for sale. Sort by Newest Listings. Price Beds Baths Save Search",
+    priceCount: 20,
+    listingLinkCount: 40,
+    addressCount: 20,
+    mapAreaFraction: 0.3,
+    searchInputCount: 6,
+    galleryImageCount: 0,
+    hasBeds: true,
+    hasBaths: true,
+    hasSqft: true,
+    mlsId: "",
+  };
+
+  assert.equal(extractAddress(facts).street, "", "a listed event is not the page's subject");
+  assert.equal(classifyPage(facts).kind, "search", "so the search furniture decides, as it should");
+});
+
+test("a unit on the heading stays with the street", () => {
+  assert.equal(firstStreetIn("850 E Ocean Boulevard B3"), "850 E Ocean Boulevard B3");
+  assert.equal(firstStreetIn("1200 Main St #1"), "1200 Main St #1");
+  assert.equal(firstStreetIn("77 Harbor Way Unit 5"), "77 Harbor Way Unit 5");
+  assert.equal(firstStreetIn("44 Pine Ave Apt 2B"), "44 Pine Ave Apt 2B");
+  // A spec row after the street is still not a unit.
+  assert.equal(firstStreetIn("4497 Chase Drive 3 beds 2 baths"), "4497 Chase Drive");
+  assert.equal(firstStreetIn("1908 SW MILES ST"), "1908 SW MILES ST");
+});
+
+test("a ShowingTime pid path is one property", () => {
+  assert.equal(looksLikeSingleListingUrl("https://www.showingtimeplus.com/homes/123-main-st/pid_28451234/"), true);
+  assert.equal(looksLikeSingleListingUrl("https://example.test/pid_991/"), true);
+  assert.equal(looksLikeSingleListingUrl("https://example.test/pid_/"), false);
+});
+
 /* ---------------------------------------------------------------- */
 /* a URL that is already one house                                  */
 /* ---------------------------------------------------------------- */
@@ -607,7 +718,9 @@ test("an IDX listing whose price and beds load later is still a listing", () => 
     ctaLabels: [],
   });
   assert.equal(verdict.kind, "detail");
-  assert.equal(verdict.address.street, "850 E Ocean Boulevard");
+  // The unit stays on the street now: it is on the heading, so it is part of the
+  // address. queriesFor drops it for a looser lookup if the pair will not resolve.
+  assert.equal(verdict.address.street, "850 E Ocean Boulevard B3");
 });
 
 test("a condo building page with a search and many addresses is still refused", () => {
