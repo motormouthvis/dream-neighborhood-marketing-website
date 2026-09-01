@@ -14,6 +14,7 @@ const mail = require("./src/mail");
 const templates = require("./src/templates");
 const { renderSilent, attachAudio, trimFinishedVideo } = require("./src/render");
 const { availableVoiceEngines } = require("./src/audio");
+const elevenVoices = require("./src/voices");
 const { normalizeUrl } = require("./src/capture");
 
 const TOOL_PATH = "/tools/listing-video";
@@ -91,12 +92,18 @@ app.post(`${TOOL_PATH}/api/signout`, (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get(`${TOOL_PATH}/api/session`, (req, res) => {
-  const voices = availableVoiceEngines();
+app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
+  const engines = availableVoiceEngines();
+  // Asked of the account rather than assumed, and cached, so a form load is not
+  // a network call. An empty list just means no picker.
+  const choices = await elevenVoices.listVoices().catch(() => []);
   return res.json({
     signedIn: auth.isSignedIn(req),
     mail: mail.mailStatus(),
-    aiVoice: voices.length > 0 ? { available: true, label: voices[0].label } : { available: false },
+    aiVoice:
+      engines.length > 0
+        ? { available: true, label: engines[0].label, voices: choices, defaultVoiceId: choices.length ? choices[0].id : "" }
+        : { available: false, voices: [] },
     fromAddresses: config.fromAddresses,
     scenes: templates.SCENES.map((id) => ({ id, label: templates.SCENE_LABELS[id] })),
     explorerModes: templates.EXPLORER_MODES.map((id) => ({ id, label: templates.EXPLORER_MODE_LABELS[id] })),
@@ -200,6 +207,9 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
   const customerEmail = String(body.customerEmail || "").trim();
   const templateId = String(body.templateId || "").trim();
   const fromId = config.fromAddresses.some((entry) => entry.id === body.fromId) ? body.fromId : "marketing";
+  // Checked against what the account actually offers, so a stale page cannot
+  // book a voice that would fail at render time.
+  const voiceId = await elevenVoices.resolveVoiceId(body.voiceId);
 
   const problems = [];
   if (!firstName) problems.push("Customer first name");
@@ -232,7 +242,7 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
   const beats = templates.renderBeats(template, { firstName, company });
 
   const job = await store.createJob({
-    input: { firstName, company, websiteUrl, listingUrl, customerEmail, templateId: template.id, fromId },
+    input: { firstName, company, websiteUrl, listingUrl, customerEmail, templateId: template.id, fromId, voiceId },
     template,
     beats,
   });

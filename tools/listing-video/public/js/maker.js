@@ -138,6 +138,39 @@
     });
   }
 
+  /*
+   * Male and female ElevenLabs voices, as offered by the account itself.
+   *
+   * The list comes from the server, which asks ElevenLabs what this plan can
+   * actually speak with - so nothing is offered here that would fail at render
+   * time, after the silent video has already been made. No voices, no picker.
+   */
+  function paintVoiceChoices() {
+    var ai = (D.state.session && D.state.session.aiVoice) || {};
+    var list = ai.voices || [];
+    D.show(el("voiceField"), list.length > 0);
+    if (!list.length) return;
+
+    var wrap = el("voiceChoices");
+    wrap.innerHTML = "";
+    list.forEach(function (voice, index) {
+      var label = document.createElement("label");
+      label.className = "choice";
+      label.innerHTML =
+        '<input type="radio" name="voiceId" value="' +
+        D.escapeHtml(voice.id) +
+        '"' +
+        (index === 0 ? " checked" : "") +
+        ' /><span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>' +
+        '<span class="choice__text"><strong class="choice__title">' +
+        D.escapeHtml(voice.name) +
+        '</strong><span class="choice__note">' +
+        D.escapeHtml(voice.sex === "male" ? "Male" : "Female") +
+        "</span></span></span>";
+      wrap.appendChild(label);
+    });
+  }
+
   el("form").addEventListener("submit", function (event) {
     event.preventDefault();
     D.showMessage(el("form-error"), "");
@@ -156,6 +189,7 @@
       listingUrl: el("listingUrl").value.trim(),
       customerEmail: el("customerEmail").value.trim(),
       fromId: D.selectedValue("fromId"),
+      voiceId: D.selectedValue("voiceId") || "",
     };
 
     el("makeBtn").disabled = true;
@@ -301,10 +335,17 @@
 
     var ai = D.state.session && D.state.session.aiVoice;
     el("aiBtn").disabled = !(ai && ai.available);
+    // Name the voice this job was actually booked with, so it is not a surprise.
+    var picked = (job.input && job.input.voiceId) || "";
+    var named = ((ai && ai.voices) || []).filter(function (voice) {
+      return voice.id === picked;
+    })[0];
     D.setText(
       el("aiNote"),
       ai && ai.available
-        ? "The AI voice (" + ai.label + ") is the secondary option. It still has to be reviewed before it can be sent."
+        ? "The AI voice is the secondary option, and would use " +
+          (named ? named.name + " (" + (named.sex === "male" ? "male" : "female") + ")" : ai.label) +
+          ", as picked on the form. It still has to be reviewed before it can be sent."
         : "The AI voice is not connected on this server, so record your own or upload a file."
     );
 
@@ -920,6 +961,7 @@
     resetTake();
     paintTemplateChoices();
     paintFromChoices();
+    paintVoiceChoices();
     backToForm();
   });
 
@@ -947,6 +989,8 @@
     if (!mine.jobId) {
       paintTemplateChoices();
       paintFromChoices();
+      paintVoiceChoices();
+    paintVoiceChoices();
       step("form");
     }
   });

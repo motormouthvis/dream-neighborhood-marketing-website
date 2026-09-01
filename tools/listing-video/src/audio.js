@@ -4,6 +4,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const config = require("./config");
+const voices = require("./voices");
 const { run } = require("./exec");
 
 // Enough lead-in that the first word is never clipped by a player that starts slow.
@@ -177,9 +178,10 @@ async function normalizeLoudness(inputFile, outFile) {
 /* AI voice providers - one professional female English voice          */
 /* ------------------------------------------------------------------ */
 
-async function speakElevenLabs(text, outFile, workDir) {
+async function speakElevenLabs(text, outFile, workDir, voiceId) {
+  const voice = String(voiceId || config.elevenLabsVoiceId);
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.elevenLabsVoiceId)}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}`,
     {
       method: "POST",
       headers: {
@@ -194,7 +196,18 @@ async function speakElevenLabs(text, outFile, workDir) {
       }),
     }
   );
-  if (!response.ok) throw new Error(`ElevenLabs returned ${response.status}`);
+  if (!response.ok) {
+    /*
+     * A voice this plan cannot use is dropped from the picker rather than tried
+     * again. On a free plan that is what a Voice Library voice answers, and it
+     * would otherwise fail on every job for ever.
+     */
+    if (voices.statusMeansNoAccess(response.status)) {
+      voices.blockVoice(voice);
+      throw new Error(`That ElevenLabs voice is not available on this account (${response.status})`);
+    }
+    throw new Error(`ElevenLabs returned ${response.status}`);
+  }
   const mp3 = path.join(workDir, `${path.basename(outFile, ".wav")}.mp3`);
   await fsp.writeFile(mp3, Buffer.from(await response.arrayBuffer()));
   return toWav(mp3, outFile);
@@ -219,7 +232,7 @@ async function speakPiper(text, outFile) {
 
 function availableVoiceEngines() {
   const engines = [];
-  if (config.elevenLabsKey) engines.push({ id: "elevenlabs", label: "ElevenLabs female voice" });
+  if (config.elevenLabsKey) engines.push({ id: "elevenlabs", label: "ElevenLabs" });
   if (config.openAiKey) engines.push({ id: "openai", label: `OpenAI ${config.openAiVoice} female voice` });
   if (config.piperBin && config.piperVoice && fs.existsSync(config.piperBin) && fs.existsSync(config.piperVoice)) {
     engines.push({ id: "piper", label: "Built-in female voice" });
@@ -227,8 +240,8 @@ function availableVoiceEngines() {
   return engines;
 }
 
-async function speak(engineId, text, outFile, workDir) {
-  if (engineId === "elevenlabs") return speakElevenLabs(text, outFile, workDir);
+async function speak(engineId, text, outFile, workDir, voiceId) {
+  if (engineId === "elevenlabs") return speakElevenLabs(text, outFile, workDir, voiceId);
   if (engineId === "openai") return speakOpenAi(text, outFile, workDir);
   if (engineId === "piper") return speakPiper(text, outFile);
   throw new Error(`Unknown voice engine ${engineId}`);
@@ -240,7 +253,7 @@ async function speak(engineId, text, outFile, workDir) {
  * template, stretched only when a line takes longer to say than the template
  * allowed for.
  */
-async function buildAiVoiceTrack({ beats, workDir, log }) {
+async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
   const engines = availableVoiceEngines();
   if (engines.length === 0) {
     throw new Error(
@@ -251,7 +264,10 @@ async function buildAiVoiceTrack({ beats, workDir, log }) {
   let lastError = null;
   for (const engine of engines) {
     try {
-      log(`Building the AI voice track (${engine.label})`);
+      // Only ElevenLabs takes a voice id; the other engines have their own.
+      const speaking = engine.id === "elevenlabs" ? await voices.resolveVoiceId(voiceId) : "";
+      const heard = engine.id === "elevenlabs" ? `${engine.label}, ${await voices.labelFor(speaking)}` : engine.label;
+      log(`Building the AI voice track (${heard})`);
       const pieces = [];
       const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
       const durations = [];
@@ -259,7 +275,7 @@ async function buildAiVoiceTrack({ beats, workDir, log }) {
       pieces.push(lead);
       for (let index = 0; index < beats.length; index += 1) {
         const wav = path.join(workDir, `voice-${String(index).padStart(3, "0")}.wav`);
-        await speak(engine.id, beats[index].text, wav, workDir);
+        await speak(engine.id, beats[index].text, wav, workDir, speaking);
         const spoken = await probeDuration(wav);
         // Keep the template's picture timing unless the line simply will not fit.
         const budget = beats[index].seconds - (index === 0 ? LEAD_SILENCE_SECONDS : 0);
@@ -293,7 +309,7 @@ async function buildAiVoiceTrack({ beats, workDir, log }) {
         audioFile: finalTrack,
         durations,
         totalDuration: await probeDuration(finalTrack),
-        voice: { mode: "ai", engine: engine.id, label: engine.label },
+        voice: { mode: "ai", engine: engine.id, label: heard, voiceId: speaking },
       };
     } catch (error) {
       lastError = error;

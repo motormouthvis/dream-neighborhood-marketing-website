@@ -109,6 +109,15 @@
               <div class="choices" role="radiogroup" id="fromChoices"></div>
             </fieldset>
 
+            <!-- Only shown when the ElevenLabs account has voices to offer. -->
+            <fieldset class="field" id="voiceField" hidden>
+              <legend class="label">AI voice, if you use it</legend>
+              <div class="choices" role="radiogroup" id="voiceChoices"></div>
+              <span class="hint">
+                Only matters if you pick the AI voice instead of recording your own. Recording is still the normal way.
+              </span>
+            </fieldset>
+
             <p class="error" id="form-error" hidden></p>
 
             <button class="btn btn--primary btn--big" type="submit" id="makeBtn" disabled>Make the silent video</button>

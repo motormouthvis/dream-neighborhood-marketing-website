@@ -246,7 +246,8 @@ async function attachAudio(job, { source, uploadPath }) {
     let track;
 
     if (source === "ai") {
-      track = await buildAiVoiceTrack({ beats, workDir, log });
+      // The voice picked on the form, kept with the job since it was made.
+      track = await buildAiVoiceTrack({ beats, workDir, log, voiceId: (job.input && job.input.voiceId) || "" });
       durations = track.durations;
     } else {
       track = await buildRecordedTrack({ uploadPath, workDir, log });

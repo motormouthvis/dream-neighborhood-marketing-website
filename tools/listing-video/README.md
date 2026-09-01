@@ -776,6 +776,37 @@ always reports which one it used:
 
 If none are available the AI button is switched off and says so.
 
+### Picking a male or female voice
+
+The voice is chosen **on the make-a-video form**, beside the from-address, not
+buried behind the AI button on a later step. It is kept on the job, so the AI path
+uses the voice that was picked when the job was made, and the record step names it
+rather than leaving it a surprise.
+
+Two women and two men, by name — **Jessica is the default**, because she is the
+voice that has been heard and approved. The choice only matters if the AI voice is
+used at all; recording over the silent video is still the normal way.
+
+**The list is asked of the account, not written down here.** `GET /v1/voices` is
+called with the existing key (header only — it is never logged, never put in a URL,
+and never handed to the browser), the answer is filtered to the voices this plan
+can actually speak with, and two of each sex are offered. The answer is cached for
+ten minutes so loading the form is not a network call.
+
+That matters because this is a **free plan**: only the premade/default voices work.
+A Voice Library voice like Rachel or Charlotte answers 401, and hardcoding names
+would mean offering a voice that fails at render time — after the silent video has
+already been made. If a voice ever answers 401, 402 or 403, it is dropped from the
+picker and another takes its place; the ones that work carry on.
+
+A short hardcoded list (Jessica, Sarah, George, Brian) is used only when the
+account cannot be asked at all, so the picker still offers something sensible.
+
+> **Worth knowing:** ElevenLabs' Default voices expire on **31 December 2026**, and
+> are only available to accounts created before March 2026. Asking the account
+> rather than hardcoding is what stops that being a breakage — when they go, the
+> picker will offer whatever the account has instead.
+
 ## Email
 
 The send picker offers three from-addresses:
