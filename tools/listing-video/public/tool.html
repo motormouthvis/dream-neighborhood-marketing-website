@@ -133,6 +133,10 @@
           <p class="lede" id="silentSummary"></p>
           <p class="notice" id="silentNotes" hidden></p>
 
+          <!-- Two columns on a desktop: the pictures on the left, the words on the
+               right, so whoever is recording can watch both at once. -->
+          <div class="record-split">
+            <div class="record-split__main">
           <video id="silentPlayer" class="player" controls playsinline muted preload="auto"></video>
 
           <div class="recorder">
@@ -174,11 +178,6 @@
               </button>
             </div>
 
-            <details class="teleprompter" id="promptWrap" open>
-              <summary>The words, and how long each picture is</summary>
-              <ol class="beats" id="beatList"></ol>
-            </details>
-
             <details class="teleprompter">
               <summary>Other ways to add the voice</summary>
               <div class="recorder__row recorder__row--wrap">
@@ -203,6 +202,14 @@
 
             <p class="error" id="recError" hidden></p>
           </div>
+            </div>
+
+            <aside class="record-split__script" id="promptWrap">
+              <h3 class="script__title">The words, and how long each picture is</h3>
+              <p class="hint">The line you are on is highlighted and scrolls itself as the video plays.</p>
+              <ol class="beats" id="beatList"></ol>
+            </aside>
+          </div>
         </section>
 
         <!-- ---------- step 5: final review of the muxed file, then send ---------- -->
@@ -220,6 +227,21 @@
             <input type="checkbox" id="reviewedBox" />
             <span>I reviewed this video and it is good to send.</span>
           </label>
+
+          <!-- While a trim runs this covers the step, so nothing can be sent,
+               reviewed or copied until the shorter file is on the player. -->
+          <div class="working" id="trimOverlay" hidden>
+            <div class="working__box" role="alertdialog" aria-modal="true" aria-labelledby="trimWorkingTitle">
+              <h3 class="h3" id="trimWorkingTitle">Trimming the video</h3>
+              <p class="hint" id="trimWorkingWhat"></p>
+              <p class="hint" id="trimWorkingElapsed"></p>
+              <p class="hint">
+                It is re-encoded so the cut lands where you paused it, which takes a moment on a 1080p video.
+                Sending stays off until the shorter file is back and you have watched it.
+              </p>
+              <button type="button" class="btn btn--ghost" id="trimStopWaitingBtn">Stop waiting</button>
+            </div>
+          </div>
 
           <div class="trim" id="trimBox">
             <span class="label">Ending too late?</span>

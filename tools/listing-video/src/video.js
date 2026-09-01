@@ -167,46 +167,77 @@ const MIN_TRIMMED_SECONDS = 3;
  * wanted rid of.
  */
 async function trimVideoAt({ inputFile, atSeconds, outFile, log = () => {} }) {
-  const full = await probeDuration(inputFile);
-  const at = Number(atSeconds);
+  let full;
+  try {
+    full = await probeDuration(inputFile);
+  } catch (error) {
+    throw new Error(`The video could not be read to trim it (${error.message}).`);
+  }
+  const asked = Number(atSeconds);
 
-  if (!Number.isFinite(at) || at <= 0) {
+  if (!Number.isFinite(asked) || asked <= 0) {
     throw new Error("Pause the video where you want it to end, then trim.");
   }
-  if (at < MIN_TRIMMED_SECONDS) {
+  if (asked < MIN_TRIMMED_SECONDS) {
     throw new Error(`A video has to be at least ${MIN_TRIMMED_SECONDS} seconds long. Pause it later and try again.`);
   }
-  // Within a frame of the end there is nothing to remove.
-  if (at >= full - 0.05) {
+
+  /*
+   * The playhead is a browser's idea of the time and this is ffprobe's, and the
+   * two disagree by a frame or so. A cut is not refused over that: the time is
+   * pulled just inside the end of the file instead, so pausing a whisker past
+   * where ffprobe thinks the video stops still trims.
+   */
+  const LAST_FRAME = 0.05;
+  const at = Math.min(asked, full - LAST_FRAME);
+  if (at < MIN_TRIMMED_SECONDS || at <= 0) {
     throw new Error("That is already the end of the video. Pause it earlier to cut something off.");
   }
+  // Genuinely at the end: there is nothing to remove, so nothing is re-encoded.
+  if (full - at <= LAST_FRAME * 1.5) {
+    throw new Error("That is already the end of the video. Pause it earlier to cut something off.");
+  }
+  if (at < asked - 0.01) log(`The player and the file disagree slightly; cutting at ${at.toFixed(2)}s`);
 
-  log(`Cutting everything after ${at.toFixed(1)}s`);
-  await run(
-    config.ffmpegPath,
-    [
-      "-y",
-      "-i",
-      inputFile,
-      "-t",
-      at.toFixed(3),
-      "-vf",
-      "fps=30,format=yuv420p",
-      ...ENCODE,
-      "-crf",
-      "21",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "160k",
-      "-ar",
-      "44100",
-      outFile,
-    ],
-    { timeout: 900000 }
-  );
+  log(`Cutting everything after ${at.toFixed(1)}s of ${full.toFixed(1)}s`);
+  try {
+    await run(
+      config.ffmpegPath,
+      [
+        "-y",
+        "-i",
+        inputFile,
+        "-t",
+        at.toFixed(3),
+        "-vf",
+        "fps=30,format=yuv420p",
+        ...ENCODE,
+        "-crf",
+        "21",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-ar",
+        "44100",
+        outFile,
+      ],
+      { timeout: 900000 }
+    );
+  } catch (error) {
+    // ffmpeg's last words, so a failure is something a person can act on rather
+    // than a bare "that video was not trimmed".
+    const said = String(error.message || "").split("\n").filter(Boolean).slice(-2).join(" ");
+    throw new Error(`The video could not be re-encoded to cut it${said ? ` (${said})` : ""}.`);
+  }
 
-  return { file: outFile, duration: await probeDuration(outFile), wasSeconds: full };
+  let duration;
+  try {
+    duration = await probeDuration(outFile);
+  } catch (error) {
+    throw new Error(`The cut was made but the new file could not be read (${error.message}).`);
+  }
+  return { file: outFile, duration, wasSeconds: full };
 }
 
 async function buildPoster({ frames, outFile }) {

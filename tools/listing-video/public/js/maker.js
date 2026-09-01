@@ -30,6 +30,9 @@
     pollErrors: 0,
     startedAt: 0,
     trimming: false,
+    trimPoll: null,
+    trimStartedAt: 0,
+    trimPollErrors: 0,
     beats: [],
     watched: 0,
     lastTime: 0,
@@ -612,6 +615,7 @@
     D.show(el("sendOk"), false);
     D.showMessage(el("trimError"), "");
     D.show(el("trimOk"), false);
+    D.show(el("trimOverlay"), Boolean(mine.trimming));
     applyTrimState();
     applyReviewState();
     loadDraft(job.id);
@@ -626,10 +630,16 @@
     var reviewed = mine.reviewMarked;
     var connected = mailConnected();
     D.show(el("reviewGate"), !reviewed);
-    el("sendBtn").disabled = !reviewed || !connected;
+    // Nothing goes out while the file is being cut: what is on disk right now is
+    // neither the video they reviewed nor the one they asked for.
+    el("sendBtn").disabled = !reviewed || !connected || mine.trimming;
+    el("reviewedBox").disabled = mine.trimming;
     // Say which of the two reasons is holding the button, so a switched-off
     // button is never a mystery.
-    D.setText(el("sendBtn"), connected ? (reviewed ? "Send email" : "Review it first") : "Mailbox not connected");
+    D.setText(
+      el("sendBtn"),
+      mine.trimming ? "Trimming..." : connected ? (reviewed ? "Send email" : "Review it first") : "Mailbox not connected"
+    );
 
     if (!connected) {
       var reason = (D.state.session.mail && D.state.session.mail.reason) || "Mailbox not connected.";
@@ -681,8 +691,11 @@
   function applyTrimState() {
     var player = el("reviewPlayer");
     var at = player.currentTime || 0;
-    var paused = player.paused && at > 0;
-    var tooLate = player.duration ? at >= player.duration - 0.05 : false;
+    var paused = player.paused && at > 0 && !mine.trimming;
+    // Under a second left is nothing worth re-encoding for, and it is what the
+    // server refuses - so the button is never live for a cut it would reject.
+    var leftToCut = player.duration ? player.duration - at : 0;
+    var tooLate = player.duration ? leftToCut < 0.75 : false;
 
     el("trimBtn").disabled = !paused || tooLate || mine.trimming;
     if (mine.trimming) {
@@ -690,9 +703,9 @@
     } else if (!paused) {
       D.setText(el("trimHint"), "Pause the player to choose the ending.");
     } else if (tooLate) {
-      D.setText(el("trimHint"), "That is already the end. Pause it earlier.");
+      D.setText(el("trimHint"), "That is already the end. Pause it earlier to cut something off.");
     } else {
-      D.setText(el("trimHint"), "Would end at " + D.runtime(at) + ", cutting " + D.runtime(player.duration - at) + ".");
+      D.setText(el("trimHint"), "Would end at " + D.runtime(at) + ", cutting " + D.runtime(leftToCut) + ".");
     }
   }
 
@@ -735,27 +748,105 @@
       return;
     }
 
-    mine.trimming = true;
     D.showMessage(el("trimError"), "");
     D.show(el("trimOk"), false);
-    applyTrimState();
+    D.setText(el("trimWorkingWhat"), "Ending it at " + D.runtime(at) + " and cutting " + cutting + ".");
+    beginTrimWait();
 
     D.send("POST", API + "/jobs/" + mine.jobId + "/trim", { atSeconds: at }).then(function (result) {
-      mine.trimming = false;
+      // The server queues the trim and answers at once, so a refusal here is a
+      // bad request rather than a failed encode.
       if (!result.ok) {
-        applyTrimState();
+        endTrimWait();
         D.showMessage(el("trimError"), D.errorFrom(result, "That video was not trimmed."));
-        return;
       }
-      // A different video to the one that was reviewed, so the review starts over.
-      paintReview(result.body.job);
-      sitAtTheNewEnd();
-      D.setText(el("trimOk"), "Trimmed. Watch it again, then send.");
-      D.show(el("trimOk"), true);
     });
   });
 
+  /*
+   * Waiting for a trim, with the step covered.
+   *
+   * The cut re-encodes the whole file, which is far too slow to hold an HTTP
+   * request open for - Heroku hangs up at 30 seconds, which is what showed Bill
+   * "That video was not trimmed" for a trim that was still running. So the
+   * server queues it and this waits on the job, the way the capture does.
+   */
+  function beginTrimWait() {
+    mine.trimming = true;
+    mine.trimStartedAt = Date.now();
+    mine.trimPollErrors = 0;
+    D.show(el("trimOverlay"), true);
+    applyTrimState();
+    applyReviewState();
+
+    var tick = function () {
+      D.setText(
+        el("trimWorkingElapsed"),
+        "Working for " + D.clock((Date.now() - mine.trimStartedAt) / 1000) + "."
+      );
+    };
+    var check = function () {
+      D.json(API + "/jobs/" + mine.jobId).then(
+        function (result) {
+          if (result.status === 404) return settleTrim(null, GONE_MESSAGE);
+          if (!result.ok) {
+            mine.trimPollErrors += 1;
+            if (mine.trimPollErrors >= MAX_POLL_ERRORS) return settleTrim(null, UNREACHABLE_MESSAGE);
+            return undefined;
+          }
+          mine.trimPollErrors = 0;
+          if (result.body.status === "trimming") return undefined;
+          return settleTrim(result.body, result.body.error || "");
+        },
+        function () {
+          mine.trimPollErrors += 1;
+          if (mine.trimPollErrors >= MAX_POLL_ERRORS) settleTrim(null, UNREACHABLE_MESSAGE);
+        }
+      );
+      tick();
+    };
+    tick();
+    mine.trimPoll = setInterval(check, 2000);
+  }
+
+  function endTrimWait() {
+    if (mine.trimPoll) clearInterval(mine.trimPoll);
+    mine.trimPoll = null;
+    mine.trimming = false;
+    D.show(el("trimOverlay"), false);
+    applyTrimState();
+    applyReviewState();
+  }
+
+  /** The trim came back, one way or the other. */
+  function settleTrim(job, message) {
+    endTrimWait();
+    if (!job) {
+      D.showMessage(el("trimError"), message || "That video was not trimmed.");
+      return;
+    }
+    // Repaints from the job, so the player picks up the shorter file and the
+    // review starts again - it is not the video that was approved any more.
+    paintReview(job);
+    if (message) {
+      D.showMessage(el("trimError"), message);
+      return;
+    }
+    sitAtTheNewEnd();
+    D.setText(el("trimOk"), "Trimmed. Watch it again, then send.");
+    D.show(el("trimOk"), true);
+  }
+
+  el("trimStopWaitingBtn").addEventListener("click", function () {
+    endTrimWait();
+    D.showMessage(
+      el("trimError"),
+      "Stopped waiting. The trim is still running on the server - open this video from the Library in a minute to see it."
+    );
+  });
+
   el("redoAudioBtn").addEventListener("click", function () {
+    if (mine.trimming) return;
     D.json(API + "/jobs/" + mine.jobId).then(function (result) {
       if (!result.ok) return;
       el("reviewPlayer").pause();

@@ -322,31 +322,52 @@ async function cleanTempAudio(workDir) {
  * working, and the review flag is cleared because what he approved has changed.
  */
 async function trimFinishedVideo(job, { atSeconds }) {
-  if (!job.result || !job.result.videoFile || !fs.existsSync(job.result.videoFile)) {
-    throw new Error("There is no finished video to trim yet.");
-  }
   const dir = store.jobDir(job.id);
   const log = (message) => store.logProgress(job, message);
   const pendingPath = path.join(dir, "video-trimming.mp4");
 
-  const trimmed = await trimVideoAt({
-    inputFile: job.result.videoFile,
-    atSeconds,
-    outFile: pendingPath,
-    log,
-  });
-  await fsp.rename(pendingPath, job.result.videoFile);
+  /*
+   * Whatever happens, the job does not stay on "trimming".
+   *
+   * The browser waits on that status, so a throw that left it set would leave
+   * the review step covered by a spinner for ever.
+   */
+  try {
+    if (!job.result || !job.result.videoFile || !fs.existsSync(job.result.videoFile)) {
+      throw new Error("There is no finished video to trim any more. Make the video again.");
+    }
 
-  job.result.durationSeconds = Math.round(trimmed.duration);
-  job.result.trimmed = {
-    at: new Date().toISOString(),
-    atSeconds: Math.round(Number(atSeconds) * 10) / 10,
-    wasSeconds: Math.round(trimmed.wasSeconds * 10) / 10,
-  };
-  // A different video to the one that was reviewed, so it needs reviewing again.
-  job.review = { reviewed: false, at: null, how: null };
-  log(`Trimmed the video to ${trimmed.duration.toFixed(1)}s - review it again, then send`);
-  await store.persist(job);
+    const trimmed = await trimVideoAt({
+      inputFile: job.result.videoFile,
+      atSeconds,
+      outFile: pendingPath,
+      log,
+    });
+    await fsp.rename(pendingPath, job.result.videoFile);
+
+    job.result.durationSeconds = Math.round(trimmed.duration);
+    job.result.trimmed = {
+      at: new Date().toISOString(),
+      atSeconds: Math.round(Number(atSeconds) * 10) / 10,
+      wasSeconds: Math.round(trimmed.wasSeconds * 10) / 10,
+    };
+    // A different video to the one that was reviewed, so it needs reviewing again.
+    job.review = { reviewed: false, at: null, how: null };
+    job.error = null;
+    job.errorCode = null;
+    log(`Trimmed the video to ${trimmed.duration.toFixed(1)}s - review it again, then send`);
+  } catch (error) {
+    // The original is untouched: the cut is written beside it and only renamed
+    // over it once ffmpeg has finished, so a failed trim costs nothing.
+    await fsp.rm(pendingPath, { force: true }).catch(() => {});
+    job.error = error.message || String(error);
+    job.errorCode = error.code || "TRIM_FAILED";
+    log(`That trim did not work: ${job.error}`);
+  } finally {
+    // Back to the review step either way, with the video it still has.
+    job.status = "ready";
+    await store.persist(job);
+  }
   return job;
 }
 

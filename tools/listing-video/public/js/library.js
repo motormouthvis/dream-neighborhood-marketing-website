@@ -11,6 +11,7 @@
     capturing: "Finding a listing",
     "silent-ready": "Silent - needs a voice",
     voicing: "Adding the voice",
+    trimming: "Trimming the video",
     ready: "Ready",
     failed: "Did not finish",
   };

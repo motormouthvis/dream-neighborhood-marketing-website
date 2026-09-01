@@ -397,15 +397,137 @@ test("trimming through the tool shortens the video and asks for another review",
   assert.equal(fs.existsSync(path.join(store.jobDir(job.id), "video-trimming.mp4")), false, "no leftovers");
 });
 
-test("a refused trim leaves the finished video alone", async () => {
+/*
+ * As a background job it cannot throw - the browser is waiting on the job's
+ * status, so a throw would leave the review step under a spinner for ever. The
+ * reason goes on the job and the status goes back to ready.
+ */
+test("a refused trim leaves the finished video alone and says why", async () => {
   const { job, was } = await readyJob([3, 3]);
 
-  await assert.rejects(() => trimFinishedVideo(job, { atSeconds: 0 }), /pause the video/i);
-  await assert.rejects(() => trimFinishedVideo(job, { atSeconds: was + 10 }), /already the end/i);
+  await trimFinishedVideo(job, { atSeconds: 0 });
+  assert.equal(job.status, "ready", "never left on trimming");
+  assert.match(job.error, /pause the video/i);
+
+  await trimFinishedVideo(job, { atSeconds: was + 10 });
+  assert.equal(job.status, "ready");
+  assert.match(job.error, /already the end/i);
 
   const fresh = await store.getJob(job.id);
   assert.ok(Math.abs((await probeDuration(fresh.result.videoFile)) - was) < 0.35, "still its original length");
   assert.equal(fresh.review.reviewed, true, "and still reviewed, because nothing changed");
+  // The half-written cut is cleaned up rather than left beside the video.
+  assert.equal(fs.existsSync(path.join(store.jobDir(job.id), "video-trimming.mp4")), false);
+});
+
+/* ---------------------------------------------------------------- */
+/* the trim is a queued job, not work done on the request            */
+/* ---------------------------------------------------------------- */
+
+const app = require("../server");
+
+/** The tool, signed in, so the trim route can be called the way the page calls it. */
+async function signedIn() {
+  const server = await new Promise((resolve) => {
+    const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const signin = await fetch(`${origin}/tools/listing-video/api/signin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "test-token" }),
+  });
+  const cookie = signin.headers.getSetCookie()[0].split(";")[0];
+  return {
+    post: (url, body) =>
+      fetch(`${origin}${url}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify(body),
+      }),
+    get: (url) => fetch(`${origin}${url}`, { headers: { cookie } }),
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+/*
+ * The trim used to re-encode on the request. A minute of 1080p takes longer than
+ * Heroku's 30 second router timeout, and the request also queued behind any
+ * render already running - so the browser was handed a dead connection and told
+ * Bill "That video was not trimmed" for a trim that was still going.
+ */
+test("the trim route answers at once and does the work afterwards", async () => {
+  const { job } = await readyJob([5, 5, 5]);
+  const tool = await signedIn();
+  try {
+    const startedAt = Date.now();
+    const response = await tool.post(`/tools/listing-video/api/jobs/${job.id}/trim`, { atSeconds: 9 });
+    const answeredIn = Date.now() - startedAt;
+
+    // Answered, not held open. Heroku hangs up at 30 seconds.
+    assert.equal(response.status, 202, "the trim is accepted, not waited on");
+    assert.ok(answeredIn < 5000, `the request took ${answeredIn}ms, so work is still being done on it`);
+
+    const accepted = await response.json();
+    assert.equal(accepted.job.status, "trimming", "and the job says what it is doing");
+
+    // The work happens after, and the job comes back by itself.
+    let latest = accepted.job;
+    const until = Date.now() + 120000;
+    while (latest.status === "trimming" && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      latest = (await (await tool.get(`/tools/listing-video/api/jobs/${job.id}`)).json());
+    }
+
+    assert.equal(latest.status, "ready", "it does not get stuck on trimming");
+    assert.equal(latest.error, null, latest.error || "");
+    assert.equal(latest.review.reviewed, false, "the shorter cut has not been reviewed");
+
+    const fresh = await store.getJob(job.id);
+    assert.ok(Math.abs((await probeDuration(fresh.result.videoFile)) - 9) < 0.4);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a trim that cannot be done leaves the job usable and says why", async () => {
+  const { job } = await readyJob([4, 4]);
+  const tool = await signedIn();
+  try {
+    // The finished video goes missing between the request and the work.
+    await fsp.rm(job.result.videoFile, { force: true });
+
+    const response = await tool.post(`/tools/listing-video/api/jobs/${job.id}/trim`, { atSeconds: 5 });
+    assert.equal(response.status, 202);
+
+    let latest = (await response.json()).job;
+    const until = Date.now() + 60000;
+    while (latest.status === "trimming" && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      latest = await (await tool.get(`/tools/listing-video/api/jobs/${job.id}`)).json();
+    }
+
+    // Back on the review step with a real reason, not stuck under a spinner.
+    assert.equal(latest.status, "ready");
+    assert.match(latest.error || "", /no finished video/i);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a one second remainder on a long video is a trim, not a refusal", async () => {
+  // Exactly what Bill tried: pause a minute in, cut the last second.
+  const { job, was } = await readyJob([20, 20, 20]);
+  assert.ok(was > 55, `the video is ${was.toFixed(1)}s, which is not the case being tested`);
+
+  await trimFinishedVideo(job, { atSeconds: was - 1 });
+
+  const fresh = await store.getJob(job.id);
+  assert.equal(fresh.error, null, fresh.error || "");
+  assert.ok(
+    Math.abs((await probeDuration(fresh.result.videoFile)) - (was - 1)) < 0.4,
+    "a one second remainder comes off"
+  );
 });
 
 test.after(async () => {

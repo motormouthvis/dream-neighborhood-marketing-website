@@ -47,6 +47,11 @@ function enqueue(task) {
   return queue;
 }
 
+/* A job the server is working on right now. Acting on it would fight the queue. */
+function isBusy(job) {
+  return job.status === "capturing" || job.status === "voicing" || job.status === "trimming";
+}
+
 function baseUrlFor(req) {
   if (config.publicBaseUrl) return config.publicBaseUrl;
   const proto = req.get("x-forwarded-proto") || req.protocol || "http";
@@ -242,7 +247,7 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
 app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "That video was not found." });
-  if (job.status === "capturing" || job.status === "voicing") {
+  if (isBusy(job)) {
     return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
   }
 
@@ -285,7 +290,7 @@ app.post(
     const job = await store.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "That video was not found." });
     if (!req.file) return res.status(400).json({ error: "No audio came through. Record a take and try again." });
-    if (job.status === "capturing" || job.status === "voicing") {
+    if (isBusy(job)) {
       return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
     }
     if (!job.silent) {
@@ -310,7 +315,7 @@ app.post(
 app.post(`${TOOL_PATH}/api/jobs/:id/ai-voice`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "That video was not found." });
-  if (job.status === "capturing" || job.status === "voicing") {
+  if (isBusy(job)) {
     return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
   }
   if (!job.silent) return res.status(400).json({ error: "The silent video is not ready yet." });
@@ -356,14 +361,22 @@ app.post(`${TOOL_PATH}/api/jobs/:id/trim`, auth.requireSession, async (req, res)
     return res.status(400).json({ error: "Pause the video where you want it to end, then trim." });
   }
 
-  try {
-    // Queued with the renders: trimming re-encodes, and two of those at once on
-    // a small dyno is how it runs out of memory.
-    await enqueue(() => trimFinishedVideo(job, { atSeconds }));
-  } catch (error) {
-    return res.status(400).json({ error: error.message || "That video could not be trimmed." });
-  }
-  return res.json({ job: store.publicView(job) });
+  /*
+   * Queued and answered straight away, like a capture or a render.
+   *
+   * This used to re-encode on the request. A minute of 1080p on a small dyno
+   * takes longer than Heroku's 30 second router timeout, and the request also
+   * had to wait behind any render already in the queue - so the browser was
+   * handed a dead connection and showed "That video was not trimmed" for a trim
+   * that was still running, or had worked.
+   */
+  job.status = "trimming";
+  job.error = null;
+  job.errorCode = null;
+  await store.persist(job);
+
+  enqueue(() => trimFinishedVideo(job, { atSeconds }).catch(() => {}));
+  return res.status(202).json({ job: store.publicView(job) });
 });
 
 app.post(`${TOOL_PATH}/api/jobs/:id/email`, auth.requireSession, async (req, res) => {
@@ -496,7 +509,7 @@ app.get(`${TOOL_PATH}/api/videos`, auth.requireSession, async (req, res) => {
 app.delete(`${TOOL_PATH}/api/videos/:id`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "That video was not found." });
-  if (job.status === "capturing" || job.status === "voicing") {
+  if (isBusy(job)) {
     return res.status(409).json({ error: "That video is still being worked on. Wait for it to finish, then delete it." });
   }
   const deleted = await store.deleteJob(job.id);

@@ -339,6 +339,188 @@ test("after a trim the player holds the shorter file, sitting at its new end", o
   }
 });
 
+/* ---------------------------------------------------------------- */
+/* recording: the words beside the pictures                          */
+/* ---------------------------------------------------------------- */
+
+const { buildSilentVideo } = require("../src/video");
+
+/** A job sitting on the record step, with a real silent video behind it. */
+async function jobOnRecordStep() {
+  const { job } = await jobOnFinalReview([4, 4, 4, 4, 4, 4, 4, 4, 4], 12);
+  const dir = store.jobDir(job.id);
+  const silent = await buildSilentVideo({
+    frames: job.silent.frames,
+    durations: job.beats.map((beat) => beat.seconds),
+    workDir: dir,
+    outFile: path.join(dir, "silent.mp4"),
+    log: () => {},
+  });
+  job.silent.file = silent.file;
+  job.silent.durationSeconds = silent.duration;
+  job.status = "silent-ready";
+  await store.persist(job);
+  return job;
+}
+
+test("the script sits beside the video, not under it", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    await tool.page.setViewport({ width: 1440, height: 1000 });
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+    await tool.page.waitForFunction(() => document.querySelectorAll("#beatList .beat").length > 0, { timeout: 10000 });
+
+    const layout = await tool.page.evaluate(() => {
+      const video = document.getElementById("silentPlayer").getBoundingClientRect();
+      const script = document.getElementById("promptWrap").getBoundingClientRect();
+      return {
+        beats: document.querySelectorAll("#beatList .beat").length,
+        beside: script.left >= video.right - 4,
+        alongside: script.top < video.bottom,
+        scriptWide: script.width > 200,
+        videoWide: video.width > 380,
+        scrolls: getComputedStyle(document.getElementById("beatList")).overflowY,
+      };
+    });
+
+    assert.ok(layout.beats > 1, "the script has to be on the page at all");
+    assert.ok(layout.beside, "the script starts to the right of the video");
+    assert.ok(layout.alongside, "and on the same row, not below it");
+    assert.ok(layout.scriptWide, `the script column is only ${layout.scriptWide} wide`);
+    assert.ok(layout.videoWide, "the video keeps its size");
+    assert.equal(layout.scrolls, "auto", "the words scroll on their own");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the line being spoken is highlighted and scrolls itself as the video plays", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    // Narrow enough that the list has to scroll to follow the playhead.
+    await tool.page.setViewport({ width: 1200, height: 620 });
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+    await tool.page.waitForFunction(() => (document.getElementById("silentPlayer").duration || 0) > 1, {
+      timeout: 15000,
+    });
+
+    const at = async (seconds) => {
+      await tool.page.evaluate((secs) => {
+        document.getElementById("silentPlayer").currentTime = secs;
+      }, seconds);
+      await sleep(700);
+      return tool.page.evaluate(() => {
+        const list = document.getElementById("beatList");
+        const on = list.querySelector(".beat.is-on");
+        if (!on) return null;
+        const box = on.getBoundingClientRect();
+        const frame = list.getBoundingClientRect();
+        return {
+          index: Array.prototype.indexOf.call(list.children, on),
+          inView: box.top >= frame.top - 2 && box.bottom <= frame.bottom + 2,
+          scrollTop: Math.round(list.scrollTop),
+        };
+      });
+    };
+
+    // 4s a scene, so these land on different lines.
+    const early = await at(2);
+    const middle = await at(18);
+    const late = await at(33);
+
+    assert.equal(early.index, 0, "the first line is on at the start");
+    assert.ok(middle.index > early.index, `middle beat ${middle.index} should be after ${early.index}`);
+    assert.ok(late.index > middle.index, `late beat ${late.index} should be after ${middle.index}`);
+
+    // Exactly one line is lit, and it is the one you can see.
+    const lit = await tool.page.evaluate(() => document.querySelectorAll("#beatList .beat.is-on").length);
+    assert.equal(lit, 1);
+    assert.equal(late.inView, true, "the line being spoken is scrolled into view");
+    assert.ok(late.scrollTop > 0, "which means the list scrolled itself");
+  } finally {
+    await tool.close();
+  }
+});
+
+/* ---------------------------------------------------------------- */
+/* trimming: the step is covered until the new file is on the player */
+/* ---------------------------------------------------------------- */
+
+test("a trim covers the step and blocks sending until the new file is back", options, async () => {
+  const { job } = await jobOnFinalReview([6, 6, 6], 16);
+  const tool = await openTool();
+  try {
+    tool.page.on("dialog", (dialog) => dialog.accept());
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 15000 });
+    await tool.page.waitForFunction(() => (document.getElementById("reviewPlayer").duration || 0) > 1, {
+      timeout: 15000,
+    });
+
+    // Reviewed, so it is provable that trimming switches sending back off.
+    await tool.page.evaluate(() => document.getElementById("reviewedBox").click());
+    await sleep(600);
+
+    await tool.page.evaluate(() => {
+      const player = document.getElementById("reviewPlayer");
+      player.currentTime = 9;
+      player.pause();
+    });
+    await tool.page.waitForFunction(() => !document.getElementById("trimBtn").disabled, { timeout: 10000 });
+    await tool.page.click("#trimBtn");
+
+    await tool.page.waitForFunction(() => !document.getElementById("trimOverlay").hidden, { timeout: 15000 });
+    const covered = await tool.page.evaluate(() => {
+      const over = document.getElementById("trimOverlay").getBoundingClientRect();
+      // Geometry, not elementFromPoint: a control scrolled off screen is still
+      // covered, and elementFromPoint only answers for what is in the viewport.
+      const under = (id) => {
+        const box = document.getElementById(id).getBoundingClientRect();
+        return box.top >= over.top - 1 && box.bottom <= over.bottom + 1;
+      };
+      return {
+        sendDisabled: document.getElementById("sendBtn").disabled,
+        sendLabel: document.getElementById("sendBtn").textContent.trim(),
+        reviewBoxDisabled: document.getElementById("reviewedBox").disabled,
+        trimBtnDisabled: document.getElementById("trimBtn").disabled,
+        sendUnder: under("sendBtn"),
+        copyUnder: under("copyBtn"),
+        backUnder: under("redoAudioBtn"),
+        canStopWaiting: !document.getElementById("trimStopWaitingBtn").disabled,
+      };
+    });
+
+    assert.equal(covered.sendDisabled, true, "nothing is sent while the file is being cut");
+    assert.match(covered.sendLabel, /trimming/i);
+    assert.equal(covered.reviewBoxDisabled, true, "and it cannot be marked reviewed either");
+    assert.equal(covered.trimBtnDisabled, true, "nor trimmed twice");
+    assert.equal(covered.sendUnder, true, "the cover is over the send button");
+    assert.equal(covered.copyUnder, true, "and the copy link");
+    assert.equal(covered.backUnder, true, "and back to recording");
+    assert.equal(covered.canStopWaiting, true, "there is a way out of waiting");
+
+    // And it comes back with the shorter file, still needing a review.
+    await tool.page.waitForFunction(() => document.getElementById("trimOverlay").hidden, { timeout: 180000 });
+    await sleep(1200);
+    const after = await tool.page.evaluate(() => ({
+      duration: document.getElementById("reviewPlayer").duration,
+      sendDisabled: document.getElementById("sendBtn").disabled,
+      ok: document.getElementById("trimOk").textContent.trim(),
+      err: document.getElementById("trimError").textContent.trim(),
+    }));
+    assert.ok(Math.abs(after.duration - 9) < 0.4, `player has ${after.duration}s, wanted the trimmed 9s`);
+    assert.equal(after.err, "", "no error on a trim that worked");
+    assert.match(after.ok, /watch it again/i);
+    assert.equal(after.sendDisabled, true, "send stays off until the shorter cut is reviewed");
+  } finally {
+    await tool.close();
+  }
+});
+
 test.after(async () => {
   await fsp.rm(dataDir, { recursive: true, force: true }).catch(() => {});
 });

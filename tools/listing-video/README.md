@@ -542,6 +542,13 @@ video yet.** From here you can:
 - **Record again**, which throws the old take away and starts a new one.
 - **Throw this take away** and start from the top.
 
+**The script sits beside the video, not under it.** On a desktop this step is two
+columns — the pictures on the left, the words on the right — because it is the one
+place two things have to be watched at once. The line being spoken is highlighted
+and scrolls itself as the video plays, both while recording and while playing a
+take back against it. The step is wider than the rest of the tool so the video does
+not shrink to make room, and on a narrow screen the two stack.
+
 Dead air is trimmed off the front of a take and a known 0.6s of silence is put
 back, so the first word is never clipped. Dead air is trimmed off the **end** as
 well — see [How long the finished video is](#how-long-the-finished-video-is).
@@ -611,9 +618,31 @@ The button is only live while the player is paused, because the playhead *is* th
 cut — there is nothing being guessed at. It says what it is about to do ("would
 end at 0:42, cutting 0:18") before you press it.
 
+**The trim is a queued job, and the step is covered while it runs.** It used to
+re-encode on the HTTP request, which is what Bill's "That video was not trimmed"
+was: a minute of 1080p takes longer than Heroku's 30 second router timeout, and
+the request also had to wait behind any render already in the queue, so the
+browser was handed a dead connection for a trim that was still running. Now the
+route accepts the trim, answers `202`, and the browser waits on the job the way it
+waits on a capture.
+
+While it runs, a cover sits over the whole review step: nothing can be sent,
+marked reviewed, copied, or taken back to recording, and the send button reads
+*Trimming…*. **Stop waiting** gets out of the wait — the trim carries on, and the
+video will be there in the Library a minute later. A trim that fails puts the
+reason on the job and the step back the way it was, with the original video
+untouched; the cut is written beside it and only renamed over it once ffmpeg has
+finished. ffmpeg's own last words are surfaced rather than a bare "that video was
+not trimmed".
+
 The cut is re-encoded rather than stream-copied. A stream copy cuts at the
 previous keyframe, which would leave up to a couple of seconds of whatever you
-wanted rid of. It writes over the finished file, so the watch link keeps working,
+wanted rid of.
+
+A playhead and ffprobe disagree by a frame or so, and a cut is not refused over
+that — the time is pulled just inside the end of the file instead. Only a genuine
+"there is nothing left to remove" is refused, and the button is dead in that state
+so the server is never asked for a cut it would decline. It writes over the finished file, so the watch link keeps working,
 and it **clears the review** — what you approved is not what the file is now, so
 send switches off until you have watched it again. Nothing shorter than three
 seconds, and trimming at the end is refused rather than re-encoding for nothing.
