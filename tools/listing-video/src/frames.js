@@ -16,6 +16,8 @@ function specForBeat(beat, context) {
     bg: context.bgUrl,
     caption: beat.caption || { headline: "", subline: "" },
     tooltip: tooltipFor(context.address),
+    // The header of the Neighborhood Explorer card names the house it is about.
+    address: context.address || null,
     tapping: false,
     hidePopup: false,
     card: null,

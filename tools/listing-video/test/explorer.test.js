@@ -353,8 +353,13 @@ test("the popup is filmed bigger than the frame it lands in, and at twice the pi
   const width = Number((card[0].match(/width:\s*(\d+)px/) || [])[1]);
   const height = Number((card[0].match(/height:\s*(\d+)px/) || [])[1]);
 
+  // The picture area is exactly the size the shot is taken at, so it maps one to
+  // one. The card itself is taller, because it also carries the popup's header.
+  const shot = (frame.match(/\.ne__shot\s*\{[^}]*\}/) || [""])[0];
+  const shotHeight = Number((shot.match(/height:\s*(\d+)px/) || [])[1]);
   assert.equal(width, TAB_VIEWPORT.width, "the card is the width the shot is taken at");
-  assert.equal(height, TAB_VIEWPORT.height, "and the height");
+  assert.equal(shotHeight, TAB_VIEWPORT.height, "and the picture area is its height");
+  assert.ok(height > shotHeight, "the card is taller than the picture, because of the header");
 
   // Bigger than the old 1340x764, and still inside a 1920x1080 frame.
   assert.ok(width > 1340, `the card is ${width} wide, which is not bigger than it was`);

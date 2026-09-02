@@ -33,9 +33,17 @@
       /* ---------- captured website ---------- */
       #bg { position: absolute; top: 0; left: 0; width: 1920px; display: block; }
 
+      /*
+       * The listing behind an explorer card is DIMMED, not bleached.
+       *
+       * This was rgba(255,255,255,0.5) - a white wash. The listing went pale and
+       * a white card sitting on it had no edge to see, so the popup read as a
+       * faint rectangle rather than something open on top of the page. A real
+       * modal darkens what is behind it.
+       */
       #scrim {
         position: absolute; inset: 0;
-        background: rgba(255, 255, 255, 0.5);
+        background: rgba(10, 22, 17, 0.55);
         opacity: 0;
         transition: none;
       }
@@ -105,12 +113,55 @@
        * what made the popup look small. The right edge stops short of the house
        * button in the corner.
        */
+      /*
+       * Neighborhood Explorer is drawn as the popup it is: a header with the
+       * brand and a way out, then the widget, inside a bordered card with a
+       * strong shadow. The shots are of the inner widget only (popup=true), so
+       * without this there is no header and no X anywhere in the video.
+       *
+       * Chrome only. No tabs and no data are invented here - everything inside
+       * the frame is the photograph of the real product.
+       */
       #card.card--ne {
-        left: 160px; top: 195px; width: 1600px; height: 700px;
+        /*
+         * content-box, so the width really is the width the shot is taken at and
+         * the border sits outside it. With the default border-box the picture was
+         * scaled by a percent to fit inside the border, which softened the text
+         * this change exists to sharpen.
+         */
+        box-sizing: content-box;
+        left: 150px; top: 168px; width: 1600px; height: 780px;
         background: #ffffff;
+        border: 1px solid rgba(12, 30, 22, 0.22);
+        border-radius: 20px;
+        box-shadow:
+          0 48px 120px rgba(4, 14, 9, 0.55),
+          0 0 0 1px rgba(255, 255, 255, 0.5) inset;
       }
       /* No tint or fade over the shot: the text in it has to stay readable. */
       #card.card--ne::after { content: none; }
+
+      .ne__head {
+        height: 80px; flex: 0 0 80px;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 26px; background: #ffffff;
+        border-bottom: 1px solid #e3e8e5;
+      }
+      .ne__brand { display: flex; align-items: center; gap: 13px; }
+      .ne__logo {
+        width: 38px; height: 38px; border-radius: 10px; background: #1f7a4d;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .ne__logo svg { width: 22px; height: 22px; }
+      .ne__title { font-size: 25px; font-weight: 700; color: #14503a; letter-spacing: -0.2px; }
+      .ne__sub { font-size: 17px; font-weight: 600; color: #64756c; margin-top: 1px; }
+      /* The way out of the popup, as the real one has. */
+      .ne__x {
+        width: 48px; height: 48px; border-radius: 12px;
+        border: 1px solid #d7ddd9; background: #fff;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .ne__x svg { width: 22px; height: 22px; }
 
       /* ===== School Explorer ===== */
       .se { padding: 26px 30px 0; height: 100%; }
@@ -201,7 +252,7 @@
 
       /* ===== Neighborhood Explorer: a photograph of the real product ===== */
       .ne__shot {
-        display: block; width: 100%; height: 100%;
+        display: block; width: 100%; height: 700px;
         object-fit: cover; object-position: top center;
         /* Taken at twice the size, so let the browser downsample it properly. */
         image-rendering: auto;
@@ -224,6 +275,9 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
         houseGreen:
           '<svg viewBox="0 0 24 24" fill="none" stroke="#1f7a4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
+        // The way out of the popup, in its header.
+        close:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#41504a" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>',
       };
 
       function esc(value) {
@@ -323,7 +377,26 @@
        * the tab chip, which left every tab showing Map and Summary.
        */
       function neCard(spec) {
-        return `<img class="ne__shot" src="${esc(spec.tabImage)}" alt="" />`;
+        /*
+         * The photograph of the real widget, with the popup's own chrome drawn
+         * around it: brand on the left, a way out on the right.
+         *
+         * The shots are taken of the inner widget (popup=true), so the header and
+         * the X are not in them. Without this the card was a white rectangle with
+         * no edge and no way out on screen.
+         */
+        return `
+          <div class="ne__head">
+            <div class="ne__brand">
+              <div class="ne__logo">${ICONS.house}</div>
+              <div>
+                <div class="ne__title">Neighborhood Explorer</div>
+                <div class="ne__sub">${esc(spec.address && spec.address.street ? spec.address.street : "")}</div>
+              </div>
+            </div>
+            <div class="ne__x">${ICONS.close}</div>
+          </div>
+          <img class="ne__shot" src="${esc(spec.tabImage)}" alt="" />`;
       }
 
       window.renderFrame = function renderFrame(spec) {

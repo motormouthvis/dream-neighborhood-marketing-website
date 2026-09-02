@@ -478,12 +478,31 @@ text is drawn at 2x and scaled down. Same layout, twice the detail.
 
 That height is measured, not guessed. At 1600 wide the widget lays its content out
 to about 664px whatever the viewport height, so a taller card only adds white
-space — and white space inside the card is most of what made the popup look small.
-The card's right edge stops short of the house button in the corner, and nothing
-is tinted or faded over it: the scrim that dims the listing is painted *before*
-the card, so it cannot wash it out.
+space — and white space inside the card is part of what made the popup look small.
 
-School Explorer keeps the size and position the approved v11 cuts used.
+#### It has to look like a popup, not a pale rectangle
+
+The listing behind an explorer card is **dimmed**. It used to be washed with
+`rgba(255, 255, 255, 0.5)` — white — which bleached the listing so that a white
+card sitting on it had no edge to see. On a light listing the popup disappeared
+into the page.
+
+Around the Neighborhood Explorer shot the video now draws the popup's own
+**chrome**: a border, a strong shadow, a header bar with the brand and the address
+being shown, and an **X** in the corner. The shots are of the inner widget
+(`popup=true`), so the real popup's header and close button are not in them — 
+without this there was no header and no way out anywhere in the video.
+
+That is chrome and nothing else. No tabs, no data and no Explorer features are
+invented: everything inside the frame is the photograph of the real product.
+
+**School Explorer keeps the size and position the approved v11 cuts used**, but it
+sits on the same dimmed listing now — the white wash was washing it out too, so
+the dim is shared.
+
+There is a test that renders a card over a white listing and measures the pixels:
+the listing has to get **darker**, the card has to stay bright, and the header and
+the X have to be there.
 
 #### Each tab is filmed in its own sections
 
