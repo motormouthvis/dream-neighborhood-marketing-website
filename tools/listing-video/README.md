@@ -837,6 +837,39 @@ always reports which one it used:
 
 If none are available the AI button is switched off and says so.
 
+### The shared lines are only spoken once
+
+Every AI-voice job used to send the **whole script** to ElevenLabs, so the same
+forty seconds of "here's the same page, with the Dream Neighborhood School
+Explorer…" was paid for again for every realtor. Only the greeting differs
+between customers.
+
+Each line is now kept on disk under a key made of **what was said and who said
+it**, so a second job on the same script and voice bills the greeting and nothing
+else. The job log says how many lines were reused and how many characters were
+actually billed, and the review step repeats it.
+
+It is kept **per line**, not as one run-together bed, and that is deliberate:
+
+- each line is still padded to its own scene length, so the picture timing is
+  untouched — only the raw speech is kept, and the padding is worked out per job;
+- a script that mentions the customer again halfway down simply misses the cache
+  for that line, with no special case and no risk of a cached line containing
+  somebody else's name;
+- editing one line on the Scripts page only re-bills that line.
+
+The key carries the **engine, the voice, the model and its settings**, so a cached
+ElevenLabs line can never be spliced onto a Piper or OpenAI track, and changing
+the voice or the words starts again. Tidying whitespace does not re-bill a line.
+Only ElevenLabs is kept — it is the one that charges by the character.
+
+Recording your own voice never touches any of this.
+
+**On Heroku the cache lives on the dyno's disk and goes when the dyno restarts**,
+so it saves within a working session rather than for ever. Nothing depends on it
+surviving: a miss is just the line being spoken again, and a cache directory that
+cannot be written costs money rather than breaking a video.
+
 ### Picking a male or female voice
 
 The voice is chosen **on the make-a-video form**, beside the from-address, not

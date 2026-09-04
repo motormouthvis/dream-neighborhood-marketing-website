@@ -702,6 +702,20 @@
 
     var bits = [job.template.name, job.result.voice.label, D.runtime(job.result.durationSeconds)];
     var text = bits.join(" \u00b7 ") + ".";
+    // What the AI voice cost, when it was used and lines were reused.
+    var voice = job.result.voice || {};
+    if (voice.reusedLines) {
+      text +=
+        " Reused " +
+        voice.reusedLines +
+        " shared line" +
+        (voice.reusedLines === 1 ? "" : "s") +
+        ", so only " +
+        Number(voice.billedCharacters || 0).toLocaleString() +
+        " of " +
+        Number(voice.scriptCharacters || 0).toLocaleString() +
+        " characters were billed.";
+    }
     if (job.result.capturedAddress) text += " Filmed on their listing for " + job.result.capturedAddress + ".";
     if (job.result.capturedPageUrl) text += " " + job.result.capturedPageUrl;
     if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");

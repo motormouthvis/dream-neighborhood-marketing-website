@@ -5,6 +5,7 @@ const fsp = require("fs/promises");
 const path = require("path");
 const config = require("./config");
 const voices = require("./voices");
+const voiceCache = require("./voice-cache");
 const { run } = require("./exec");
 
 // Enough lead-in that the first word is never clipped by a player that starts slow.
@@ -178,6 +179,13 @@ async function normalizeLoudness(inputFile, outFile) {
 /* AI voice providers - one professional female English voice          */
 /* ------------------------------------------------------------------ */
 
+/*
+ * What the voice sounds like. Named, because the cache key has to carry them:
+ * change either and every kept line has to be spoken again.
+ */
+const ELEVEN_MODEL = "eleven_multilingual_v2";
+const ELEVEN_SETTINGS = { stability: 0.45, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
+
 async function speakElevenLabs(text, outFile, workDir, voiceId) {
   const voice = String(voiceId || config.elevenLabsVoiceId);
   const response = await fetch(
@@ -191,8 +199,8 @@ async function speakElevenLabs(text, outFile, workDir, voiceId) {
       },
       body: JSON.stringify({
         text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.45, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
+        model_id: ELEVEN_MODEL,
+        voice_settings: ELEVEN_SETTINGS,
       }),
     }
   );
@@ -248,6 +256,40 @@ async function speak(engineId, text, outFile, workDir, voiceId) {
 }
 
 /**
+ * Say a line, or fetch it from the last time it was said.
+ *
+ * Only the words that carry the customer's name and company differ between jobs;
+ * everything else in a script is the same for everybody, and used to be paid for
+ * again every time. A line already spoken in this voice is read off the disk.
+ *
+ * Returns what happened, so the job log can say how much was actually billed.
+ */
+async function speakLine({ engine, text, outFile, workDir, voiceId }) {
+  if (!voiceCache.canCache(engine)) {
+    await speak(engine, text, outFile, workDir, voiceId);
+    return { billed: false, cached: false };
+  }
+
+  const key = voiceCache.keyFor({
+    engine,
+    voiceId,
+    text,
+    model: ELEVEN_MODEL,
+    settings: ELEVEN_SETTINGS,
+  });
+
+  const kept = voiceCache.find(key);
+  if (kept) {
+    await fsp.copyFile(kept, outFile);
+    return { billed: false, cached: true };
+  }
+
+  await speak(engine, text, outFile, workDir, voiceId);
+  await voiceCache.keep(key, outFile);
+  return { billed: true, cached: false };
+}
+
+/**
  * AI voice: one wav per beat, using a single engine for the whole script so two
  * different voices are never spliced together. Scene lengths come from the
  * template, stretched only when a line takes longer to say than the template
@@ -271,11 +313,23 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
       const pieces = [];
       const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
       const durations = [];
+      /* What this job actually cost, as against what the whole script would have. */
+      let reusedLines = 0;
+      let billedCharacters = 0;
+      const scriptCharacters = beats.reduce((sum, beat) => sum + voiceCache.charactersIn(beat.text), 0);
 
       pieces.push(lead);
       for (let index = 0; index < beats.length; index += 1) {
         const wav = path.join(workDir, `voice-${String(index).padStart(3, "0")}.wav`);
-        await speak(engine.id, beats[index].text, wav, workDir, speaking);
+        const said = await speakLine({
+          engine: engine.id,
+          text: beats[index].text,
+          outFile: wav,
+          workDir,
+          voiceId: speaking,
+        });
+        if (said.cached) reusedLines += 1;
+        if (said.billed) billedCharacters += voiceCache.charactersIn(beats[index].text);
         const spoken = await probeDuration(wav);
         // Keep the template's picture timing unless the line simply will not fit.
         const budget = beats[index].seconds - (index === 0 ? LEAD_SILENCE_SECONDS : 0);
@@ -294,6 +348,21 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
         }
       }
 
+      if (voiceCache.canCache(engine.id)) {
+        if (reusedLines) {
+          log(
+            `Reused ${reusedLines} of ${beats.length} lines already spoken in this voice - ` +
+              `built ${beats.length - reusedLines} (the personalised ones)`
+          );
+        } else {
+          log(`Built all ${beats.length} lines in this voice - one time, then they are reused`);
+        }
+        log(
+          `Billed ${billedCharacters.toLocaleString()} characters of the script's ` +
+            `${scriptCharacters.toLocaleString()}`
+        );
+      }
+
       const joined = await concatWavs(pieces, path.join(workDir, "voice-joined.wav"), workDir);
       /*
        * Each line was padded out to the length the template allowed for, so the
@@ -309,7 +378,15 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
         audioFile: finalTrack,
         durations,
         totalDuration: await probeDuration(finalTrack),
-        voice: { mode: "ai", engine: engine.id, label: heard, voiceId: speaking },
+        voice: {
+          mode: "ai",
+          engine: engine.id,
+          label: heard,
+          voiceId: speaking,
+          reusedLines,
+          billedCharacters,
+          scriptCharacters,
+        },
       };
     } catch (error) {
       lastError = error;
