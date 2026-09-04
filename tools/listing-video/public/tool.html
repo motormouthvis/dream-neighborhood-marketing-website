@@ -4,7 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Make a listing video - Dream Neighborhood (internal)</title>
+    <title>Listing Video Maker - Dream Neighborhood (internal)</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%231f7a4d'/></svg>"
+    />
     <link rel="stylesheet" href="/tools/listing-video/static/tool.css" />
   </head>
   <body>
@@ -13,6 +17,11 @@
         <span class="topbar__dot"></span>
         Listing Video Maker
       </div>
+      <nav class="tabs" id="tabs" hidden>
+        <button type="button" class="tab is-on" data-view="make">Make a video</button>
+        <button type="button" class="tab" data-view="library">Library</button>
+        <button type="button" class="tab" data-view="scripts">Scripts</button>
+      </nav>
       <div class="topbar__right">
         <span class="tag">Internal tool &middot; staging</span>
         <button type="button" id="signout" class="linkbtn" hidden>Sign out</button>
@@ -34,145 +43,254 @@
         </form>
       </section>
 
-      <!-- ================= the form ================= -->
-      <section id="app" hidden>
-        <h1 class="h1">Make a listing video</h1>
-        <p class="lede">
-          Fill this in, press <strong>Make video</strong>, and you get a link you can send to the customer.
-        </p>
+      <!-- ============================================================ -->
+      <!-- ===================== MAKE A VIDEO ========================= -->
+      <!-- ============================================================ -->
+      <section id="view-make" class="view" hidden>
+        <ol class="flow" id="flow">
+          <li data-step="form" class="is-on">1. Script and customer</li>
+          <li data-step="silent">2. Silent video</li>
+          <li data-step="record">3. Record and try it</li>
+          <li data-step="audio">4. Add audio to video</li>
+          <li data-step="review">5. Review, then send</li>
+        </ol>
 
-        <form id="form" class="stack" autocomplete="off">
-          <label class="field">
-            <span class="label">Customer first name</span>
-            <input class="input" id="firstName" name="firstName" placeholder="e.g. Vanessa" required />
-            <span class="hint">Used in the first line of the video and in the email.</span>
-          </label>
+        <!-- ---------- step 1 ---------- -->
+        <div id="step-form">
+          <h1 class="h1">Make a listing video</h1>
+          <p class="lede">
+            Pick a script, fill in the customer, and you get a silent video to record your voice over.
+          </p>
 
-          <label class="field">
-            <span class="label">Company name</span>
-            <input class="input" id="company" name="company" placeholder="e.g. DOMO Realty" required />
-          </label>
+          <form id="form" class="stack" autocomplete="off">
+            <fieldset class="field" id="templateField">
+              <legend class="label">Which script?</legend>
+              <span class="hint hint--above">
+                Pick one. This is required. Edit any of these on the <strong>Scripts</strong> tab.
+              </span>
+              <div class="choices choices--big" id="templateChoices" role="radiogroup" aria-required="true"></div>
+              <p class="pickfirst" id="templatePrompt">Pick a script to turn on <strong>Make the silent video</strong>.</p>
+            </fieldset>
 
-          <label class="field">
-            <span class="label">Website URL</span>
-            <input class="input" id="websiteUrl" name="websiteUrl" placeholder="e.g. domorealty.com" required />
-            <span class="hint">Their realtor or brokerage site. We open it and find a live listing to film.</span>
-          </label>
+            <label class="field">
+              <span class="label">Customer first name</span>
+              <input class="input" id="firstName" name="firstName" placeholder="e.g. Vanessa" required />
+              <span class="hint">Goes into <code>{firstName}</code> in the script and into the email.</span>
+            </label>
 
-          <label class="field">
-            <span class="label">Customer email</span>
-            <input class="input" id="customerEmail" name="customerEmail" type="email" placeholder="e.g. vanessa@domorealty.com" required />
-          </label>
+            <label class="field">
+              <span class="label">Company name</span>
+              <input class="input" id="company" name="company" placeholder="e.g. DOMO Realty" required />
+              <span class="hint">Goes into <code>{company}</code> in the script.</span>
+            </label>
 
-          <!-- ===== video type: required, no default ===== -->
-          <fieldset class="field" id="videoTypeField">
-            <legend class="label">Which video?</legend>
-            <span class="hint hint--above">Pick one. This is required.</span>
-            <div class="choices choices--big" role="radiogroup" aria-required="true">
-              <label class="choice choice--big">
-                <input type="radio" name="videoType" value="school" />
-                <span class="choice__box">
-                  <span class="choice__mark" aria-hidden="true"></span>
-                  <span class="choice__text">
-                    <strong class="choice__title">School only</strong>
-                    <span class="choice__desc">School Explorer only. Neighborhood Explorer is never mentioned.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="choice choice--big">
-                <input type="radio" name="videoType" value="school-neighborhood" />
-                <span class="choice__box">
-                  <span class="choice__mark" aria-hidden="true"></span>
-                  <span class="choice__text">
-                    <strong class="choice__title">School + Neighborhood</strong>
-                    <span class="choice__desc">School Explorer first, then the Neighborhood Explorer tabs.</span>
-                  </span>
-                </span>
-              </label>
-            </div>
-            <p class="pickfirst" id="videoTypePrompt">Pick a video type to turn on <strong>Make video</strong>.</p>
-          </fieldset>
+            <label class="field">
+              <span class="label">Website URL</span>
+              <input class="input" id="websiteUrl" name="websiteUrl" placeholder="e.g. domorealty.com" required />
+              <span class="hint" id="websiteHint"></span>
+            </label>
 
-          <!-- ===== voice ===== -->
-          <fieldset class="field">
-            <legend class="label">Voice</legend>
-            <div class="choices" role="radiogroup">
-              <label class="choice">
-                <input type="radio" name="voiceMode" value="ai" checked />
-                <span class="choice__box">
-                  <span class="choice__mark" aria-hidden="true"></span>
-                  <span class="choice__text">
-                    <strong class="choice__title">AI voice</strong>
-                    <span class="choice__desc" id="aiVoiceNote">Professional female voice.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="choice">
-                <input type="radio" name="voiceMode" value="overdub" />
-                <span class="choice__box">
-                  <span class="choice__mark" aria-hidden="true"></span>
-                  <span class="choice__text">
-                    <strong class="choice__title">Overdub (your voice)</strong>
-                    <span class="choice__desc">Record here, or upload an mp3, wav or m4a.</span>
-                  </span>
-                </span>
-              </label>
+            <label class="field">
+              <span class="label">Listing page URL <span class="opt">optional</span></span>
+              <input class="input" id="listingUrl" name="listingUrl" placeholder="Paste one of their listing pages" />
+              <span class="hint">
+                Leave this empty and we go find one. Fill it in when you already know the exact listing you want, or
+                after a failed search.
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="label">Customer email</span>
+              <input class="input" id="customerEmail" name="customerEmail" type="email" placeholder="e.g. vanessa@domorealty.com" required />
+            </label>
+
+            <fieldset class="field">
+              <legend class="label">Send from</legend>
+              <div class="choices" role="radiogroup" id="fromChoices"></div>
+            </fieldset>
+
+            <!-- Filled in from the server; never carries the API key. -->
+            <div class="usage" id="voiceUsage" hidden>
+              <span class="label">ElevenLabs</span>
+              <p class="usage__line" id="usageLine"></p>
+              <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
+              <p class="hint" id="usageNote"></p>
             </div>
 
-            <div class="overdub" id="overdub" hidden>
-              <div class="overdub__row">
-                <button type="button" class="btn btn--dark" id="recBtn">Start recording</button>
-                <span class="overdub__timer" id="recTimer">0:00</span>
-                <span class="overdub__state" id="recState">Not recording</span>
-              </div>
-              <audio id="recPlayback" class="overdub__player" controls hidden></audio>
-              <div class="overdub__row">
-                <label class="btn btn--ghost">
-                  Upload a file
-                  <input type="file" id="audioFile" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a" hidden />
-                </label>
-                <span class="overdub__state" id="fileState">No file chosen</span>
-              </div>
-              <details class="teleprompter">
-                <summary>Read the script out loud</summary>
-                <p class="hint">Pick a video type first, then this shows the exact words to read.</p>
-                <pre id="scriptText" class="scriptbox">Pick a video type above.</pre>
-              </details>
-            </div>
-          </fieldset>
+            <!-- Only shown when the ElevenLabs account has voices to offer. -->
+            <fieldset class="field" id="voiceField" hidden>
+              <legend class="label">AI voice, if you use it</legend>
+              <div class="choices" role="radiogroup" id="voiceChoices"></div>
+              <span class="hint">
+                Only matters if you pick the AI voice instead of recording your own. Recording is still the normal way.
+              </span>
+            </fieldset>
 
-          <!-- ===== send from ===== -->
-          <fieldset class="field">
-            <legend class="label">Send from</legend>
-            <div class="choices" role="radiogroup" id="fromChoices"></div>
-          </fieldset>
+            <p class="error" id="form-error" hidden></p>
 
-          <p class="error" id="form-error" hidden></p>
+            <button class="btn btn--primary btn--big" type="submit" id="makeBtn" disabled>Make the silent video</button>
+            <p class="hint hint--center" id="makeHint">Pick a script to turn this on.</p>
+          </form>
+        </div>
 
-          <button class="btn btn--primary btn--big" type="submit" id="makeBtn" disabled>Make video</button>
-          <p class="hint hint--center" id="makeHint">Pick a video type to turn this on.</p>
-        </form>
-
-        <!-- ===== progress ===== -->
-        <section class="panel" id="progress" hidden>
-          <h2 class="h2">Working on it</h2>
+        <!-- ---------- working ---------- -->
+        <section class="panel" id="step-progress" hidden>
+          <h2 class="h2" id="progressTitle">Working on it</h2>
           <ul class="steps" id="steps"></ul>
-          <p class="hint">This usually takes a couple of minutes. You can leave this page open.</p>
+          <p class="hint" id="progressElapsed"></p>
+          <p class="hint">
+            Finding a listing takes up to a minute, and the video a minute or two after that. You can leave this page
+            open.
+          </p>
         </section>
 
-        <!-- ===== result ===== -->
-        <section class="panel" id="result" hidden>
-          <h2 class="h2">Your video is ready</h2>
-          <p class="lede" id="resultSummary"></p>
-          <video id="player" class="player" controls playsinline preload="metadata"></video>
+        <!-- ---------- step 2 and 3: silent video, then record over it ---------- -->
+        <section class="panel" id="step-record" hidden>
+          <h2 class="h2">Watch it, then record your voice over it</h2>
+          <p class="lede" id="silentSummary"></p>
+          <p class="notice" id="silentNotes" hidden></p>
+
+          <!-- Two columns on a desktop: the pictures on the left, the words on the
+               right, so whoever is recording can watch both at once. -->
+          <div class="record-split">
+            <div class="record-split__main">
+          <video id="silentPlayer" class="player" controls playsinline muted preload="auto"></video>
+
+          <div class="recorder">
+            <div class="recorder__row">
+              <button type="button" class="btn btn--primary" id="recBtn">Record while it plays</button>
+              <span class="recorder__timer" id="recTimer">0:00</span>
+              <span class="recorder__state" id="recState">
+                Press record. The video restarts from the beginning and you talk along with it.
+              </span>
+            </div>
+            <p class="hint">
+              Your microphone only starts once the video does, so the words line up with the pictures. Dead air at the
+              front of a take is trimmed, and every video keeps 0.6s of silence at the start so the first word is not
+              clipped.
+            </p>
+
+            <div id="takeWrap" class="take" hidden>
+              <h3 class="take__title">Your take</h3>
+              <p class="hint hint--above" id="takeAbout">
+                Nothing is burned into the video yet. Play the two together to hear whether your words land on the right
+                pictures, and record again as many times as you like.
+              </p>
+              <div class="recorder__row">
+                <button type="button" class="btn btn--dark" id="playBothBtn">Play the video and this take together</button>
+                <span class="recorder__state" id="syncState"></span>
+              </div>
+              <label class="take__label">The take on its own</label>
+              <audio id="takePlayback" class="recorder__player" controls></audio>
+              <div class="recorder__row recorder__row--wrap">
+                <button type="button" class="btn btn--ghost" id="againTakeBtn">Record again</button>
+                <button type="button" class="btn btn--ghost" id="dropTakeBtn">Throw this take away</button>
+              </div>
+              <hr class="take__rule" />
+              <p class="hint hint--above">
+                Happy with it? This is the point where the voice gets burned onto the pictures.
+              </p>
+              <button type="button" class="btn btn--primary btn--big" id="keepTakeBtn">
+                Keep this take and add the audio to the video
+              </button>
+            </div>
+
+            <details class="teleprompter">
+              <summary>Other ways to add the voice</summary>
+              <div class="recorder__row recorder__row--wrap">
+                <label class="btn btn--ghost">
+                  Upload an audio file
+                  <input
+                    type="file"
+                    id="audioFile"
+                    accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,audio/webm,.mp3,.wav,.m4a,.webm"
+                    hidden
+                  />
+                </label>
+                <button type="button" class="btn btn--ghost" id="aiBtn">Use the AI voice instead</button>
+                <span class="recorder__state" id="fileState"></span>
+              </div>
+              <p class="hint">
+                An uploaded file becomes a take like any other, so you can play it against the pictures before you
+                commit to it. The AI voice skips straight to adding the audio, and still has to pass the final review.
+              </p>
+              <p class="hint" id="aiNote"></p>
+              <p class="hint">
+                The lines every customer hears are only ever spoken once per voice and reused after that, so a video
+                costs the greeting and nothing else. Editing a line on the Scripts page, or picking a different voice,
+                means that line gets spoken again.
+              </p>
+            </details>
+
+            <p class="error" id="recError" hidden></p>
+          </div>
+            </div>
+
+            <aside class="record-split__script" id="promptWrap">
+              <h3 class="script__title">The words, and how long each picture is</h3>
+              <p class="hint">The line you are on is highlighted and scrolls itself as the video plays.</p>
+              <ol class="beats" id="beatList"></ol>
+            </aside>
+          </div>
+        </section>
+
+        <!-- ---------- step 5: final review of the muxed file, then send ---------- -->
+        <section class="panel" id="step-review" hidden>
+          <h2 class="h2">Final review: picture and voice as one video</h2>
+          <p class="lede" id="reviewSummary"></p>
+
+          <video id="reviewPlayer" class="player" controls playsinline preload="metadata"></video>
+
+          <p class="notice" id="reviewGate">
+            This is the finished file, exactly what the customer will see. Watch it through, or tick the box below.
+            <strong>Send stays off until you have reviewed it.</strong>
+          </p>
+          <label class="check">
+            <input type="checkbox" id="reviewedBox" />
+            <span>I reviewed this video and it is good to send.</span>
+          </label>
+
+          <!-- While a trim runs this covers the step, so nothing can be sent,
+               reviewed or copied until the shorter file is on the player. -->
+          <div class="working" id="trimOverlay" hidden>
+            <div class="working__box" role="alertdialog" aria-modal="true" aria-labelledby="trimWorkingTitle">
+              <h3 class="h3" id="trimWorkingTitle">Trimming the video</h3>
+              <p class="hint" id="trimWorkingWhat"></p>
+              <p class="hint" id="trimWorkingElapsed"></p>
+              <p class="hint">
+                It is re-encoded so the cut lands where you paused it, which takes a moment on a 1080p video.
+                Sending stays off until the shorter file is back and you have watched it.
+              </p>
+              <button type="button" class="btn btn--ghost" id="trimStopWaitingBtn">Stop waiting</button>
+            </div>
+          </div>
+
+          <div class="trim" id="trimBox">
+            <span class="label">Ending too late?</span>
+            <p class="hint">
+              The video is as long as the silent cut you approved, so the picture holds after the voice stops.
+              To end it sooner, pause the player exactly where you want it to finish and trim.
+              This cannot be undone.
+            </p>
+            <div class="recorder__row recorder__row--wrap">
+              <button type="button" class="btn btn--ghost" id="trimBtn" disabled>Trim Remainder of Video</button>
+              <span class="hint" id="trimHint">Pause the player to choose the ending.</span>
+            </div>
+            <p class="ok" id="trimOk" hidden></p>
+            <p class="error" id="trimError" hidden></p>
+          </div>
+
+          <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
+            <button type="button" class="btn btn--ghost" id="redoAudioBtn">Back to recording</button>
+          </div>
 
           <div class="share">
-            <span class="label">Shareable link</span>
+            <span class="label">Public watch link</span>
             <div class="share__row">
               <input class="input" id="shareLink" readonly />
               <button type="button" class="btn btn--dark" id="copyBtn">Copy link</button>
             </div>
-            <p class="hint">Anyone with this link can play the video. No sign-in needed.</p>
+            <p class="hint">Anyone with this link can play it. No sign-in, no Loom.</p>
           </div>
 
           <div class="share">
@@ -180,30 +298,131 @@
             <div class="share__row">
               <input class="input" id="emailTo" type="email" />
               <select class="input input--select" id="emailFrom"></select>
-              <button type="button" class="btn btn--primary" id="sendBtn">Send email</button>
+              <button type="button" class="btn btn--primary" id="sendBtn" disabled>Send email</button>
             </div>
             <p class="notice" id="mailNotice" hidden></p>
             <p class="ok" id="sendOk" hidden></p>
             <p class="error" id="sendError" hidden></p>
             <details class="teleprompter" id="draftWrap" hidden>
-              <summary>Copy the email text instead</summary>
+              <summary>Copy the email text and send it yourself</summary>
               <pre class="scriptbox" id="draftText"></pre>
               <button type="button" class="btn btn--ghost" id="copyDraft">Copy email text</button>
             </details>
           </div>
 
-          <button type="button" class="btn btn--ghost" id="againBtn">Make another video</button>
+          <button type="button" class="btn btn--ghost" id="againBtn" style="margin-top: 24px">Make another video</button>
         </section>
 
-        <!-- ===== failure ===== -->
-        <section class="panel panel--bad" id="failed" hidden>
+        <!-- ---------- failure ---------- -->
+        <section class="panel panel--bad" id="step-failed" hidden>
           <h2 class="h2">That did not finish</h2>
           <p id="failedWhy"></p>
-          <button type="button" class="btn btn--ghost" id="retryBtn">Back to the form</button>
+          <div id="retryListing" hidden>
+            <label class="field" style="margin-top: 18px">
+              <span class="label">Paste one listing URL and try again</span>
+              <input class="input" id="retryListingUrl" placeholder="https://their-site.com/listings/123-main-st" />
+              <span class="hint">Use a listing that does not already have School Explorer or Neighborhood Explorer on it.</span>
+            </label>
+            <button type="button" class="btn btn--primary" id="retryCaptureBtn" style="margin-top: 14px">
+              Try that listing
+            </button>
+          </div>
+          <button type="button" class="btn btn--ghost" id="retryBtn" style="margin-top: 18px">Back to the form</button>
         </section>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- ======================== LIBRARY =========================== -->
+      <!-- ============================================================ -->
+      <section id="view-library" class="view" hidden>
+        <h1 class="h1">Video library</h1>
+        <p class="lede">Every video made on this box. Play it, copy the link, send it, or delete it for good.</p>
+        <p class="error" id="libError" hidden></p>
+        <div id="libList" class="cards"></div>
+        <p class="hint" id="libEmpty" hidden>No videos yet. Make one on the <strong>Make a video</strong> tab.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- ======================== SCRIPTS =========================== -->
+      <!-- ============================================================ -->
+      <section id="view-scripts" class="view" hidden>
+        <div id="scriptsList">
+          <h1 class="h1">Scripts</h1>
+          <p class="lede">
+            Every script is a file on this box that you can edit here. A script is a list of beats: the words you say,
+            an optional caption for the top bar, how long that picture should be, and which scene it is.
+          </p>
+          <div class="recorder__row recorder__row--wrap" style="margin-top: 22px">
+            <button type="button" class="btn btn--primary" id="newTemplateBtn">New script</button>
+            <button type="button" class="btn btn--ghost" id="restoreDefaultsBtn">Put the shipped scripts back</button>
+          </div>
+          <p class="error" id="scriptsError" hidden></p>
+          <p class="ok" id="scriptsOk" hidden></p>
+          <div id="templateList" class="cards"></div>
+        </div>
+
+        <!-- ---------- editor ---------- -->
+        <div id="scriptsEditor" hidden>
+          <h1 class="h1" id="editorTitle">Edit script</h1>
+          <p class="lede" id="editorSub"></p>
+
+          <div class="stack">
+            <label class="field">
+              <span class="label">Name</span>
+              <input class="input" id="tplName" />
+            </label>
+
+            <fieldset class="field">
+              <legend class="label">Which explorers does it show?</legend>
+              <div class="choices" id="tplExplorers" role="radiogroup"></div>
+              <span class="hint">
+                School Explorer is always the first explorer on screen. Neighborhood Explorer beats are only allowed in
+                the second option, and only after School Explorer.
+              </span>
+            </fieldset>
+
+            <fieldset class="field">
+              <legend class="label">What should their listing already have on it?</legend>
+              <div class="choices" id="tplListingExplorer" role="radiogroup"></div>
+              <span class="hint">
+                This decides which of their listings gets filmed. A before-and-after pitch needs a listing with nothing
+                on it yet; an upgrade pitch wants one that already has School Explorer.
+              </span>
+            </fieldset>
+
+            <label class="field">
+              <span class="label">Notes <span class="opt">optional</span></span>
+              <textarea class="input" id="tplNotes" rows="2"></textarea>
+              <span class="hint">For whoever edits this next.</span>
+            </label>
+
+            <div class="field">
+              <span class="label">Beats</span>
+              <span class="hint hint--above">
+                Use <code>{firstName}</code> and <code>{company}</code> anywhere in the words or a caption. Captions sit
+                in the <strong>top</strong> bar only - a bottom bar would cover the house button.
+              </span>
+              <div id="beatEditor"></div>
+              <button type="button" class="btn btn--ghost" id="addBeatBtn" style="margin-top: 14px">Add a beat</button>
+              <p class="hint" id="beatTotal"></p>
+            </div>
+
+            <p class="error" id="editorError" hidden></p>
+            <p class="ok" id="editorOk" hidden></p>
+
+            <div class="recorder__row recorder__row--wrap">
+              <button type="button" class="btn btn--primary" id="saveTemplateBtn">Save script</button>
+              <button type="button" class="btn btn--ghost" id="cancelTemplateBtn">Back to all scripts</button>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
-    <script src="/tools/listing-video/static/tool.js"></script>
+    <script src="/tools/listing-video/static/js/core.js"></script>
+    <script src="/tools/listing-video/static/js/maker.js"></script>
+    <script src="/tools/listing-video/static/js/library.js"></script>
+    <script src="/tools/listing-video/static/js/scripts-page.js"></script>
+    <script src="/tools/listing-video/static/js/boot.js"></script>
   </body>
 </html>

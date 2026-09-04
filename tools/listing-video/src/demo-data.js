@@ -1,13 +1,11 @@
 "use strict";
 
 /**
- * The demo neighborhood shown inside the School Explorer / Neighborhood
- * Explorer cards. This is the same demo area used in the approved reference
- * video, so both cards always agree with each other.
+ * The demo neighborhood shown inside the School Explorer card, which is the
+ * same demo area used in the approved reference video.
  *
- * The listing behind the card is the customer's own page, and the popup tooltip
- * uses the address auto-detected on that page. Only the card contents come from
- * here.
+ * The Neighborhood Explorer card no longer uses any of this: its tabs are
+ * photographed from the live product at the listing's own address.
  */
 
 const DEMO_NEIGHBORHOOD = {
@@ -106,28 +104,63 @@ const DEMO_SCHOOLS = [
   },
 ];
 
+/*
+ * The seven chips, left to right, spelled as the product spells them.
+ *
+ * "Map and Summary" is the word "and". "Housing & Market Trends" and
+ * "Walk & Bike" are ampersands. Getting that wrong means the chip is never
+ * found, so the spelling here is not cosmetic.
+ *
+ * "Ask AI" is not one of these and is never walked.
+ */
 const NE_TABS = [
   "Map and Summary",
   "Demographics",
   "Schools",
   "Housing & Market Trends",
   "Commutes",
-  "Mobility",
-  "Points of Interest",
+  "Walk & Bike",
+  "What's Nearby",
 ];
 
-const NE_SUMMARY = {
-  stats: [
-    { icon: "income", value: "$149,438", label: "Household Income" },
-    { icon: "home", value: "$529,843", label: "Median Home Price" },
-    { icon: "rent", value: "$1,640", label: "Median Rent" },
-    { icon: "owners", value: "64%", label: "Occupied by owners" },
-  ],
-  bars: [
-    { label: "Has College Degree", percent: 53, tone: "dark" },
-    { label: "Finished High School", percent: 95, tone: "light" },
-    { label: "Employed", percent: 63, tone: "dark" },
-  ],
+/*
+ * What each chip used to be called, and the internal key that did not change.
+ *
+ * Mobility became "Walk & Bike" and Points of Interest became "What's Nearby",
+ * but data-view and the switch ids stayed as they were, so the key is the
+ * reliable way in when a label is being flaky. Scripts written against the old
+ * names keep working.
+ */
+const NE_TAB_ALIASES = {
+  "Walk & Bike": { key: "mobility", wasCalled: ["Mobility", "Walk and Bike"] },
+  "What's Nearby": { key: "points-of-interest", wasCalled: ["Points of Interest", "POI"] },
+  "Map and Summary": { key: "map-and-summary", wasCalled: ["Map & Summary", "Summary"] },
+  Demographics: { key: "demographics", wasCalled: [] },
+  Schools: { key: "schools", wasCalled: [] },
+  "Housing & Market Trends": { key: "housing-and-market-trends", wasCalled: ["Housing and Market Trends", "Market Trends"] },
+  Commutes: { key: "commutes", wasCalled: ["Commute"] },
 };
 
-module.exports = { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS, NE_SUMMARY };
+/** The current chip name for whatever a script called it. */
+function canonicalTabName(name) {
+  const wanted = String(name == null ? "" : name).trim();
+  if (!wanted) return "";
+  const tidy = (value) => value.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+  const target = tidy(wanted);
+  for (const tab of NE_TABS) {
+    if (tidy(tab) === target) return tab;
+    const alias = NE_TAB_ALIASES[tab];
+    if (alias && alias.wasCalled.some((old) => tidy(old) === target)) return tab;
+    if (alias && tidy(alias.key) === target) return tab;
+  }
+  return wanted;
+}
+
+/*
+ * There is no stand-in for the Neighborhood Explorer's tab contents any more.
+ * Each tab beat is a screenshot of the live product at the listing's own
+ * address - see src/explorer.js. NE_TABS is only the official order of the tabs
+ * to walk.
+ */
+
+module.exports = { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS, NE_TAB_ALIASES, canonicalTabName };

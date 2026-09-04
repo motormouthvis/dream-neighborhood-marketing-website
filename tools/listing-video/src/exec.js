@@ -2,6 +2,17 @@
 
 const { spawn } = require("child_process");
 
+// ffmpeg prints its version and its whole build configuration to stderr before
+// it gets to the actual problem, which buries the one line worth reading.
+const BANNER = /^(ffmpeg|ffprobe) version|^\s+(built with|configuration:|lib(avutil|avcodec|avformat|avdevice|avfilter|swscale|swresample|postproc))/;
+
+function meaningfulStderr(stderr) {
+  const lines = String(stderr)
+    .split("\n")
+    .filter((line) => line.trim() && !BANNER.test(line));
+  return lines.slice(-6).join("\n").slice(-600);
+}
+
 function run(command, args, { input, cwd, timeout = 180000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -30,8 +41,10 @@ function run(command, args, { input, cwd, timeout = 180000 } = {}) {
     child.on("close", (code) => {
       finished = true;
       clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${command} exited ${code}: ${stderr.slice(-1200) || stdout.slice(-600)}`));
+      if (code === 0) return resolve({ stdout, stderr });
+      const error = new Error(`${command} exited ${code}: ${meaningfulStderr(stderr) || stdout.slice(-400)}`);
+      error.stderr = stderr;
+      return reject(error);
     });
 
     if (input !== undefined) child.stdin.end(input);

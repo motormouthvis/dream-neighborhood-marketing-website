@@ -1,71 +1,940 @@
 # Listing Video Maker (internal, staging only)
 
-A one-screen internal tool for marketing. Myles types in four fields, picks a
-video type and a voice, presses **Make video**, and gets a shareable link he can
-send to a realtor or brokerage.
+An internal tool for marketing. Bill and Myles pick a script, fill in the
+customer, record their own voice over a silent video, hear it against the
+pictures, add it to the video, review the finished file, and send a shareable
+link.
 
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
-static site build, and it does not touch any Dream Neighborhood product code.
-Do not put it in front of customers on production unless Bill says go.
+static site build, and it does not touch any Dream Neighborhood product code. No
+`_redirects`, `index.html` or `styles.css` changes, and no `/popup/{address}`
+routes. Do not put it in front of customers on production unless Bill says go.
 
 ---
 
-## What it does
+## The flow
 
-1. Opens the realtor or brokerage website that was typed in, finds a live
-   listing page if it can, and screenshots it at 1920x1080. If no live listing
-   turns up, it screenshots the homepage instead and says so, so Myles is never
-   stuck with nothing.
-2. Voices the approved script — either the built-in professional female AI voice,
-   or Myles' own overdub (recorded in the browser or uploaded).
-3. Draws one 1920x1080 still per line: the customer's page with the green house
-   popup in the bottom right, then the free School Explorer card, and for the
-   School + Neighborhood video the Neighborhood Explorer card in the same spot.
-   Captions sit in a **top** bar only — a bottom bar would cover the popup button.
-4. Stitches the stills and the voice into an mp4 with ffmpeg.
-5. Publishes a public watch page at `/v/{id}` that anyone with the link can play.
+Three tabs: **Make a video**, **Library**, **Scripts**.
 
-## The two videos
+### 1. Pick a script
 
-Myles has to pick one; there is no default and **Make video** stays switched off
-until he does.
+Every script is a file on this box, editable from the **Scripts** tab. Three ship
+by default:
 
-| Choice | What is in it |
+| Script | Who it is for | What is in it |
+| --- | --- | --- |
+| `vanessa-se-only-v11` | A new customer | School Explorer only. Neighborhood Explorer is never mentioned. |
+| `vanessa-se-ne-v11` | A new customer | School Explorer first, then the seven Neighborhood Explorer tabs. |
+| `se-to-ne-upgrade` | Somebody who **already has** the free School Explorer | Opens on their listing with School Explorer on it, then the same button becomes Neighborhood Explorer and walks every tab in order. |
+
+The line about the same button upgrading plays on a **`listing-tap`** beat, so the
+house button is in frame and being pressed while the words are said, and the
+Neighborhood Explorer popup arrives from the button rather than from nowhere. It
+used to play over a School Explorer card, which covers the button — so the button
+the line is about was never seen. Same words, different scene.
+
+The first two are the approved v11 videos and are a before-and-after: they need a
+listing with nothing on it yet. The upgrade script is the opposite — it wants a
+listing that already has School Explorer, because that is the customer it is
+talking to. Each script says which it needs, and capture obeys it.
+
+### 2. Fill in the customer
+
+First name, company, website URL, customer email. There is also an optional
+**Listing page URL** for when you already know the exact listing you want.
+
+### 3. The tool finds a listing detail page
+
+It has to be a listing **detail** page: one property, with its street address,
+price, beds, baths and photos of that house. The hero is the house, not a city
+skyline with "Search Homes" buttons over it.
+
+These are never filmed, whatever else is on them:
+
+- the homepage
+- a city or neighbourhood landing page
+- a market report or home-valuation page
+- a blog, about, contact, agents or team page
+- a search form, a map or a results grid
+- a bare listings index
+
+Getting this wrong is what produced two bad videos, so the bar is deliberately
+high. A page only counts as one listing when **both** of these hold:
+
+1. **The page says which house it is about.** The address has to come from the
+   page's own structured data, a heading, or an element marked up as the
+   listing's address. An address merely found somewhere in the running text does
+   not count, because that is usually the office address in the footer — that is
+   where "2135 Bellflower Blvd" on Bill's video came from. An address belonging
+   to an agent or an organisation in structured data is ignored for the same
+   reason.
+2. **It carries at least two things only a listing page has.** Structured data
+   describing a home at that address; beds, baths and a price or size together in
+   one block; an MLS number; two or more listing detail fields such as Year
+   Built, Lot Size, Property Type or Days on Market; a price alongside beds and
+   baths. Photos only count when there is a spec row beside them.
+
+Photos plus the words "bed" and "bath" somewhere in the copy used to be enough.
+It is not: a city landing page has both.
+
+What it does about an Explorer already being on the page depends on the script:
+
+| The script needs | What capture does |
 | --- | --- |
-| **School only** | School Explorer only. Neighborhood Explorer is never mentioned. |
-| **School + Neighborhood** | School Explorer first, then the Neighborhood Explorer tabs. |
+| a listing with no Explorer on it yet | If the one listing it opens already has one, it refuses — and points at the *SE to NE upgrade* script, since a customer who already has School Explorer is that pitch rather than a dead end. It does not go looking through more listings. |
+| a listing that already has School Explorer | Uses the one listing it opens. If that listing does not have School Explorer yet, the video says School Explorer was drawn on for the opening shot. To target a listing that really has it, paste its URL. |
 
-The narration lives in `src/scripts.js`. It only makes claims that were already
-approved. Do not add product claims, prices, or features there.
+Both of those used to look through several listings to find the right one. They
+cannot any more — see [the account wall](#the-account-wall).
+
+The walk is up to three clicks, and ends at the first listing it opens: their
+site, then a listings or homes page, then the house. Links are ranked, so a concrete listing URL like
+`/listings/123-main-st` on a card showing a price, beds and baths and a photo is
+tried before a link to another index. Pages that are not listings still get
+harvested for links, because that is how you get from a homepage to a listing —
+missing that hop is what left capture stuck on the homepage.
+
+Links are matched on the **path**, never the whole URL. `redwagonteam.com`
+contains "team", and testing the whole URL against the exclusion list threw away
+every link on that site.
+
+**One listing, and a minute.** Exactly **one listing detail page** is opened per
+video. IDX sites count how many listings a visitor has looked at and stop showing
+them after a few, so this does not go poking through three or eight of them.
+Homepages, listings indexes and search pages are not listing views and do not
+count against that one.
+
+The whole search is capped at 60 seconds. When the budget runs out it refuses and
+asks for a listing URL rather than wandering. Progress lines say which page is
+being checked and how long is left, so a wait is never a silent hang.
+
+#### A pasted listing URL is taken at its word
+
+If you paste a listing URL, that one page is opened and nothing else: cookies
+accepted, screenshot, done. No other listing links are followed from it.
+
+A URL is treated as one house on its **shape alone** — `/idx/details/listing/...`,
+`/listing/...`, `/listings/123-main-st`, `/properties/listing/...`, `/property/...`,
+`/homes/...`. No search or index page looks like that, and somebody who pastes one
+has said exactly which house they mean. So the page furniture cannot overrule
+them: an IDX details page carries the site's own search box in its header, a
+neighbourhood map in the middle of the page and often a "See school ratings near
+&lt;address&gt;" widget, and none of that makes it a page of search results.
+
+The page this was checked against, opened with no login,
+`andyharrisrealestate.idxbroker.com/idx/details/listing/b001/114051774`, is one
+house: 1908 SW MILES ST, Portland, OR 97219, $560,000, 3 bed, 2 bath, 1,502 sq ft,
+listing ID 114051774, a gallery of about 44 photos, branded FORIS / eXp. No cookie
+banner and no account wall. It is filmed as it is.
+
+It still has to be free of an [account wall](#the-account-wall), free of
+[our own Explorer](#which-listing-gets-filmed) and free of overlays. Those are
+about whether the page can be filmed, not about which page you meant.
+
+A pasted listing is also loaded **with its photos on the first pass**, so it is
+fetched once. Loading it lean and then again for the shutter costs a second
+listing view on a site that counts them, and it is the repeat hit that gets
+noticed: Andy Harris's IDX answered the first request with a 200 and the second
+with a 403.
+
+Two things had this refusing URLs Bill had pasted himself:
+
+- `/idx/` was in the pattern for "this URL looks like a search", which condemned
+  every page on an idxbroker-hosted site, details pages included. The IDX search
+  paths — `/idx/search`, `/idx/results`, `/idx/map`, `/idx/city` and so on — are
+  named individually now.
+- street types only matched in mixed case, so the heading
+  `1908 SW MILES ST, Portland, OR 97219` yielded no address at all and an address
+  from the "Similar Listings" rail further down the page was used instead. IDX
+  headings shout, so both spellings are matched.
+
+Two more things an IDX heading does, both of which put the wrong place in the
+video:
+
+- **A road named by a number.** `252 COUNTY RD 156` came out as `252 County Rd`,
+  because the pattern stopped at the street type. Numbered rural roads are matched
+  first now, so `Highway 50 W`, `FM 1960 Rd W` and `State Route 9 N` parse too.
+- **A state spelled out.** `ABIQUIU, NEW MEXICO 87510` was not recognised, because
+  only two-letter codes were accepted, so the town fell through to whatever the
+  page said elsewhere — `Placitas, NM 87043`, the agent's own patch, 150 miles from
+  the house and where the Explorer would have been pointed. Full state names are
+  accepted and normalised to the code, and a state-shaped string that is not a
+  state gives no town at all rather than a wrong one.
+
+#### A pasted listing has to stay put
+
+The URL is judged on **where the browser landed**, not on where it was sent. IDX
+sometimes answers a details URL by bouncing to its own search results, seeded with
+that listing's county and city — `/idx/results/listings?county[]=146&city[]=34718`.
+Trusting the pasted URL meant filming that results page as though it were the
+house, and since a results page has no address on it, the job then died at the
+Explorer with "did not give an address to look up".
+
+Now that is a refusal that says what happened, with a picture of the page it
+landed on.
+
+#### Nothing that goes somewhere gets clicked
+
+The overlay pass will not click a link with a real destination. A close control is
+a button, or an anchor going nowhere — no `href`, `#`, or `javascript:`.
+
+This is not hypothetical. IDX renders a listing's own field values as links to a
+search for other listings with that value, and one of those values is the flood
+zone: **`X`**. "X" is also the commonest close-button glyph there is, so the pass
+clicked it, IDX navigated to `?a_floodZoneCode=X`, and the search results page got
+filmed instead of 14918 Cranes Nest Court, Orlando.
+
+#### No address, no video
+
+The address is the tooltip on the house button and it is where the Neighborhood
+Explorer gets pointed, so a page that gives up no street address is refused rather
+than filmed. Otherwise the failure lands *after* the render, which is a far worse
+place to find out. Nothing is guessed at.
+
+It is read twice: once when the page is judged, and again just before the shutter,
+because on a client-drawn listing the heading can arrive in between.
+
+**IDX headings are assembled from spans**, one per part:
+
+```html
+<h1 id="IDX-detailsAddress">
+  <span class="IDX-detailsAddressNumber">14918 </span>
+  <span class="IDX-detailsAddressName">Cranes Nest Court</span>
+  <span class="IDX-detailsEndAddressComma">,&nbsp;</span>
+  <span class="IDX-detailsAddressCity">Orlando</span>
+  <span class="IDX-detailsAddressStateAbrv">FL&nbsp;</span>
+  <span class="IDX-detailsAddressZipcode">32824</span>
+</h1>
+```
+
+Those parts are read individually and assembled — **including the direction**,
+which is its own span and sits either before or after the street name. Leaving it
+out turned `1908 SW MILES ST` into `1908 MILES ST`, a different quadrant of
+Portland, and because the assembled candidate is tried before the heading it won.
+
+The assembly now has to **agree with what is on the screen**: if the pieces it
+read do not appear in the heading as written, some span it does not know about is
+carrying part of the address, so the assembly is dropped and the heading is used
+instead. That makes it safe by construction rather than by knowing every span
+name.
+
+The city/state pattern also accepts a space in front of the comma (that markup can
+lay out as `14918 Cranes Nest Court , Orlando , FL 32824`) and a comma between the
+state and the ZIP, which is how kvCORE writes a title:
+`1978 Arvis Circle W, Clearwater, FL, 33764`. Without that, the town could not be
+parsed from the title and an office address further down the page supplied
+`Trinity, FL 34655` — 20 miles from the house, and where the Explorer would have
+been pointed. **The town now comes from the same string as the street**, and a ZIP
+in that string is kept even when the town will not parse, rather than importing a
+different one from elsewhere on the page.
+
+These pages carry no structured data at all and their title has no street in it,
+so the heading is the only place the address exists.
+
+#### Addresses that are not simply "number street type"
+
+| Written as | Why it needed handling |
+| --- | --- |
+| `73-4474 ANIANI ST` | Hawaii puts the district before a hyphen. A bare house number was required, so the heading yielded nothing and the page only survived on its structured data. |
+| `850 E Ocean Boulevard B3`, `1200 Main St #1`, `77 Harbor Way Unit 5` | A unit on the heading is part of the address, so it stays. The geocoder drops it for a looser lookup if the pair will not resolve. |
+| `252 County Rd 156`, `1420 State Route 9` | A road named by a number. The route number is not taken when a spec row follows it, so `4497 Chase Drive 3 beds` is not Chase Drive number 3. |
+
+#### A list of other things is not this page's subject
+
+`ItemList`, `Event`, `ListItem` and friends are skipped in structured data, and the
+walk does not go inside one. A Coldwell Banker city page carries an `ItemList` of
+open house `Event`s, each naming a real house — reading one made a city landing
+page look like a listing for that house. Now the search furniture on the page
+decides, and it is correctly refused as a search page.
+
+#### A site that opens on its own search
+
+A homepage that bounces straight onto the site's IDX search — as
+`homes.dukecitysunrise.com` does — has no listing on the page it lands on. Its
+listings are still there, so one is fetched the site's own way rather than
+refusing on the spot:
+
+1. **Map Search** first, because that is the control on the page. On IDX the map
+   is an Azure/Leaflet canvas that reports "Found 0 of 0" to a headless browser
+   however long it is given, with or without WebGL, so this usually comes back
+   empty — but it is still tried, because it is what a person would click.
+2. Then their plain results list (`/idx/results/listings`), which is one page and
+   is where the listing links actually are.
+3. Then **exactly one** listing detail page is opened, cookies accepted, filmed.
+
+One listing, because that is the number IDX counts. If the first one it reaches
+is unusable — an account wall, an Explorer already on it, an overlay that will not
+close — that is the end of it; there is no going back for a second, which is what
+raises the wall. No account is created, no form is filled in, and nothing that
+could register anybody is clicked.
+
+If neither route reaches a listing, it refuses and asks for a listing URL. That
+site loads perfectly well and its "MY SEARCH & LOGIN" link is optional, so the
+refusal says its search came back empty — not that the site is missing or gated.
+
+#### A brand-new browser every time
+
+IDX sites count listing views in a cookie and stop showing listings after a few.
+That counter is why an account wall appears at all: open the same listing URL in
+a clean profile and the whole house is there, with nothing but an optional
+"Sign In" link in the header.
+
+So every job gets **its own throwaway Chrome profile**, running incognito on top
+of that, and the profile directory is deleted when the browser closes. Nothing is
+ever carried over from a previous job and no view counter starts part-used. There
+is a test that sets a view-counter cookie, closes the browser, opens a new one and
+checks it came back empty.
+
+#### The account wall
+
+Some sites really do gate a listing behind an account. **We do not get past that,
+and we do not try.** No accounts are created, no registration form is ever filled
+in or submitted, and nothing is clicked that could be a step in one — "Continue",
+"Next", "Submit" and "Sign up" are excluded from every button this tool presses,
+and nothing inside a box containing an email or password field is touched at all.
+That last one matters because a registration form's small print mentions cookies
+and privacy, so it can otherwise look like a consent banner.
+
+When a page gates the listing, capture stops there and says:
+
+> This site asks for an account after a few listing views. Paste a listing URL.
+
+A gate is decided by **structure, not wording**:
+
+- a box carrying gate wording, with a way to register in it, that covers a good
+  part of the page or sits over the middle of it, or
+- a page that *is* the registration form, with no listing on it.
+
+Both are looked for **before** the overlay pass runs, because that pass hides
+exactly these boxes and a gate we have hidden is still a gate.
+
+Wording on its own is never enough. The phrases that count are the narrow set
+that say you must register to see *this* — "register to view", "register to
+continue", "sign in to see", "sign up to view", "please register", "become a
+member", "you have viewed 3 of 3". An optional "Sign In" link in a header cannot
+match one, and neither can a "Create Your Free Account — get instant access"
+marketing promo, which is dismissed like any other popup rather than treated as a
+locked door.
+
+**One page at a time.** Each page is closed before the next is opened, so a
+renderer's memory goes back rather than piling up. Images, fonts, analytics and
+session recording are blocked for the whole search; the one page that actually
+gets photographed is loaded again with everything allowed. See
+[Memory](#memory) for why all of that matters.
+
+If you paste a URL it is used when it is a listing, and crawled from when it is
+not, so pasting a homepage still gets you a listing.
+
+#### What a refusal says
+
+If it cannot open a clean listing detail page it **stops and says so**, naming
+what it found instead, with a box to paste one listing URL and try again. The
+last DOMO listing that worked was 4697 Wehunt Commons Drive SE, Smyrna, GA
+30082, at a DOMO listing URL rather than their homepage.
+
+A page with our script, iframe or `data-dn-*` attribute on it is refused
+outright. A page that only *mentions* School Explorer in its copy is skipped
+during the search, but allowed with a warning if you pasted that URL yourself.
+
+An HTTP status is reported as what it means, because "there is no page there" sent
+Bill looking for a typo in a URL that was fine:
+
+| Status | What it says |
+| --- | --- |
+| 401, 403, 451 | The site blocked the capture. Sites refuse automated browsers even when the page opens fine in your own browser. Paste a listing URL. |
+| 429 | The site is rate limiting us. Wait a minute. |
+| 404, 410 | There really is no page at that address. |
+| 5xx | The site errored. Try again in a minute. |
+
+When every page a site served was a 403, the refusal says the site blocked us
+rather than that it has no listings.
+
+#### Cookie banners
+
+Every page gets its cookie banner accepted before anything is judged or
+photographed. In order:
+
+1. The accept button of the consent tools that actually turn up on realtor sites,
+   by name: OneTrust, Cookiebot, Quantcast, Osano, CookieYes, Iubenda, Complianz,
+   HubSpot, Didomi, TrustArc and friends. Consent dialogs in their own iframe are
+   included.
+2. Failing that, the banner is found by its wording and the **Accept** button
+   inside it is pressed. Never Reject and never Manage settings, because those
+   either leave the banner up or bring it straight back.
+3. Then it waits and checks the banner is actually **gone**, not merely clicked.
+   That is retried a few times, since some tools show a second banner.
+4. If it still will not go, the banner is taken off the page.
+5. The screenshot is only taken when nothing cookie-shaped is left. If a banner
+   survives even being hidden, the capture is refused rather than filmed — a
+   cookie bar in the frame is a failed capture, not a video.
+
+#### Nothing else may cover the page either
+
+Finished videos have gone out with the site's own "Microphone access denied"
+voice-command panel in the middle of frame, and with an IDX "Create Your Free
+Account" form over the listing. Three things stop that now:
+
+- Speech recognition and `navigator.mediaDevices` are removed before the page
+  loads, so a voice widget never starts and never asks for anything.
+- Chrome answers any microphone request with a fake device rather than a denial,
+  so a site that asks anyway gets a yes instead of drawing an error panel.
+- Whatever is left — cookie bars, chat bubbles, newsletter popups, consent
+  dialogs — is dismissed by clicking its own close control and then force-hidden.
+
+Anything floating counts: fixed, or absolutely positioned on a high layer, which
+is how a modal inside a dimming backdrop is usually built. Lead-capture forms are
+also matched on their wording.
+
+The check runs **more than once, with a pause between**, because these forms are
+on a timer and scrolling the page to load its photos is exactly what sets them
+off. Anything that reappears is hidden again. The screenshot is only taken once
+nothing is over the middle of the page or over the bottom strip where the house
+button goes, and a page that cannot be cleared is skipped rather than filmed.
+
+#### The address
+
+The tooltip on the house button uses the address of the page being filmed. It has
+been wrong twice: once reading "032 SQFT 4497 Chase Drive" — the tail of
+"1,032 SQFT" glued onto the next listing's street — and once reading
+"2135 Bellflower Blvd", the office address out of a footer.
+
+So the address is read in this order, and the footer is skipped entirely:
+
+1. the page's own structured data, but only from a node that says it is a home.
+   Every WordPress SEO plugin emits a site-wide `Place` for the agent's office,
+   and that is where "2135 Bellflower Blvd" came from on a page about
+   850 Ocean Blvd
+2. an element marked up as the listing's address, outside the footer
+3. a heading: `h1`, `og:title`, the page title, then `h2`
+4. the running text, as a last resort — good enough to caption a tooltip, but
+   never good enough to decide the page is a listing
+
+Any candidate is thrown away if it has a leading-zero house number, a thousands
+separator, a price, or a listing-spec word such as SQFT, BEDS or BATHS inside the
+street name. If no address can be read, the tooltip says "explore this
+neighborhood" rather than guessing.
+
+A footer is decided by **where it is**, not only what it is called: a wrapper
+called `page-footer-wrap` around the whole document used to swallow the listing's
+own heading. A named footer only counts when it actually sits low on the page.
+
+One more signal helps with IDX systems that draw the price and beds after load,
+which can make a real listing page look bare at the moment it is read: when the
+**URL and the heading name the same house** — as in
+`/properties/listing/CRMLS/OC26141010/850-E-Ocean-Boulevard-B3-…` — that counts
+as evidence on its own. A homepage or a market report can never have a street
+address in its path, so this cannot let one of those through.
+
+### 4. The silent video is rendered first
+
+One 1920x1080 still per beat, held for that beat's suggested duration, with **no
+audio track at all**:
+
+- Captions sit in a **top** bar only. A bottom bar would cover the house button.
+- The house button hovers in the bottom right of their own page.
+- The School Explorer and Neighborhood Explorer cards are about 70% of the frame,
+  in the same place and at the same size as each other.
+- School Explorer is always the first explorer on screen. Neighborhood Explorer
+  beats only run after it, and only in a `se-ne` script.
+- Each Neighborhood Explorer beat is a **photograph of that tab in the live
+  product**, taken at this listing's own address. See
+  [Filming the Explorer](#filming-the-explorer).
+
+#### Filming the Explorer
+
+The seven Neighborhood Explorer tabs each show genuinely different data, so each
+tab beat is a screenshot of that tab **in the live product, at this listing's
+address**. Nothing about a tab's contents is drawn by this tool.
+
+It used to be. The card was ours, and between tab beats only the highlighted chip
+moved while the body stayed on Map and Summary — so Schools, Commutes and
+Walk & Bike all showed the same income and rent bars. Because each beat is now one
+photograph, the highlighted chip and the body underneath it cannot disagree.
+
+How it runs, after the listing still is in hand:
+
+1. The listing browser is **closed first**. It is deliberately starved to survive
+   a small dyno, and the Explorer's map needs WebGL — without a GPU the widget
+   sits on "Loading location..." forever. The walk gets its own browser, so only
+   one Chrome is ever alive at a time.
+2. The address captured from the realtor page is turned into coordinates. Every
+   answer is checked against the town and state the listing gave, because a loose
+   geocode once put "123 Main St, Long Beach, CA" in Lake Huron, and filming that
+   would have put another town's schools in the video. If only the town or
+   postcode resolves, the job log says the Explorer was centred nearby.
+3. The live widget is opened at those coordinates, and each tab is clicked and
+   photographed once its own content has arrived and stopped moving.
+
+#### How big the popup is, and how sharp
+
+The shots used to be taken at **1340x764 at one device pixel per CSS pixel** and
+dropped into a card that size inside a 1920x1080 frame. Sixteen-pixel text in the
+widget stayed sixteen pixels in the video and went soft through H.264 — which is
+why it read as small, washed out and hard to read.
+
+Now the card is **1600x700** and the shot is taken at **twice the pixels**, so the
+text is drawn at 2x and scaled down. Same layout, twice the detail.
+
+That height is measured, not guessed. At 1600 wide the widget lays its content out
+to about 664px whatever the viewport height, so a taller card only adds white
+space — and white space inside the card is part of what made the popup look small.
+
+#### It has to look like a popup, not a pale rectangle
+
+The listing behind an explorer card is **dimmed**. It used to be washed with
+`rgba(255, 255, 255, 0.5)` — white — which bleached the listing so that a white
+card sitting on it had no edge to see. On a light listing the popup disappeared
+into the page.
+
+Around the Neighborhood Explorer shot the video now draws the popup's own
+**chrome**: a border, a strong shadow, a header bar with the brand and the address
+being shown, and an **X** in the corner. The shots are of the inner widget
+(`popup=true`), so the real popup's header and close button are not in them — 
+without this there was no header and no way out anywhere in the video.
+
+That is chrome and nothing else. No tabs, no data and no Explorer features are
+invented: everything inside the frame is the photograph of the real product.
+
+**School Explorer keeps the size and position the approved v11 cuts used**, but it
+sits on the same dimmed listing now — the white wash was washing it out too, so
+the dim is shared.
+
+There is a test that renders a card over a white listing and measures the pixels:
+the listing has to get **darker**, the card has to stay bright, and the header and
+the X have to be there.
+
+#### Each tab is filmed in its own sections
+
+A tab beat is worth **one still per shot of that tab**, and the beat's seconds are
+shared out between them, so a scene is never a single still of the top of a tab
+that carries on below the fold. The scene lengths the script asked for do not
+change, and neither does the timing of a recorded voice.
+
+The panel is found by which element actually overflows rather than by a class name
+that could be renamed, and scrolling stops as soon as the panel will not move — so
+a tab is never photographed twice in the same place. Up to three shots per tab.
+
+In practice the bigger card means most tabs now **fit whole**: only Schools (a long
+list of school cards) and What's Nearby have anything below the fold.
+
+**What's Nearby is one shot on purpose.** It is a list, and three places make the
+point without scrolling through it.
+
+It refuses rather than falling back to anything drawn by us:
+
+| What happened | What it says |
+| --- | --- |
+| the address cannot be placed on the map | that address could not be found, try a different listing |
+| the page gave a street but no town | it is looked up on the street alone, and the job log says so, because there was nothing to check the answer against |
+| the street is not on the map at all | the town or the ZIP is used instead, and the video is still made. The job log says the Explorer was only centred nearby, and `job.explorer.precision` records it. A missing street is common on new builds and rural roads, and refusing would block a video over something the reviewer can see for themselves. |
+| the Explorer never loads data for it | it has no neighborhood data for that address |
+| it reports "Unknown location" | same, and it names what the Explorer reported |
+| a tab is missing, or the walk runs over its budget | which tab, and how far it got |
+| every tab came out the same picture | nothing is rendered, because that is the bug this replaces |
+
+#### The seven chips, and their spelling
+
+The chips are matched against the live widget, so how they are spelled is not
+cosmetic — a chip spelled wrong is never found, and the beat is refused rather
+than filmed from the wrong panel. Left to right:
+
+| # | Chip | Note |
+| --- | --- | --- |
+| 1 | Map and Summary | the word "and" |
+| 2 | Demographics | |
+| 3 | Schools | |
+| 4 | Housing & Market Trends | ampersand |
+| 5 | Commutes | |
+| 6 | Walk & Bike | ampersand, **not** the word "and". Was called Mobility. |
+| 7 | What's Nearby | Was called Points of Interest. |
+
+"Ask AI" is not one of the seven and is never walked.
+
+Two chips were renamed, and their internal keys did not change — `data-view=mobility`
+with `#mobility-switch`, and `data-view=points-of-interest` with
+`#points-of-interest-switch`. A chip is looked for in this order:
+
+1. its **current label**, so a box still showing an old label cannot win over a
+   current one,
+2. **what it used to be called** — `Mobility`, `Points of Interest`, `POI` — because
+   staging and production are not always on the same build,
+3. the **key** behind it, when a label is being flaky. The job log says when it
+   fell back to the key.
+
+Whichever name a script asks by, the shots come back under the current names, so a
+frame and its caption cannot disagree with the product. A script saved before the
+rename is brought up to date on boot — the pin, the spoken line and the caption —
+and anything reworded by hand is left alone.
+
+**On `&` versus the word "and":** the live widget draws `Walk & Bike` with an
+ampersand, and there is a test that reads the chips off the product and fails if
+that changes. Typing `Walk and Bike` into a script works anyway, because matching
+treats the two as the same thing — but the stored chip, and the caption, use the
+ampersand the product uses.
+
+The **spoken** line says "Walk and Bike", because that is how anybody reads it
+aloud. The **chip** is "Walk & Bike". Those are deliberately different.
+
+No `/popup/{address}` or `/embed/{address}` page is created for any of this. The
+widget is opened at coordinates through the parameters it already supports —
+`popup=true` for the tabbed build, since `variant=full` is one long scrolling
+report with no tabs at all. The defaults point at the same widget the marketing
+site's own demo page loads, and `LISTING_VIDEO_EXPLORER_URL`,
+`LISTING_VIDEO_EXPLORER_PARTNER` and `LISTING_VIDEO_EXPLORER_WIDGET` can move it.
+
+The School Explorer card is still drawn from `src/demo-data.js`. Only the
+Neighborhood Explorer tabs changed.
+
+### 5. Record and try it, on one screen
+
+Press **Record while it plays**. The silent video restarts from the beginning and
+the microphone opens once the picture is moving, so the words land on the right
+scenes. The words and each picture's length are listed beside the player and the
+current beat is highlighted as it plays.
+
+When you stop, the take appears on the same screen. **Nothing is burned into the
+video yet.** From here you can:
+
+- **Play the video and this take together** — the picture and your take run at
+  the same time, from two separate players, so you can hear whether your words
+  land on the right pictures. They are kept in step as they play.
+- Play the take on its own.
+- **Record again**, which throws the old take away and starts a new one.
+- **Throw this take away** and start from the top.
+
+**The script sits beside the video, not under it.** On a desktop this step is two
+columns — the pictures on the left, the words on the right — because it is the one
+place two things have to be watched at once. The line being spoken is highlighted
+and scrolls itself as the video plays, both while recording and while playing a
+take back against it. The step is wider than the rest of the tool so the video does
+not shrink to make room, and on a narrow screen the two stack.
+
+Dead air is trimmed off the front of a take and a known 0.6s of silence is put
+back, so the first word is never clipped. Dead air is trimmed off the **end** as
+well — see [How long the finished video is](#how-long-the-finished-video-is).
+
+You can also upload an mp3, wav, m4a or webm. That becomes a take like any
+other, so it can be tried against the pictures before you commit to it.
+
+### 6. Add the audio to the video
+
+**Keep this take and add the audio to the video** is the only thing that burns
+the voice onto the pictures. Nothing is muxed while you are still trying takes,
+so re-recording is free and does not cost a render.
+
+#### How long the finished video is
+
+**The same length as the silent cut.** That is the picture that was approved, so
+that is the video:
+
+| Silent cut | Voice | Finished video |
+| --- | --- | --- |
+| 60s | 30s | **60s** — the picture holds, the audio stops |
+| 12s | 12s | **12s** |
+
+Nothing is padded on after the last word, and the picture is **never cut back to
+the voice**. If a video should end sooner than the script does, that is a
+person's call, made with [the trim](#trimming-the-end-off).
+
+The one exception is a voice that runs *past* the script, and it exists so nobody
+is clipped mid-word: the last scene is held to cover it.
+
+Dead air is still cut off the end of the voice *track*, for a recorded take and
+for the AI voice. That is about the audio, not the picture: a take stopped ten
+seconds late would otherwise be ten seconds longer than the script and drag the
+picture out with it.
+
+One thing can make it shorter, and it is a person: [trimming on the final
+review](#trimming-the-end-off).
+
+Dead air is still cut off the end of the voice *track*, both for a recorded take
+and for the AI voice. That is about the audio, not the picture — an AI line is
+padded out to whatever the script allowed for, and a take is usually stopped a
+moment after the last word, so a track can carry seconds of nothing. Left there,
+that silence would push the video past the length of the script. It cannot make
+the video shorter.
+
+### 7. Final review, then send
+
+The finished file plays with sound: picture and voice as one video, exactly what
+the customer will see. **Send stays switched off** until you have watched it
+through or ticked *I reviewed this*. The server refuses the send either way, so
+there is no silent fake send. Going back and keeping another take clears the
+review, because the new file has not been reviewed.
+
+If SMTP is not configured the UI says **"Mailbox not connected"**, the send
+button stays off, and you get the watch link plus the whole email text to copy
+and send yourself. It never reports a send that did not happen.
+
+#### Trimming the end off
+
+The only thing that shortens a video, and it is deliberate rather than automatic.
+
+On the final review, **pause the player exactly where you want the video to
+finish** and press **Trim Remainder of Video**. Everything after the playhead
+goes, picture and audio together. It asks first, and it cannot be undone.
+
+The button is only live while the player is paused, because the playhead *is* the
+cut — there is nothing being guessed at. It says what it is about to do ("would
+end at 0:42, cutting 0:18") before you press it.
+
+**The trim is a queued job, and the step is covered while it runs.** It used to
+re-encode on the HTTP request, which is what Bill's "That video was not trimmed"
+was: a minute of 1080p takes longer than Heroku's 30 second router timeout, and
+the request also had to wait behind any render already in the queue, so the
+browser was handed a dead connection for a trim that was still running. Now the
+route accepts the trim, answers `202`, and the browser waits on the job the way it
+waits on a capture.
+
+While it runs, a cover sits over the whole review step: nothing can be sent,
+marked reviewed, copied, or taken back to recording, and the send button reads
+*Trimming…*. **Stop waiting** gets out of the wait — the trim carries on, and the
+video will be there in the Library a minute later. A trim that fails puts the
+reason on the job and the step back the way it was, with the original video
+untouched; the cut is written beside it and only renamed over it once ffmpeg has
+finished. ffmpeg's own last words are surfaced rather than a bare "that video was
+not trimmed".
+
+The cut is re-encoded rather than stream-copied. A stream copy cuts at the
+previous keyframe, which would leave up to a couple of seconds of whatever you
+wanted rid of.
+
+A playhead and ffprobe disagree by a frame or so, and a cut is not refused over
+that — the time is pulled just inside the end of the file instead. Only a genuine
+"there is nothing left to remove" is refused, and the button is dead in that state
+so the server is never asked for a cut it would decline. It writes over the finished file, so the watch link keeps working,
+and it **clears the review** — what you approved is not what the file is now, so
+send switches off until you have watched it again. Nothing shorter than three
+seconds, and trimming at the end is refused rather than re-encoding for nothing.
+
+Afterwards the player reloads the shorter file and **sits just before its new
+end**, paused, so you can see where it now finishes without hunting for it.
+
+That is the whole feature: pause, one button. There are no in and out handles, no
+timeline, and no box to type a number of seconds into.
+
+### 8. Hosting
+
+Every finished video gets a public watch page at `/v/{id}`. Anyone with the link
+can play it, no sign-in and no Loom. Once a video is deleted, that page and its
+mp4 return 404.
+
+### 9. Library
+
+The **Library** tab lists every video on the box: customer, company, script,
+date, status and watch link. Play it, copy the link, open it to send it, or
+delete it. Delete asks for confirmation and then removes the mp4, the poster,
+the stills and the record that makes `/v/{id}` work.
+
+### When it fails, it says so afterwards
+
+A capture that fails is not thrown away. The red box in the browser is gone as
+soon as the tab is closed, and by the time anybody asks about it the dyno has
+usually moved on, so every failure leaves three things behind.
+
+**The job stays in the Library, marked "Did not finish."** Its card carries the
+same message the maker showed, the error code, the HTTP status if the site gave
+one, what the page was read as (search, wall, marketing, index), and the page it
+stopped on.
+
+**A picture of what Chrome actually saw**, taken before the browser closes,
+because afterwards is too late. That is the useful part: "No single listing page
+could be found" reads very differently next to a screenshot of a search form, an
+account wall, or a 403. It lives in the job's own directory, so deleting the job
+takes it too, and it is served only from there — a doctored path cannot read
+anything else off the disk.
+
+**A line in `failures.jsonl`** under the data dir. One JSON object per line,
+appended, so a crash halfway through a write costs one record rather than the
+lot, and it can be read with `tail`. Each line has:
+
+| Field | What it is |
+| --- | --- |
+| `at` | when it happened |
+| `jobId` | the job, so the Library card and the picture can be found |
+| `firstName`, `company` | who it was for |
+| `websiteUrl`, `listingUrl` | what it was given |
+| `stage` | `capture`, `explorer-walk`, `geocode` or `render` |
+| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, and so on |
+| `reason` | the message Bill saw, cut to one line |
+| `httpStatus` | only when a status caused it. A refusal that was not about a status does not claim one — the last page to load might have been a 404 on a path we guessed at |
+| `pageKind` | what the page was classified as, if it was |
+| `pageUrl` | the page it stopped on, which is the page in the screenshot |
+| `pagesChecked` | how many were looked at |
+| `screenshot` | where the picture is |
+
+`GET /tools/listing-video/api/failures` lists them newest first, behind the same
+password as everything else, with `screenshotUrl` instead of the path on disk.
+`?limit=` takes 1 to 200 and defaults to 50.
+
+**There is no Slack from here.** This app has no bot token, and one is not being
+added. The log and that endpoint are the report.
+
+Both of these live on the dyno's own disk, so they go when it restarts — the same
+as the jobs and the videos. They answer "what happened on that job just now", not
+"what happened last month". See [Disk](#disk).
+
+---
+
+## Editing scripts
+
+A script is a list of **beats**. Each beat has:
+
+| Field | What it is |
+| --- | --- |
+| Words you say | The teleprompter line. `{firstName}` and `{company}` are filled in. |
+| Scene | `listing`, `listing-tap`, `se` or `ne`. These four are the only scenes. |
+| Suggested seconds | How long that picture is held. Editable per beat. |
+| Top caption | Two optional lines for the top bar. |
+| Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
+
+Plus a name, a notes field, whether the script is *School Explorer only* or
+*School Explorer, then Neighborhood Explorer*, and what their listing should
+already have on it.
+
+**The tab field** is how a script guarantees the Demographics tab is on screen
+while the voice is saying "Demographics". Name the tab and it is pinned; leave it
+empty and the tabs are handed out in the order the `ne` beats appear, which is
+what the v11 script does. `Housing and Market Trends` and
+`Housing & Market Trends` are the same tab. The seven tabs, in the official
+order, are the only ones there are: Map and Summary, Demographics, Schools,
+Housing & Market Trends, Commutes, Walk & Bike, What's Nearby.
+
+The Scripts tab can create, edit, save, duplicate and delete. Making an "other
+video" means writing a new script here and saving it; it shows up in the picker
+next time. There is no way to add a new scene type or a new piece of Explorer UI
+from this page, by design.
+
+Bad edits are refused with a message you can act on: a Neighborhood Explorer
+beat in a school-only script, a Neighborhood Explorer beat before School
+Explorer, an unknown scene, or a duration outside 0.5-120s.
+
+Scripts live in `<data dir>/templates/*.json`, one file per script. The shipped
+scripts are seeded on boot, one id at a time: a data dir that already has the two
+v11 scripts picks up a newly shipped third one the next time the server starts,
+and the startup log says which ones it added. A default that somebody deleted
+stays deleted, because the marker records what has already been offered.
+**Put the shipped scripts back** on the Scripts tab restores all of them exactly
+as they ship.
 
 ## Voice
 
-- **AI** — one professional female English voice. Only the opening line is
-  personalized, with the customer's first name and company.
-- **Overdub** — record in the page (press, talk, stop, play it back) or upload an
-  mp3, wav or m4a. When overdub is chosen, no AI voice is used at all. Dead air
-  at the front of a take is trimmed, and every video starts with 0.6s of silence
-  so the first word is never clipped.
+Recording over the silent video is the default and the recommended path, because
+it is the only one where you get to hear the words against the pictures before
+anything is committed.
 
-Voice engines are tried in this order, and the tool always reports which one it
-used:
+The AI voice is optional and secondary. When a voice is connected it appears
+under *Other ways to add the voice*. It goes straight to adding the audio, since
+there is no take to try first, and it still has to pass the same final review
+before anything can be sent. It uses one engine for the whole script, so two
+voices are never spliced together. Engines are tried in this order and the tool
+always reports which one it used:
 
 1. ElevenLabs, if `ELEVENLABS_API_KEY` is set
 2. OpenAI, if `OPENAI_API_KEY` is set
 3. The built-in offline voice (Piper), if it is installed
 
-If none of them are available, the AI option is switched off in the UI and Myles
-is told to use overdub. It never silently swaps in a different voice.
+If none are available the AI button is switched off and says so.
+
+### The shared lines are only spoken once
+
+Every AI-voice job used to send the **whole script** to ElevenLabs, so the same
+forty seconds of "here's the same page, with the Dream Neighborhood School
+Explorer…" was paid for again for every realtor. Only the greeting differs
+between customers.
+
+Each line is now kept on disk under a key made of **what was said and who said
+it**, so a second job on the same script and voice bills the greeting and nothing
+else. The job log says how many lines were reused and how many characters were
+actually billed, and the review step repeats it.
+
+It is kept **per line**, not as one run-together bed, and that is deliberate:
+
+- each line is still padded to its own scene length, so the picture timing is
+  untouched — only the raw speech is kept, and the padding is worked out per job;
+- a script that mentions the customer again halfway down simply misses the cache
+  for that line, with no special case and no risk of a cached line containing
+  somebody else's name;
+- editing one line on the Scripts page only re-bills that line.
+
+The key carries the **engine, the voice, the model and its settings**, so a cached
+ElevenLabs line can never be spliced onto a Piper or OpenAI track, and changing
+the voice or the words starts again. Tidying whitespace does not re-bill a line.
+Only ElevenLabs is kept — it is the one that charges by the character.
+
+Recording your own voice never touches any of this.
+
+**On Heroku the cache lives on the dyno's disk and goes when the dyno restarts**,
+so it saves within a working session rather than for ever. Nothing depends on it
+surviving: a miss is just the line being spoken again, and a cache directory that
+cannot be written costs money rather than breaking a video.
+
+### Picking a male or female voice
+
+The voice is chosen **on the make-a-video form**, beside the from-address, not
+buried behind the AI button on a later step. It is kept on the job, so the AI path
+uses the voice that was picked when the job was made, and the record step names it
+rather than leaving it a surprise.
+
+Two women and two men, by name — **Jessica is the default**, because she is the
+voice that has been heard and approved. The choice only matters if the AI voice is
+used at all; recording over the silent video is still the normal way.
+
+**The list is asked of the account, not written down here.** `GET /v1/voices` is
+called with the existing key (header only — it is never logged, never put in a URL,
+and never handed to the browser), the answer is filtered to the voices this plan
+can actually speak with, and two of each sex are offered. The answer is cached for
+ten minutes so loading the form is not a network call.
+
+That matters because this is a **free plan**: only the premade/default voices work.
+A Voice Library voice like Rachel or Charlotte answers 401, and hardcoding names
+would mean offering a voice that fails at render time — after the silent video has
+already been made. If a voice ever answers 401, 402 or 403, it is dropped from the
+picker and another takes its place; the ones that work carry on.
+
+A short hardcoded list (Jessica, Sarah, George, Brian) is used only when the
+account cannot be asked at all, so the picker still offers something sensible.
+
+> **Worth knowing:** ElevenLabs' Default voices expire on **31 December 2026**, and
+> are only available to accounts created before March 2026. Asking the account
+> rather than hardcoding is what stops that being a breakage — when they go, the
+> picker will offer whatever the account has instead.
+
+### Seeing an upgrade coming
+
+A small **ElevenLabs** card sits on the make-a-video form, above the voice picker,
+so running out of characters is not something you find out halfway through a
+render. `GET /v1/user/subscription`, read server side, behind the password, cached
+for five minutes.
+
+| What it can read | What the card says |
+| --- | --- |
+| the subscription | The plan, characters left of the limit and the percentage, how many are used, and the date the allowance resets. **"Time to upgrade"** in amber when under 20% or under 10,000 characters are left — a script is a couple of thousand, so ten thousand is a handful of videos. |
+| a 401 `missing_permissions` / `user_read` | That the key can *speak* but is not allowed to read usage, that a key with `user_read` would fill it in, and a link to [elevenlabs.io/app/usage](https://elevenlabs.io/app/usage) to check by hand. **No numbers, made up or otherwise.** This is the state staging is in today. |
+| nothing, because there is no key | That the AI voice is switched off, and to record instead. |
+
+Only ten fields ever reach the browser, as a whitelist rather than a copy with a
+few things deleted — the subscription response carries billing dates, currency and
+invoice amounts, and none of that should land in a page because a field was added
+upstream. The key is sent as a header and appears nowhere else: not in a log, not
+in a URL, not in the JSON. There are tests for each of those.
 
 ## Email
 
-The tool sends from one of two addresses: `marketing@dreamneighborhood.com` or
-`myles@dreamneighborhood.com`.
+The send picker offers three from-addresses:
 
-If SMTP is not configured, the UI says **"Mailbox not connected"**, the send
-button is switched off, and Myles gets the link plus the full email text to copy
-and send himself. It never reports a send that did not happen.
+- `marketing@dreamneighborhood.com`
+- `myles@dreamneighborhood.com`
+- `bill@dreamneighborhood.com`
+
+Whichever is picked becomes the From and the Reply-To. It does **not** change
+which mailbox the message is sent through: that is always `SMTP_USER`, which is
+a different address. If a mailbox refuses to send as an address it does not own,
+that is an SMTP-side setting, not something this tool decides.
+
+The email only mentions Neighborhood Explorer when the script the customer just
+watched covered it.
 
 ---
 
@@ -74,6 +943,8 @@ and send himself. It never reports a send that did not happen.
 ```bash
 cd tools/listing-video
 npm install
+npm test                             # scripts, job delete, address reading, page classification,
+                                     # and a real capture against test/fixture-site.js
 bash scripts/setup-voice.sh          # optional: installs the built-in AI voice
 LISTING_VIDEO_TOKEN=pick-a-password npm start
 ```
@@ -81,6 +952,20 @@ LISTING_VIDEO_TOKEN=pick-a-password npm start
 Then open <http://localhost:8788/tools/listing-video>.
 
 Needs Node 20+, `ffmpeg`/`ffprobe`, and Google Chrome or Chromium on the box.
+Recording in the browser needs a microphone and a secure context, so use
+`localhost` or https.
+
+`npm test` includes a real capture run in Chrome against `test/fixture-site.js`,
+whose homepage is the marketing page that got filmed by mistake: a hero photo,
+"Search Long Beach Homes" and "Market Report" buttons, the office address in the
+footer, and a cookie banner that only closes when Accept is pressed. Starting
+from that homepage, capture has to end up on `/listings/123-main-st` with the
+banner gone. Those tests skip themselves with a message if there is no Chrome.
+To poke at the fixture by hand:
+
+```bash
+node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
+```
 
 ### Settings
 
@@ -89,13 +974,60 @@ Needs Node 20+, `ffmpeg`/`ffprobe`, and Google Chrome or Chromium on the box.
 | `LISTING_VIDEO_TOKEN` | The shared password for the tool. **Set this.** Without it the server generates a throwaway password and prints it at startup, so the page is never left open to the public. |
 | `LISTING_VIDEO_PUBLIC_URL` | Public origin used to build the share link, e.g. `https://staging.dreamneighborhood.com`. Falls back to the request host. |
 | `LISTING_VIDEO_COOKIE_SECRET` | Signing key for the sign-in cookie. Set it so sessions survive a restart. |
-| `LISTING_VIDEO_DATA_DIR` | Where jobs and finished mp4s are written. Defaults to `tools/listing-video/data` (git-ignored). |
+| `LISTING_VIDEO_DATA_DIR` | Where scripts, jobs and finished mp4s are written. Defaults to `tools/listing-video/data` (git-ignored). |
 | `PORT` | Defaults to `8788`. |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | Hosted AI voice. |
 | `OPENAI_API_KEY`, `OPENAI_TTS_VOICE` | Hosted AI voice, second choice. |
 | `PIPER_BIN`, `PIPER_VOICE` | Point at a Piper install if `setup-voice.sh` put it somewhere unusual. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
+| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. |
+| `LISTING_VIDEO_GEOCODER` | Address lookup. Defaults to OpenStreetMap's Nominatim, which needs no key. |
+
+### Memory
+
+Headless Chrome is the expensive part of this tool, and on staging it has already
+taken the web process down: a capture climbed to 1012MB on a 512MB dyno, Heroku
+killed it with R14, and because the disk is ephemeral the half-finished job went
+with it.
+
+What keeps it bounded now:
+
+- one browser, one page, and each page closed before the next opens
+- images, fonts, analytics and session recording blocked while searching; only
+  the page being photographed loads them
+- a 1024x768 window while searching, 1920x1080 only for the shot
+- Chrome launched in low-end device mode, with its caches capped, its GPU process
+  folded into the browser, one renderer, and a 128MB cap per V8 heap — so a
+  runaway page fails on its own instead of taking the dyno with it
+- DOM scans capped, since reading `innerText` across every element on a large
+  page forces a layout each time
+- a 60 second budget, and Chrome killed outright if it stops answering
+
+Measured against `www.redwagonteam.com`, the site from the failing run:
+
+| | Before | Now |
+| --- | --- | --- |
+| Peak Chrome (fair share of shared pages) | 1012MB observed on staging | ~550-620MB |
+| Time to finish or refuse | 3+ minutes, then a restart | 15-28 seconds |
+| Chrome left running afterwards | leaked on a wedged browser | none |
+
+**A 512MB dyno is still tight.** Chrome idles at about 150MB before it loads
+anything, and one real estate page in a renderer is another 250-300MB. If staging
+keeps hitting R14, the fix is a bigger dyno — Standard-2X has 1GB — rather than
+more tuning here. What has changed is that the failure is now bounded and
+recoverable instead of a silent hang.
+
+### Disk
+
+Each job keeps its stills so a re-recorded take can be re-timed against the same
+pictures without opening Chrome again. That is roughly 5-10MB per video on top of
+the mp4. Deleting a video from the Library takes all of it.
+
+The staging disk is **ephemeral**: if the dyno restarts, jobs in progress and
+finished mp4s go with it. The tool copes rather than hanging — a poll that comes
+back 404 now says the server restarted and offers to start again — but a watch
+link for a video made before a restart will 404.
 
 ### Putting it behind the staging site
 
@@ -108,16 +1040,24 @@ staging only, add:
 /v/*                    http://127.0.0.1:8788/v/:splat                    200
 ```
 
-Or just give Myles the service URL directly. The tool works fine on its own host.
+Or just give them the service URL directly. The tool works fine on its own host.
 
 ## Routes
 
 | Route | Who can reach it |
 | --- | --- |
-| `GET /tools/listing-video` | Myles, after the password |
+| `GET /tools/listing-video` | Bill and Myles, after the password |
+| `GET/POST/PUT/DELETE /tools/listing-video/api/templates...` | Signed in only |
 | `POST /tools/listing-video/api/jobs` | Signed in only |
-| `GET /tools/listing-video/api/jobs/:id` | Signed in only |
-| `POST /tools/listing-video/api/jobs/:id/email` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
+| `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |
+| `GET /tools/listing-video/api/videos`, `DELETE .../videos/:id` | Signed in only |
+| `GET /tools/listing-video/api/failures` | Signed in only |
+| `GET /tools/listing-video/api/voice-usage` | Signed in only |
+| `GET /tools/listing-video/api/jobs/:id/failure.png` | Signed in only |
 | `GET /v/:id` | Public watch page |
 | `GET /v/:id/video.mp4`, `GET /v/:id/poster.jpg` | Public |
 
@@ -126,14 +1066,24 @@ No `/popup/{address}` routes are added, and no product code is changed.
 ## Layout
 
 ```
-server.js              routes, sign-in gate, upload handling, one-at-a-time queue
-src/scripts.js         the two approved narration scripts
-src/demo-data.js       the demo neighborhood shown inside the SE and NE cards
-src/capture.js         opens the customer site, finds a listing, screenshots it
-src/frames.js          turns each script line into a 1920x1080 still
-src/audio.js           AI voice providers, overdub handling, 0.6s lead silence
-src/video.js           ffmpeg assembly
-src/mail.js            the two from-addresses, honest "not connected" state
-views/frame.html       the frame: top caption bar, popup button, SE and NE cards
-public/                the form, the watch page
+server.js                    routes, sign-in gate, uploads, one-at-a-time queue
+src/templates.js             script templates on disk: load, save, validate, render
+src/default-templates.js     the three shipped scripts
+src/browser.js               Chrome, kept small, and killed for certain
+src/capture.js               opens their site, accepts cookies, walks to a listing
+src/page-analysis.js         is this one listing or a landing page, and what address
+src/frames.js                turns each beat into a 1920x1080 still
+src/video.js                 ffmpeg: the silent cut, then the voiced cut
+src/audio.js                 recorded takes, the optional AI voice, 0.6s lead silence
+src/render.js                phase one (silent picture) and phase two (attach audio)
+src/store.js                 jobs on disk, the library list, delete
+src/mail.js                  the two from-addresses, honest "not connected" state
+src/demo-data.js             the demo neighborhood shown inside the School Explorer card
+src/explorer.js              films the live Neighborhood Explorer, one tab at a time
+src/geocode.js               the listing's address as coordinates, checked against its town
+views/frame.html             the frame: top caption bar, popup button, SE and NE cards
+public/                      the three tabs and the public watch page
+test/                        node --test smoke tests
+test/fixture-site.js         a stand-in realtor site built from the pages that broke
+test/client.test.js          the front end in Chrome: a lost job must not hang
 ```
