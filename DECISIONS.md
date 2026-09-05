@@ -10,3 +10,14 @@ Authorized by William. The homepage sells Neighborhood Explorer by audience, not
 - **Partners**: 40% recurring revenue share and partner pricing stay on `/partners` (and Partner FAQ). Do not put a Partner price card on the homepage.
 
 Homepage paid grid is four cards: Free / Solo / Brokerage / Enterprise. Free, Solo, and Enterprise use the same visible green border and mint fill so they read as cards on the white page. Brokerage stays the dark “MOST POPULAR” card. Do not rehash view-allowance or views-not-users pricing on the homepage or realtor FAQ. Keep these dollar amounts unless they are intentionally changed later. Homepage pricing cards say Free Support, not 24/7 Support.
+
+## Phase 1 voice install helper (staging only)
+
+Authorized by William. Marketing (DN Websites) owns the page shell and embed slot only. Dream Neighborhood owns the voice agent, URL sniff, savings, and draft-email logic — do not invent that logic here.
+
+- Page: `/talk-through-install.html`, also `/talk-through-install` via Netlify pretty URLs (same as `/installation` and `/faq`).
+- Embed slot: `#dn-voice-helper` with `data-dn-voice-helper="install"`.
+- Product story on this page is only free School Explorer → paid Neighborhood Explorer. Do not invent pricing, features, or competitor claims.
+- **Staging only.** Ship via an open PR / Netlify deploy preview. Do not merge to `main` (production / dreamneighborhood.com) until William says go.
+- No voice helper script is loaded from this repo. Dream Neighborhood has not published a known staging script URL here. Leave the slot empty of scripts until they provide one.
+- Nav and footer stay unchanged so the production homepage chrome stays clean if this later merges.
