@@ -19,5 +19,5 @@ Authorized by William. Marketing (DN Websites) owns the page shell and embed slo
 - Embed slot: `#dn-voice-helper` with `data-dn-voice-helper="install"`.
 - Product story on this page is only free School Explorer → paid Neighborhood Explorer. Do not invent pricing, features, or competitor claims.
 - **Staging only.** Ship via an open PR / Netlify deploy preview. Do not merge to `main` (production / dreamneighborhood.com) until William says go.
-- No voice helper script is loaded from this repo. Dream Neighborhood has not published a known staging script URL here. Leave the slot empty of scripts until they provide one.
+- The staging Talk page loads Dream Neighborhood’s Heroku staging relay with official `embed-helper.js` and `#dn-voice-helper[data-relay-base]`. Do not invent voice or product logic here, and do not point production marketing pages at this relay.
 - Nav and footer stay unchanged so the production homepage chrome stays clean if this later merges.
