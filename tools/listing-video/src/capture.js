@@ -25,6 +25,7 @@ const {
   REGISTRATION_GATE_RE,
 } = require("./page-analysis");
 const { closeStartupPage } = require("./browser");
+const siteAccount = require("./site-account");
 
 const LISTING_HREF_HINTS =
   /(listing|listings|property|properties|homes?-for-sale|for-sale|home-details|homedetail|idx|mls|\/p\/|\/home\/|\/l\/|realestate|real-estate)/i;
@@ -484,6 +485,15 @@ const MAX_LISTING_VIEWS = 1;
 const MAX_NAV_VISITS = 3;
 // A backstop on opening candidates that turn out not to be listings at all.
 const MAX_CANDIDATE_OPENS = 4;
+/*
+ * How many outright refusals are worth collecting before giving up on the crawl.
+ *
+ * Two. The first could be one awkward page; the second is the site's position.
+ * Bill's failed run walked four pages and was refused all four times, and pages
+ * three and four told us nothing while adding two more hits to a site that had
+ * already said no.
+ */
+const MAX_BLOCKED_PAGES = 2;
 // Homepage, then their listings page, then the house. Three hops is enough.
 const MAX_CRAWL_DEPTH = 3;
 const VIEWPORT = { width: 1920, height: 1080 };
@@ -535,11 +545,15 @@ function captureError(code, message) {
 /**
  * The site wants an account. Bill's words, because this is the one refusal where
  * the person reading it can fix the problem in five seconds.
+ *
+ * The note says what became of the QUAL account, when there was one to try. A
+ * wall we could not sign in to is a different problem to a wall nobody has a key
+ * for, and the person reading this is the one who can tell them apart.
  */
-function registrationWallError() {
+function registrationWallError(note) {
   return captureError(
     "REGISTRATION_WALL",
-    "This site asks for an account after a few listing views. Paste a listing URL."
+    `This site asks for an account after a few listing views.${note ? ` ${note}` : ""} Paste a listing URL, or upload a screenshot of the listing page instead.`
   );
 }
 
@@ -550,6 +564,14 @@ function registrationWallError() {
  * somebody "there is no page there" when curl gets a 302 from their laptop sends
  * them looking for a typo that is not there.
  */
+/**
+ * A status that means the site has decided about us, rather than having had a
+ * bad moment. There is nothing to be gained by asking it again.
+ */
+function isRefusalStatus(status) {
+  return status === 401 || status === 403 || status === 429 || status === 451;
+}
+
 function statusError(status, { pastedListing = false } = {}) {
   const ask = pastedListing
     ? "Try a different listing URL."
@@ -560,7 +582,16 @@ function statusError(status, { pastedListing = false } = {}) {
 
   if (status === 401 || status === 403 || status === 451) {
     code = "SITE_BLOCKED";
-    message = `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${ask}`;
+    /*
+     * The one refusal where the advice has to be more than "try another URL".
+     *
+     * When the page that was refused is the listing URL somebody pasted, another
+     * listing on the same site will be refused in the same way - which is exactly
+     * what happened to Bill. So say what actually works.
+     */
+    message = pastedListing
+      ? `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own, and another listing on the same site will usually be refused too. Upload a screenshot of that listing page instead \u2013 that skips their site altogether.`
+      : `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${UPLOAD_INSTEAD}`;
   } else if (status === 429) {
     code = "SITE_BLOCKED";
     message = `That site is rate limiting us (HTTP 429), so it would not load the page. Wait a minute, then ${ask.toLowerCase()}`;
@@ -641,6 +672,29 @@ const EXPLORER_ALREADY_THERE =
   "That page already has a Dream Neighborhood Explorer on it, so it cannot be the \u201cbefore\u201d shot for this script. " +
   "This customer is already on School Explorer, so the \u201cSE to NE upgrade\u201d script is the one to use - it opens on their listing with School Explorer and pitches Neighborhood Explorer. " +
   "Otherwise paste one of their listings that does not have it yet.";
+
+/*
+ * The advice at the end of a refusal that was the site's choice.
+ *
+ * It used to stop at "paste that URL", and for Scott Rodgers Real Estate that
+ * was a dead end - the detail URL is refused as well, so the one thing offered
+ * was the one thing already known not to work. The upload is the way through,
+ * and a refusal is where somebody is actually reading, so it is named here.
+ */
+const UPLOAD_INSTEAD =
+  "Open one of their listings in your browser and paste that URL. If that is refused too, upload a screenshot of the listing page instead \u2013 that skips their site altogether.";
+
+/** A site that refused the pages holding its listings, in one place. */
+function siteRefusedError(host, pageCount) {
+  const error = captureError(
+    "SITE_BLOCKED",
+    `${host} blocked the capture on ${pageCount} page${
+      pageCount === 1 ? "" : "s"
+    } (HTTP 403), so none of them could be read. Some sites refuse automated browsers even though the pages open fine in your own. ${UPLOAD_INSTEAD}`
+  );
+  error.httpStatus = 403;
+  return error;
+}
 
 /** One refusal for "something is over the page", naming a cookie bar as such. */
 function blockedError(left) {
@@ -1435,6 +1489,72 @@ async function settle(page, { forShot = false } = {}) {
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+/*
+ * The client hints that go with that user agent.
+ *
+ * Setting the user agent string on its own is not enough, and this is the part
+ * that was missing. Chrome also sends Sec-CH-UA headers, and headless Chrome
+ * fills them in with a brand of "HeadlessChrome" - so a page could be told it
+ * was talking to Chrome 131 on a Mac in one header and to a headless browser in
+ * the next. Bot protection reads the disagreement, and the disagreement is worth
+ * more to it than either header alone.
+ *
+ * Set together, the two at least tell the same story. This is a real improvement
+ * and it is NOT a bypass: a site that fingerprints properly still knows, and
+ * Scott Rodgers is expected to carry on refusing. The uploaded-screenshot path is
+ * what actually gets the video made there.
+ */
+const USER_AGENT_METADATA = {
+  architecture: "arm",
+  bitness: "64",
+  model: "",
+  platform: "macOS",
+  platformVersion: "15.1.0",
+  mobile: false,
+  brands: [
+    { brand: "Google Chrome", version: "131" },
+    { brand: "Chromium", version: "131" },
+    { brand: "Not_A Brand", version: "24" },
+  ],
+  fullVersionList: [
+    { brand: "Google Chrome", version: "131.0.6778.86" },
+    { brand: "Chromium", version: "131.0.6778.86" },
+    { brand: "Not_A Brand", version: "24.0.0.0" },
+  ],
+};
+
+/*
+ * A browser with no language preference is unusual enough to be a signal in
+ * itself, and Chrome always sends one.
+ */
+const ACCEPT_LANGUAGE = "en-US,en;q=0.9";
+
+/**
+ * Stop the page being told outright that it is being driven.
+ *
+ * `navigator.webdriver` is true under automation and is the cheapest bot check
+ * there is - one line of JavaScript, no fingerprinting needed. It is removed
+ * along with the empty plugin and language lists that go with a headless
+ * profile.
+ *
+ * Again: this makes an honest browser look ordinary. It does not defeat a real
+ * anti-bot product, and nothing here pretends otherwise.
+ */
+async function looksLikeAnOrdinaryBrowser(page) {
+  await page.evaluateOnNewDocument((languages) => {
+    try {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined, configurable: true });
+    } catch (_) {
+      /* some builds will not let us, and that is survivable */
+    }
+    try {
+      Object.defineProperty(navigator, "languages", { get: () => languages, configurable: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }, ACCEPT_LANGUAGE.split(",").map((part) => part.split(";")[0]));
+}
+
 /**
  * A fresh page, set up the way capture needs it.
  *
@@ -1445,7 +1565,13 @@ const USER_AGENT =
 async function preparePage(browser, { heavy = false } = {}) {
   const page = await browser.newPage();
   await silenceMediaFeatures(page);
-  await page.setUserAgent(USER_AGENT);
+  await looksLikeAnOrdinaryBrowser(page);
+  /*
+   * Puppeteer takes the metadata as a second argument. An older build that does
+   * not is not a reason to fail a capture, so the string alone is the fallback.
+   */
+  await page.setUserAgent(USER_AGENT, USER_AGENT_METADATA).catch(() => page.setUserAgent(USER_AGENT));
+  await page.setExtraHTTPHeaders({ "Accept-Language": ACCEPT_LANGUAGE }).catch(() => {});
   await page.setViewport({ ...(heavy ? VIEWPORT : CRAWL_VIEWPORT), deviceScaleFactor: 1 });
   page.setDefaultNavigationTimeout(GOTO_TIMEOUT_MS);
   page.setDefaultTimeout(GOTO_TIMEOUT_MS);
@@ -1545,6 +1671,8 @@ async function captureListing({
   const origin = new URL(home).origin;
   /* Pages holding their listings that the site refused outright. */
   let blockedFromSearch = 0;
+  /* Set when the QUAL account was what got us to the listing, so the video says so. */
+  let accountUsed = null;
   const start = listingUrl ? normalizeUrl(listingUrl) : home;
   const startedAt = Date.now();
   const deadline = startedAt + budgetMs;
@@ -1693,6 +1821,18 @@ async function captureListing({
         trouble = error;
       }
       if (status && status < 400) break;
+      /*
+       * A refusal is not a hiccup, so it does not get a second go.
+       *
+       * Loading the page again after a 403 is the worst thing to do with one:
+       * the site has just decided about us, and a repeat hit on the same URL
+       * seconds later is what rate limiters and bot protection are counting.
+       * Retrying a timeout or a 502 is worth it; retrying a "no" is not.
+       */
+      if (isRefusalStatus(status)) {
+        log(`Their site refused the listing outright (HTTP ${status}) - not asking again`);
+        break;
+      }
       if (attempt === 1) log("The page did not come back with its photos - one more try");
     }
     if (status >= 400) throw statusError(status, { pastedListing: Boolean(listingUrl) });
@@ -1769,13 +1909,29 @@ async function captureListing({
     const shotPath = path.join(outDir, "site.png");
     await page.screenshot({ path: shotPath, type: "png", captureBeyondViewport: false });
     log(`Filmed ${address.street}`);
+
+    /*
+     * Say so on the video when a login was what made the listing visible. The
+     * page a signed-in visitor sees is not always the page the public sees, and
+     * whoever reviews this should know which one they are looking at.
+     */
+    const allNotes = [...(notes || [])];
+    if (accountUsed) {
+      allNotes.push(
+        `Their site would not show this listing without an account, so it was filmed signed in with the QUAL account${
+          accountUsed.how === "register" ? ", which was registered on their site" : ""
+        }. Check that the page looks the way a visitor's would.`
+      );
+    }
+
     return {
       screenshot: shotPath,
       pageUrl: page.url(),
       address,
       checked,
       tally,
-      notes: notes || [],
+      notes: allNotes,
+      account: accountUsed,
       tookSeconds: Math.round((Date.now() - startedAt) / 1000),
     };
   };
@@ -1858,7 +2014,11 @@ async function captureListing({
       }
 
       const verdict = await assess(target);
-      if (verdict.reason === "wall") throw registrationWallError();
+      if (verdict.reason === "wall") {
+        const after = await throughTheWall(target);
+        if (after && after.ok) return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+        throw registrationWallError(qualNote);
+      }
       if (verdict.ok) return await shoot(target, verdict.verdict, verdict.preferred ? [] : fallbackNote);
       if (verdict.reason === "blocked") throw blockedError(verdict.left);
       if (verdict.reason === "explorer") throw captureError("LISTING_HAS_EXPLORER", EXPLORER_ALREADY_THERE);
@@ -1871,10 +2031,7 @@ async function captureListing({
     }
 
     if (blockedFromSearch > 0) {
-      throw captureError(
-        "SITE_BLOCKED",
-        `${new URL(home).hostname} blocked the capture (HTTP 403) on the pages that hold its listings. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
-      );
+      throw siteRefusedError(new URL(home).hostname, blockedFromSearch);
     }
     /*
      * Go back to the search page before giving up, so the picture kept with the
@@ -1888,6 +2045,56 @@ async function captureListing({
       searchUrl,
       `${new URL(home).hostname} opens on its property search (${new URL(searchUrl).pathname}), and no single listing could be reached from it - its map and results came back empty. A search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
     );
+  };
+
+  /*
+   * An account wall, and the QUAL account is the key to it.
+   *
+   * Tried once per capture, and only when the site actually served us a page
+   * asking to log in. A 403 never gets here: there is no form on a page that was
+   * never sent, so there is nothing to sign in to - see src/site-account.js.
+   *
+   * If the key turns, the listing is opened again. The session cookie lives on
+   * the browser rather than the page, so the fresh page that visit() opens still
+   * carries it, and the page is then judged from scratch like any other.
+   */
+  let qualTried = false;
+  let qualNote = "";
+
+  const throughTheWall = async (target) => {
+    if (qualTried || !target || !siteAccount.configured()) return null;
+    qualTried = true;
+
+    const host = new URL(home).hostname;
+    const outcome = await siteAccount
+      .passTheWall(page, { host, log })
+      .catch((error) => ({ attempted: true, signedIn: false, why: error.message }));
+
+    if (!outcome.attempted) return null;
+    if (!outcome.signedIn) {
+      qualNote = `The QUAL account could not get past it: ${outcome.why}.`;
+      return null;
+    }
+
+    accountUsed = { how: outcome.how, unconfirmed: Boolean(outcome.unconfirmed) };
+    log("Opening the listing again, signed in");
+    let status = 0;
+    try {
+      status = await visit(target, { heavy: true });
+    } catch (_) {
+      status = 0;
+    }
+    if (!status || status >= 400) {
+      qualNote = `Signed in with the QUAL account, but the listing then came back as ${status || "nothing at all"}.`;
+      return null;
+    }
+
+    const verdict = await assess(page.url());
+    if (verdict.reason === "wall") {
+      qualNote = "Signed in with the QUAL account, and their site asked for an account anyway.";
+      return null;
+    }
+    return verdict;
   };
 
   try {
@@ -1959,7 +2166,14 @@ async function captureListing({
     }
 
     const first = await assess(startUrl);
-    if (first.reason === "wall") throw registrationWallError();
+    if (first.reason === "wall") {
+      const after = await throughTheWall(startUrl);
+      if (after && after.ok) {
+        log("Signed in, and the listing is there - using it");
+        return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+      }
+      throw registrationWallError(qualNote);
+    }
 
     // The first usable listing is the one we film. There is no looking around
     // for a better one, because that would mean opening a second listing.
@@ -2093,15 +2307,30 @@ async function captureListing({
           continue;
         }
         if (!status || status >= 400) {
-          if (status === 401 || status === 403 || status === 429 || status === 451) {
+          if (isRefusalStatus(status)) {
             blockedPages += 1;
             log(`Their site blocked that page (HTTP ${status})`);
+            /*
+             * Two refusals in a row is the site's answer, not bad luck.
+             *
+             * Bill's run walked four pages and was refused four times, which
+             * told us nothing the second one had not and left four more hits in
+             * their logs. Stop and say so instead.
+             */
+            if (blockedPages >= MAX_BLOCKED_PAGES) {
+              log("Their site is refusing every page - stopping rather than trying more");
+              return { blocked: true, blockedPages };
+            }
           }
           continue;
         }
 
         const verdict = await assess(candidate.href);
-        if (verdict.reason === "wall") return { wall: true };
+        if (verdict.reason === "wall") {
+          const after = await throughTheWall(candidate.href);
+          if (after && after.ok) return { ...after, url: loadedUrl };
+          return { wall: true };
+        }
         if (verdict.ok) return { ...verdict, url: candidate.href };
         // That was a listing, just not one we can use. Stop rather than open
         // another: this is the counter that puts the account wall up.
@@ -2117,7 +2346,8 @@ async function captureListing({
     /** Turn whatever drain stopped on into either a shot or a refusal. */
     const settleWith = async (found) => {
       if (!found) return null;
-      if (found.wall) throw registrationWallError();
+      if (found.wall) throw registrationWallError(qualNote);
+      if (found.blocked) throw siteRefusedError(new URL(home).hostname, found.blockedPages);
       if (found.spent) {
         if (found.reason === "explorer") {
           throw captureError(
@@ -2159,7 +2389,11 @@ async function captureListing({
       // A site without /listings just 404s; that is not a page we "checked".
       if (!indexStatus || indexStatus >= 400) continue;
       const here = await assess(indexUrl);
-      if (here.reason === "wall") throw registrationWallError();
+      if (here.reason === "wall") {
+        const after = await throughTheWall(indexUrl);
+        if (after && after.ok) return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+        throw registrationWallError(qualNote);
+      }
       if (here.ok) {
         log("Found a listing page with nothing in the way");
         return await shoot(indexUrl, here.verdict, here.preferred ? [] : fallbackNote);
@@ -2171,16 +2405,11 @@ async function captureListing({
 
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
-    if (tally.wall) throw registrationWallError();
+    if (tally.wall) throw registrationWallError(qualNote);
     // Every page it tried was refused outright. That is the site turning an
     // automated browser away, not a site without any listings on it.
     if (blockedPages > 0 && !tally.detail) {
-      throw captureError(
-        "SITE_BLOCKED",
-        `${host} blocked the capture on ${blockedPages} page${
-          blockedPages === 1 ? "" : "s"
-        } (HTTP 403), so none of them could be read. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
-      );
+      throw siteRefusedError(host, blockedPages);
     }
     if (outOfTime()) {
       log("Could not find a listing in time");
@@ -2286,6 +2515,10 @@ module.exports = {
   CAPTURE_BUDGET_MS,
   MAX_LISTING_VIEWS,
   MAX_NAV_VISITS,
+  MAX_BLOCKED_PAGES,
+  isRefusalStatus,
+  USER_AGENT,
+  USER_AGENT_METADATA,
   JUNK_HOSTS,
   HEAVY_RESOURCE_TYPES,
   DISMISS_LABELS,

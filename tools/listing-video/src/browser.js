@@ -63,7 +63,26 @@ const LOW_MEMORY_ARGS = [
   "--use-fake-device-for-media-stream",
   "--deny-permission-prompts",
   "--disable-notifications",
+  /*
+   * Do not advertise the automation.
+   *
+   * This switch stops Blink exposing the AutomationControlled feature, which is
+   * the flag behind navigator.webdriver and the easiest bot check on the web. It
+   * costs nothing and it is not a bypass - a site that fingerprints properly
+   * still knows, which is why the uploaded-screenshot path exists.
+   */
+  "--disable-blink-features=AutomationControlled",
 ];
+
+/*
+ * Chrome's own automation switches, which puppeteer adds unless told otherwise.
+ *
+ * --enable-automation puts an infobar across the top of the window - furniture
+ * that would end up in a screenshot - and sets the automation bit that
+ * --disable-blink-features above is there to clear, so leaving it on would undo
+ * the line before it.
+ */
+const AUTOMATION_ARGS = ["--enable-automation", "--disable-popup-blocking"];
 
 /**
  * A browser that has never been anywhere.
@@ -89,6 +108,7 @@ async function launch() {
     headless: true,
     userDataDir,
     args: [...LOW_MEMORY_ARGS, "--incognito"],
+    ignoreDefaultArgs: AUTOMATION_ARGS,
     // Small while crawling. The page that actually gets photographed is resized
     // to 1920x1080 for the shot.
     defaultViewport: { width: 1024, height: 768 },
@@ -198,4 +218,11 @@ async function closeBrowser(browser, { graceMs = 5000 } = {}) {
   return how;
 }
 
-module.exports = { launch, launchExplorerBrowser, closeBrowser, closeStartupPage, LOW_MEMORY_ARGS };
+module.exports = {
+  launch,
+  launchExplorerBrowser,
+  closeBrowser,
+  closeStartupPage,
+  LOW_MEMORY_ARGS,
+  AUTOMATION_ARGS,
+};
