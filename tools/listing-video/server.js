@@ -17,6 +17,7 @@ const { availableVoiceEngines } = require("./src/audio");
 const elevenVoices = require("./src/voices");
 const voiceUsage = require("./src/voice-usage");
 const { normalizeUrl } = require("./src/capture");
+const { addressFromFields } = require("./src/geocode");
 
 const TOOL_PATH = "/tools/listing-video";
 const uploadsDir = path.join(config.dataDir, "uploads");
@@ -33,6 +34,87 @@ const upload = multer({
   }),
   limits: { fileSize: 120 * 1024 * 1024, files: 1 },
 });
+
+/*
+ * The uploaded listing screenshot, for a site that will not be filmed.
+ *
+ * Same multer-onto-disk pattern as the audio take above, with a much smaller
+ * allowance and a type check: a video take is tens of megabytes, a screenshot of
+ * a listing page is one or two. The content type is checked here for a quick,
+ * clear refusal, and the bytes themselves are checked again in
+ * src/listing-image.js before ffmpeg is asked to open the file - a browser will
+ * label an upload whatever it likes.
+ */
+const MAX_LISTING_IMAGE_BYTES = 12 * 1024 * 1024;
+
+const listingImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const ext = /\.(png|jpe?g)$/i.test(file.originalname || "")
+        ? path.extname(file.originalname).toLowerCase()
+        : ".png";
+      cb(null, `listing-${Date.now()}-${Math.random().toString(16).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: MAX_LISTING_IMAGE_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\/(png|jpe?g)$/i.test(file.mimetype || "")) return cb(null, true);
+    return cb(new Error("Only a PNG or JPG screenshot can be uploaded."));
+  },
+});
+
+/**
+ * Take the screenshot if there is one, and turn a refusal into something
+ * readable. A request with no file at all passes straight through, so the same
+ * route serves a JSON body and a multipart one.
+ */
+function acceptListingImage(req, res, next) {
+  listingImageUpload.single("listingImage")(req, res, (error) => {
+    if (!error) return next();
+    const tooBig = error.code === "LIMIT_FILE_SIZE";
+    return res.status(400).json({
+      error: tooBig
+        ? `That screenshot is bigger than ${Math.round(
+            MAX_LISTING_IMAGE_BYTES / (1024 * 1024)
+          )}MB. Screenshot the visible page rather than the whole scrolled page, or save it as a JPG.`
+        : `That screenshot did not upload: ${error.message}`,
+    });
+  });
+}
+
+/** A rejected upload must not be left sitting in the uploads directory. */
+async function discardUpload(file) {
+  if (file && file.path) await fsp.rm(file.path, { force: true }).catch(() => {});
+}
+
+/**
+ * Move an accepted screenshot into the job's own folder and read the address off
+ * the form beside it.
+ *
+ * The address is typed in, never taken from the picture - see
+ * src/geocode.js addressFromFields.
+ */
+async function keepUploadedListing(jobId, file, body) {
+  const address = addressFromFields({
+    street: body.addressStreet,
+    city: body.addressCity,
+    state: body.addressState,
+    zip: body.addressZip,
+  });
+
+  const kept = path.join(store.jobDir(jobId), `listing-upload${path.extname(file.filename) || ".png"}`);
+  await fsp.mkdir(path.dirname(kept), { recursive: true });
+  await fsp.rename(file.path, kept);
+
+  return {
+    file: kept,
+    originalName: String(file.originalname || "").slice(0, 120),
+    uploadedAt: new Date().toISOString(),
+    bytes: file.size || 0,
+    address,
+  };
+}
 
 const app = express();
 app.disable("x-powered-by");
@@ -211,8 +293,16 @@ app.post(`${TOOL_PATH}/api/templates-restore-defaults`, auth.requireSession, asy
 /* ---------------------------------------------------------------- */
 /* step 1: make the silent picture                                  */
 /* ---------------------------------------------------------------- */
-app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
+app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async (req, res) => {
   const body = req.body || {};
+  /*
+   * A refusal from here on has to take the upload with it, or a rejected form
+   * leaves a screenshot in the uploads directory that nothing will ever collect.
+   */
+  const refuse = async (status, error) => {
+    await discardUpload(req.file);
+    return res.status(status).json({ error });
+  };
   const firstName = String(body.firstName || "").trim();
   const company = String(body.company || "").trim();
   const websiteRaw = String(body.websiteUrl || "").trim();
@@ -230,16 +320,17 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
   if (!websiteRaw) problems.push("Website URL");
   if (!EMAIL_RE.test(customerEmail)) problems.push("Customer email");
   if (problems.length) {
-    return res.status(400).json({ error: `Please fill in: ${problems.join(", ")}.` });
+    return refuse(400, `Please fill in: ${problems.join(", ")}.`);
   }
   if (!templateId) {
-    return res.status(400).json({ error: "Pick a script template first." });
+    return refuse(400, "Pick a script template first.");
   }
 
   let template;
   try {
     template = await templates.getTemplate(templateId);
   } catch (error) {
+    await discardUpload(req.file);
     return fail(res, error);
   }
 
@@ -249,7 +340,28 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
     websiteUrl = normalizeUrl(websiteRaw);
     if (listingRaw) listingUrl = normalizeUrl(listingRaw);
   } catch (error) {
-    return res.status(400).json({ error: `That website address does not look right: ${error.message}` });
+    return refuse(400, `That website address does not look right: ${error.message}`);
+  }
+
+  /*
+   * The address that comes with an upload, checked before the job exists.
+   *
+   * There is no page to read it off on this path, so a blank street address is a
+   * form to send back rather than a job to fail. It is parsed here so the person
+   * gets "type the street address" on the form they are looking at, instead of a
+   * failed video a minute later.
+   */
+  if (req.file) {
+    try {
+      addressFromFields({
+        street: body.addressStreet,
+        city: body.addressCity,
+        state: body.addressState,
+        zip: body.addressZip,
+      });
+    } catch (error) {
+      return refuse(error.status || 400, error.message);
+    }
   }
 
   const beats = templates.renderBeats(template, { firstName, company });
@@ -260,7 +372,19 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, async (req, res) => {
     beats,
   });
 
-  store.logProgress(job, "Got it - looking for one of their live listings");
+  if (req.file) {
+    try {
+      job.input.uploadedListing = await keepUploadedListing(job.id, req.file, body);
+      await store.persist(job);
+    } catch (error) {
+      await discardUpload(req.file);
+      return fail(res, error);
+    }
+    store.logProgress(job, "Got it - using the screenshot you uploaded instead of loading their site");
+  } else {
+    store.logProgress(job, "Got it - looking for one of their live listings");
+  }
+
   enqueue(() => renderSilent(job).catch(() => {}));
 
   return res.status(202).json({ id: job.id });
@@ -283,6 +407,16 @@ app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req,
     }
   }
 
+  /*
+   * A retry with a URL goes back to the live site, so any screenshot uploaded
+   * earlier is dropped - otherwise the upload would silently win and the pasted
+   * URL would look like it had been ignored.
+   */
+  if (job.input.uploadedListing) {
+    await fsp.rm(job.input.uploadedListing.file, { force: true }).catch(() => {});
+    job.input.uploadedListing = null;
+  }
+
   job.result = null;
   job.review = { reviewed: false, at: null, how: null };
   await store.persist(job);
@@ -290,6 +424,60 @@ app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req,
   enqueue(() => renderSilent(job).catch(() => {}));
   return res.status(202).json({ id: job.id });
 });
+
+/**
+ * The way out of a site that will not be filmed at all.
+ *
+ * Scott Rodgers Real Estate answers an automated browser with 403 on every page
+ * that holds a listing, and the failure panel's "paste one listing URL" is no
+ * help when the listing URL 403s as well. So the picture can be uploaded
+ * instead: the listing page as it looks in a real browser, plus the address to
+ * point the Explorer at, and the same job carries on from there without the site
+ * being asked for anything.
+ *
+ * The address is typed in, deliberately. Nothing reads it off the picture.
+ */
+app.post(
+  `${TOOL_PATH}/api/jobs/:id/listing-image`,
+  auth.requireSession,
+  acceptListingImage,
+  async (req, res) => {
+    const job = await store.getJob(req.params.id);
+    if (!job) {
+      await discardUpload(req.file);
+      return res.status(404).json({ error: "That video was not found." });
+    }
+    if (isBusy(job)) {
+      await discardUpload(req.file);
+      return res.status(409).json({ error: "That video is still being worked on. Give it a moment." });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "No screenshot came through. Pick a PNG or JPG and try again." });
+    }
+
+    let kept;
+    try {
+      kept = await keepUploadedListing(job.id, req.file, req.body || {});
+    } catch (error) {
+      await discardUpload(req.file);
+      return fail(res, error);
+    }
+
+    // A second upload replaces the first rather than piling up in the job folder.
+    const previous = job.input.uploadedListing;
+    if (previous && previous.file && previous.file !== kept.file) {
+      await fsp.rm(previous.file, { force: true }).catch(() => {});
+    }
+
+    job.input.uploadedListing = kept;
+    job.result = null;
+    job.review = { reviewed: false, at: null, how: null };
+    await store.persist(job);
+    store.logProgress(job, `Using the screenshot you uploaded for ${kept.address.street}`);
+    enqueue(() => renderSilent(job).catch(() => {}));
+    return res.status(202).json({ id: job.id });
+  }
+);
 
 app.get(`${TOOL_PATH}/api/jobs/:id`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);

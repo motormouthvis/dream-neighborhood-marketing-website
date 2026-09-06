@@ -226,6 +226,7 @@ function publicView(job) {
           capturedAddress: job.silent.capturedAddress ? job.silent.capturedAddress.street : "",
           notes: job.silent.notes || [],
           pagesChecked: (job.silent.checkedPages || []).length,
+          uploadedPicture: Boolean(job.silent.uploadedPicture),
         }
       : null,
     result: job.result
@@ -249,6 +250,15 @@ function publicView(job) {
       customerEmail: job.input.customerEmail,
       templateId: job.input.templateId,
       fromId: job.input.fromId,
+      // What was uploaded and the address that came with it, without the server
+      // path the file sits at.
+      uploadedListing: job.input.uploadedListing
+        ? {
+            originalName: job.input.uploadedListing.originalName || "",
+            uploadedAt: job.input.uploadedListing.uploadedAt || "",
+            address: job.input.uploadedListing.address || null,
+          }
+        : null,
     },
   };
 }

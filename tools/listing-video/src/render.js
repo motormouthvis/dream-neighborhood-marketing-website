@@ -7,6 +7,7 @@ const { launch, closeBrowser } = require("./browser");
 const { captureListing, CAPTURE_BUDGET_MS } = require("./capture");
 const { captureExplorerTabs, WALK_BUDGET_MS } = require("./explorer");
 const { locateAddress } = require("./geocode");
+const { prepareListingImage } = require("./listing-image");
 const { renderFrames, spreadDurations } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
 const { buildSilentVideo, buildVideo, buildPoster, trimVideoAt } = require("./video");
@@ -24,6 +25,7 @@ const store = require("./store");
 function stageOf(error) {
   const code = String((error && error.code) || "");
   if (code.startsWith("EXPLORER_")) return "explorer-walk";
+  if (code.startsWith("LISTING_IMAGE_")) return "uploaded-picture";
   if (code.startsWith("GEOCODE_") || code === "ADDRESS_NOT_FOUND") return "geocode";
   if (/^(SITE_|LISTING_|PAGE_|NO_LISTING|COOKIE_|OVERLAY_|REGISTRATION_|ALL_LISTINGS|CAPTURE_)/.test(code)) {
     return "capture";
@@ -56,12 +58,50 @@ async function withDeadline(work, ms, onTimeout) {
 }
 
 /**
+ * The listing picture, from an upload rather than off the site.
+ *
+ * Answers with the same shape captureListing does, so everything after this
+ * point - the scenes, the Explorer popups, the silent cut, the voice - cannot
+ * tell the difference and did not have to change.
+ *
+ * No browser is opened at all on this path. That is the whole point: the site
+ * that 403s is never asked for anything, so it has nothing left to refuse.
+ */
+async function useUploadedListing(job, workDir, log) {
+  const uploaded = job.input.uploadedListing;
+  const picture = await prepareListingImage({ sourcePath: uploaded.file, outDir: workDir, log });
+
+  return {
+    screenshot: picture.file,
+    // The address was typed in by whoever took the screenshot. Nothing was read
+    // off the picture, so there is no page here that could be misread.
+    address: uploaded.address,
+    // No page was loaded, so there is no URL that was filmed. The listing URL
+    // the upload stands in for is kept on the job either way.
+    pageUrl: "",
+    checked: [],
+    tally: null,
+    notes: [
+      `The listing picture is the screenshot you uploaded${
+        uploaded.originalName ? ` (${uploaded.originalName})` : ""
+      }, not a capture of their site. The address behind the Explorer popups is the one you typed: ${
+        [uploaded.address.street, uploaded.address.cityState, uploaded.address.zip].filter(Boolean).join(", ")
+      }. Check the map in the review.`,
+    ],
+    tookSeconds: 0,
+  };
+}
+
+/**
  * Phase one: the picture, silent.
  *
  * Screenshot a live listing on the customer's site, draw one still per beat,
  * and stitch them at the template's suggested durations with no audio track at
  * all. The user watches this back and records over it, so the words land on the
  * right scenes.
+ *
+ * The picture can also arrive as an upload, for a site that refuses an automated
+ * browser outright - see useUploadedListing.
  */
 async function renderSilent(job, { budgetMs } = {}) {
   const dir = store.jobDir(job.id);
@@ -80,30 +120,35 @@ async function renderSilent(job, { budgetMs } = {}) {
   let filmed = null;
   try {
     await fsp.mkdir(workDir, { recursive: true });
-    browser = await launch();
 
-    const capture = await withDeadline(
-      captureListing({
-        browser,
-        url: job.input.websiteUrl,
-        listingUrl: job.input.listingUrl || "",
-        outDir: workDir,
-        log,
-        // The upgrade script wants a listing that already has School Explorer.
-        // Everything else wants one that has neither Explorer on it yet.
-        explorerRule: (job.template && job.template.listingExplorer) || "absent",
-        ...(budgetMs ? { budgetMs } : {}),
-      }),
-      // Its own budget plus a little, so this only fires when capture is wedged
-      // rather than merely slow.
-      (budgetMs || CAPTURE_BUDGET_MS) + 20000,
-      () => {
-        // A browser that is stuck, or has just run out of memory, will not
-        // answer close(), so it gets killed.
-        log("Their site took too long - stopping the browser");
-        return closeBrowser(browser, { graceMs: 2000 });
-      }
-    );
+    let capture;
+    if (job.input.uploadedListing) {
+      capture = await useUploadedListing(job, workDir, log);
+    } else {
+      browser = await launch();
+      capture = await withDeadline(
+        captureListing({
+          browser,
+          url: job.input.websiteUrl,
+          listingUrl: job.input.listingUrl || "",
+          outDir: workDir,
+          log,
+          // The upgrade script wants a listing that already has School Explorer.
+          // Everything else wants one that has neither Explorer on it yet.
+          explorerRule: (job.template && job.template.listingExplorer) || "absent",
+          ...(budgetMs ? { budgetMs } : {}),
+        }),
+        // Its own budget plus a little, so this only fires when capture is wedged
+        // rather than merely slow.
+        (budgetMs || CAPTURE_BUDGET_MS) + 20000,
+        () => {
+          // A browser that is stuck, or has just run out of memory, will not
+          // answer close(), so it gets killed.
+          log("Their site took too long - stopping the browser");
+          return closeBrowser(browser, { graceMs: 2000 });
+        }
+      );
+    }
 
     filmed = { screenshot: capture.screenshot, pageUrl: capture.pageUrl };
 
@@ -117,9 +162,13 @@ async function renderSilent(job, { budgetMs } = {}) {
     let explorerShots = {};
     const tabsWanted = [...new Set(job.beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName))];
     if (tabsWanted.length) {
-      log(`Closing the listing browser, then filming ${tabsWanted.length} Neighborhood Explorer tabs`);
-      await closeBrowser(browser);
-      browser = null;
+      if (browser) {
+        log(`Closing the listing browser, then filming ${tabsWanted.length} Neighborhood Explorer tabs`);
+        await closeBrowser(browser);
+        browser = null;
+      } else {
+        log(`Filming ${tabsWanted.length} Neighborhood Explorer tabs`);
+      }
 
       const where = await locateAddress(capture.address, { log });
       const walk = await withDeadline(
@@ -129,9 +178,11 @@ async function renderSilent(job, { budgetMs } = {}) {
       );
       explorerShots = walk.shots;
       job.explorer = { place: walk.place, lat: where.lat, lng: where.lng, precision: where.precision };
-
-      browser = await launch();
     }
+
+    // An uploaded picture opens no browser for the capture, and the Explorer walk
+    // closes the one it was handed, so the renderer gets one either way.
+    if (!browser) browser = await launch();
 
     log("Drawing the scenes");
     const drawn = await renderFrames({
@@ -173,6 +224,9 @@ async function renderSilent(job, { budgetMs } = {}) {
       capturedAddress: capture.address || null,
       checkedPages: capture.checked,
       notes: capture.notes || [],
+      // So the record and review steps can say the picture was uploaded rather
+      // than filmed, instead of it having to be inferred from an empty page URL.
+      uploadedPicture: Boolean(job.input.uploadedListing),
     };
     job.status = "silent-ready";
     log("Silent video ready - watch it and record your voice");
@@ -380,4 +434,4 @@ async function trimFinishedVideo(job, { atSeconds }) {
   return job;
 }
 
-module.exports = { renderSilent, attachAudio, trimFinishedVideo };
+module.exports = { renderSilent, attachAudio, trimFinishedVideo, useUploadedListing };

@@ -29,6 +29,18 @@ function geocodeError(message) {
   return error;
 }
 
+/**
+ * A typed address that cannot be used, which is a filled-in form rather than a
+ * failed lookup - so it is answered on the request instead of failing a job.
+ */
+function addressError(message) {
+  const error = new Error(message);
+  error.code = "ADDRESS_INCOMPLETE";
+  error.status = 400;
+  error.isCaptureRefusal = true;
+  return error;
+}
+
 async function politePause() {
   const since = Date.now() - lastCallAt;
   if (since < MIN_GAP_MS) await new Promise((resolve) => setTimeout(resolve, MIN_GAP_MS - since));
@@ -56,6 +68,69 @@ const STATES = {
 };
 
 const flat = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+
+/** "illinois" and "IL" both mean IL, so a person can type either. */
+const STATE_CODE_BY_NAME = new Map(Object.entries(STATES).map(([code, name]) => [flat(name), code]));
+
+function stateCodeFor(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase();
+  if (STATES[upper]) return upper;
+  return STATE_CODE_BY_NAME.get(flat(raw)) || "";
+}
+
+/**
+ * The address as a person typed it, in the shape the rest of the tool uses.
+ *
+ * Used when the listing picture was uploaded rather than photographed, so there
+ * is no page to read an address off. Nothing here is inferred from the image:
+ * the Explorer is pointed at coordinates, and a house number guessed off a
+ * screenshot would film another street's schools and commutes while looking
+ * entirely convincing. What is typed is what gets looked up.
+ *
+ * The street is required. The town is not, because the geocoder can still place
+ * a distinctive street on its own and says so when it has - but a state that
+ * cannot be recognised is refused rather than quietly dropped, since "Peoria, XX"
+ * would throw away the one check on the answer being in the right place.
+ */
+function addressFromFields({ street, city, state, zip } = {}) {
+  const tidy = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  const streetText = tidy(street);
+  const cityText = tidy(city).replace(/,+$/, "");
+  const zipText = tidy(zip).replace(/^(\d{5})-\d{4}$/, "$1");
+  const stateText = tidy(state);
+
+  if (!streetText) {
+    throw addressError(
+      "Type the listing's street address. The Neighborhood Explorer is pointed at coordinates, and nothing here reads an address off the picture."
+    );
+  }
+  if (zipText && !/^\d{5}$/.test(zipText)) {
+    throw addressError(`"${zipText}" is not a five digit ZIP code. Correct it, or leave it empty.`);
+  }
+
+  const stateCode = stateCodeFor(stateText);
+  if (stateText && !stateCode) {
+    throw addressError(`"${stateText}" is not a US state. Use the two letter code, like IL.`);
+  }
+
+  // The shape expectationsFrom parses back out: "City, ST", or just one of them.
+  let cityState = "";
+  if (cityText && stateCode) cityState = `${cityText}, ${stateCode}`;
+  else if (cityText) cityState = cityText;
+  else if (stateCode) cityState = stateCode;
+
+  return {
+    street: streetText,
+    cityState,
+    zip: zipText,
+    source: "typed",
+    // Typed in by somebody looking at the listing, so it is what the video is
+    // about - the same standing a heading read off the page would have.
+    isSubject: true,
+  };
+}
 
 /** What the listing said, so an answer can be checked against it. */
 function expectationsFrom(address) {
@@ -197,4 +272,4 @@ async function locateAddress(address, { log = () => {}, timeoutMs = 12000 } = {}
   );
 }
 
-module.exports = { locateAddress, queriesFor, resultMatches, expectationsFrom };
+module.exports = { locateAddress, queriesFor, resultMatches, expectationsFrom, addressFromFields, stateCodeFor };
