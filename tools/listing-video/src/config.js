@@ -109,6 +109,34 @@ const config = {
 
   // Address to coordinates. Keyless by default; see src/geocode.js.
   geocoderUrl: process.env.LISTING_VIDEO_GEOCODER || "https://nominatim.openstreetmap.org/search",
+
+  /*
+   * The QUAL account, for realtor sites that put a listing behind a login.
+   *
+   * Off unless an email and a password are both set, and they are only set on
+   * staging - which is what keeps this off production rather than a flag
+   * somebody could flip by accident. See src/site-account.js for what it does
+   * with them, and the README for what it cannot do.
+   *
+   * registerAllowed is deliberately its own switch and deliberately off. Signing
+   * in to an account that already exists is quiet; REGISTERING on an IDX site is
+   * how that site's agent gets a "you have a new lead" email, and not emailing
+   * realtors is a hard rule here. Turn it on per site, knowingly, or leave it
+   * alone.
+   */
+  qualAccount: {
+    email: (process.env.LISTING_VIDEO_QUAL_EMAIL || "").trim(),
+    password: process.env.LISTING_VIDEO_QUAL_PASSWORD || "",
+    name: (process.env.LISTING_VIDEO_QUAL_NAME || "Motormouth QUAL").trim(),
+    phone: (process.env.LISTING_VIDEO_QUAL_PHONE || "").trim(),
+    registerAllowed: bool(process.env.LISTING_VIDEO_QUAL_REGISTER, false),
+    // Empty means any site. A list means only these hostnames, which is the
+    // safer way to switch it on for one customer at a time.
+    hosts: (process.env.LISTING_VIDEO_QUAL_HOSTS || "")
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim().toLowerCase().replace(/^www\./, ""))
+      .filter(Boolean),
+  },
 };
 
 config.mailConfigured = Boolean(config.smtp.host);
