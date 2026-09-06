@@ -93,6 +93,14 @@ const AUTOMATION_ARGS = ["--enable-automation", "--disable-popup-blocking"];
  * directory and runs incognito on top of that: nothing is ever carried over from
  * a previous job, and no view counter starts part-used.
  *
+ * Worth knowing, because it is not obvious and something now depends on it:
+ * under --incognito each page opened here gets its own cookie jar, so cookies do
+ * not survive from one page to the next WITHIN a capture either. That is why the
+ * cookie banner has to be accepted on every page rather than once - and why the
+ * navigation that follows a QUAL sign-in has to reuse its page instead of
+ * opening a fresh one, or the session would be left behind. See
+ * revisitOnSamePage in src/capture.js.
+ *
  * The directory is removed when the browser is closed.
  */
 async function launch() {

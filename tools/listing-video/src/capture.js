@@ -1691,6 +1691,17 @@ async function captureListing({
   /* The last status a navigation came back with, so a refusal can name it. */
   let lastStatus = 0;
 
+  /** Take whatever page is open to a URL, and remember where it ended up. */
+  const navigate = async (target, heavy) => {
+    if (outOfTime()) return 0;
+    const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
+    registrationGate = opened.registrationGate || null;
+    loadedUrl = page.url();
+    loadedHeavy = heavy;
+    lastStatus = opened.status || 0;
+    return opened.status;
+  };
+
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
     page = null;
@@ -1699,12 +1710,32 @@ async function captureListing({
     loadedHeavy = false;
     if (outOfTime()) return 0;
     page = await preparePage(browser, { heavy });
-    const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
-    registrationGate = opened.registrationGate || null;
-    loadedUrl = page.url();
-    loadedHeavy = heavy;
-    lastStatus = opened.status || 0;
-    return opened.status;
+    return navigate(target, heavy);
+  };
+
+  /**
+   * Go somewhere without opening a new page, keeping the cookies we have.
+   *
+   * Every other navigation gets a brand new page, because closing the old one
+   * hands its renderer memory back - and that is most of what keeps a capture
+   * inside a small dyno. A new page also starts with an empty cookie jar, since
+   * the browser runs incognito on purpose so an IDX view counter never begins
+   * part-used.
+   *
+   * That is exactly wrong for one case. A session established by filling in a
+   * login form lives in cookies, and would not survive the next visit() - the
+   * listing would come back as the same wall we just signed in past. So the
+   * one navigation that follows a sign-in keeps its page.
+   */
+  const revisitOnSamePage = async (target, { heavy = false } = {}) => {
+    if (!page) return visit(target, { heavy });
+    if (heavy) {
+      // The crawl blocks images and fonts to save memory. The page that actually
+      // gets photographed needs them.
+      await page.setRequestInterception(false).catch(() => {});
+      await page.setViewport({ ...VIEWPORT, deviceScaleFactor: 1 });
+    }
+    return navigate(target, heavy);
   };
 
   /*
@@ -2080,7 +2111,8 @@ async function captureListing({
     log("Opening the listing again, signed in");
     let status = 0;
     try {
-      status = await visit(target, { heavy: true });
+      // Same page, or the session we just established would be left behind.
+      status = await revisitOnSamePage(target, { heavy: true });
     } catch (_) {
       status = 0;
     }
@@ -2510,8 +2542,10 @@ module.exports = {
   normalizeUrl,
   detectExplorer,
   // Exposed so a page can be inspected on its own while working out why a real
-  // site was read the way it was.
+  // site was read the way it was, and so a test can check what a page set up the
+  // way capture sets one up actually looks like from inside.
   collectPageFacts,
+  preparePage,
   CAPTURE_BUDGET_MS,
   MAX_LISTING_VIEWS,
   MAX_NAV_VISITS,
