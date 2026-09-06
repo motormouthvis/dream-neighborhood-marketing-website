@@ -73,7 +73,39 @@ const state = () => ({
   progressShown: !document.getElementById("step-progress").hidden,
   why: document.getElementById("failedWhy").textContent.trim(),
   retryBoxShown: !document.getElementById("retryListing").hidden,
+  uploadShown: !document.getElementById("uploadEscape").hidden,
+  uploadOpen: document.getElementById("uploadEscape").open,
+  uploadSummary: document.getElementById("uploadEscapeSummary").textContent.trim(),
+  uploadWhy: document.getElementById("uploadEscapeWhy").textContent.trim(),
   polls: window.__jobPolls || 0,
+});
+
+/** Answer every job poll with one canned job, which is what a failure looks like. */
+function serveJob(job) {
+  return (canned) => {
+    const real = window.fetch;
+    window.fetch = function (url, init) {
+      if (typeof url === "string" && /\/api\/jobs\/[a-f0-9]+(\?|$)/.test(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify(canned), { status: 200, headers: { "Content-Type": "application/json" } })
+        );
+      }
+      return real(url, init);
+    };
+  };
+}
+
+/* A failed job, as the browser would be handed one. */
+const failedJob = (overrides) => ({
+  id: "bd7620f10ca57c5459",
+  status: "failed",
+  progress: ["Opening scottrodgersrealestate.com"],
+  template: { name: "School only (v11)" },
+  beats: [],
+  review: { reviewed: false },
+  input: {},
+  retryable: true,
+  ...overrides,
 });
 
 test("opening a video that no longer exists says so instead of spinning", options, async () => {
@@ -92,6 +124,118 @@ test("opening a video that no longer exists says so instead of spinning", option
     assert.match(shown.why, /paste a listing url/i);
     // There is nothing to retry on a job that is gone, so that box stays away.
     assert.equal(shown.retryBoxShown, false);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The dead end.
+ *
+ * Bill's panel said "blocked the capture on 4 pages (HTTP 403)" and offered him
+ * one thing: paste a listing URL. The URL he had is refused in the same way, so
+ * there was nowhere to go. On an HTTP refusal the upload is not an alternative,
+ * it is the answer, so it is open and explained rather than folded away.
+ */
+test("a 403 opens the upload and explains why another URL will not help", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(
+      serveJob(),
+      failedJob({
+        error:
+          "www.scottrodgersrealestate.com blocked the capture on 4 pages (HTTP 403), so none of them could be read.",
+        errorCode: "SITE_BLOCKED",
+        failure: { errorCode: "SITE_BLOCKED", httpStatus: 403, reason: "blocked", pageUrl: "" },
+      })
+    );
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.equal(shown.uploadShown, true, "the upload has to be offered");
+    assert.equal(shown.uploadOpen, true, "and opened, because it is the way through");
+    assert.match(shown.uploadSummary, /upload a screenshot/i);
+    // Say why the obvious thing will not work, rather than leaving him to find out.
+    assert.match(shown.uploadWhy, /refused in the same way|refusing an automated browser/i);
+    assert.match(shown.uploadWhy, /your own browser/i);
+
+    // The boxes he needs are all there: the picture and the address.
+    const boxes = await tool.page.evaluate(() => ({
+      file: document.getElementById("retryListingImage").accept,
+      street: Boolean(document.getElementById("retryAddressStreet")),
+      city: Boolean(document.getElementById("retryAddressCity")),
+      state: Boolean(document.getElementById("retryAddressState")),
+      zip: Boolean(document.getElementById("retryAddressZip")),
+    }));
+    assert.match(boxes.file, /image\/png/);
+    assert.match(boxes.file, /image\/jpeg/);
+    assert.ok(boxes.street && boxes.city && boxes.state && boxes.zip);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("another kind of failure offers the upload too, but closed", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(
+      serveJob(),
+      failedJob({
+        error: "No single listing page could be found on redwagonteam.com.",
+        errorCode: "NO_LISTING_FOUND",
+        failure: { errorCode: "NO_LISTING_FOUND", httpStatus: null, reason: "no listing", pageUrl: "" },
+      })
+    );
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.equal(shown.retryBoxShown, true, "pasting a URL is still the first thing to try here");
+    assert.equal(shown.uploadShown, true);
+    assert.equal(shown.uploadOpen, false, "it is a way out, not the recommendation");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a job that is gone offers neither, because there is nothing to upload against", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.match(shown.why, /server restarted/i);
+    assert.equal(shown.retryBoxShown, false);
+    assert.equal(shown.uploadShown, false);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The upload is an alternative to the live site, not an extra. Two answers to
+ * one question would mean the upload winning silently while the pasted URL
+ * looked ignored.
+ */
+test("picking the upload on the form puts the listing URL box away", options, async () => {
+  const tool = await openTool();
+  try {
+    const pick = (value) =>
+      tool.page.evaluate((wanted) => {
+        const input = document.querySelector('input[name="pictureSource"][value="' + wanted + '"]');
+        input.checked = true;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return {
+          uploadShown: !document.getElementById("uploadField").hidden,
+          urlShown: !document.getElementById("listingUrlField").hidden,
+        };
+      }, value);
+
+    assert.deepEqual(await pick("site"), { uploadShown: false, urlShown: true });
+    assert.deepEqual(await pick("upload"), { uploadShown: true, urlShown: false });
+    assert.deepEqual(await pick("site"), { uploadShown: false, urlShown: true });
   } finally {
     await tool.close();
   }

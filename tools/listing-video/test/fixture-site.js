@@ -704,12 +704,169 @@ const IDX_DIRECTION_SITE = {
   [MILES_ST_PATH]: MILES_ST,
 };
 
-function createServer(routes = ROUTES, hits = {}) {
+/*
+ * Bill's actual listing, on a site that writes one house the way Scott Rodgers
+ * Real Estate does.
+ *
+ * The path is the shape that broke: "property-search" matches the search
+ * pattern, and "/detail/362/PA1269955/<slug>" matched no single-listing pattern,
+ * so the URL he pasted was read as the site's search page - and being taken for
+ * a search page is what sent capture crawling instead of opening his house.
+ */
+const ROSEMEAD_PATH = "/property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614";
+
+const ROSEMEAD = listing({
+  address: "6031 N Rosemead Dr",
+  city: "Peoria, IL 61614",
+  price: "260,000",
+  beds: 4,
+  baths: 2,
+  sqft: "2,114",
+  mls: "PA1269955",
+});
+
+/** That site, behaving itself. The detail URL opens the house. */
+const DETAIL_URL_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/property-search": SEARCH,
+  [ROSEMEAD_PATH]: ROSEMEAD,
+};
+
+/**
+ * And behaving the way it did for Bill: the house is there for a person, and
+ * everything answers an automated browser with 403.
+ */
+const DETAIL_URL_SITE_FORBIDDEN = {
+  "/": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/property-search": { status: 403, body: "<h1>Forbidden</h1>" },
+  [ROSEMEAD_PATH]: { status: 403, body: "<h1>Forbidden</h1>" },
+};
+
+/**
+ * A site whose homepage loads but whose listings are all refused.
+ *
+ * This is the shape of the crawl Bill's job actually did: page after page coming
+ * back 403. Capture should stop once the site has clearly made up its mind
+ * rather than collecting four of them.
+ */
+const BLOCKS_ITS_LISTINGS = {
+  ...ROUTES,
+  "/listings": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/123-main-st": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/88-ocean-view": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/456-pine-ave": { status: 403, body: "<h1>Forbidden</h1>" },
+};
+
+/* ---------------------------------------------------------------- */
+/* a site whose listings are behind a login it will actually accept  */
+/* ---------------------------------------------------------------- */
+
+/** The account this fixture site will let in. The QUAL test sets these. */
+const ACCOUNT = { email: "qual@motormouth.com", password: "fixture-password-not-a-real-one" };
+
+const SESSION_COOKIE = "fixture-session=in";
+
+const LOGIN_WALL_PAGE = page(
+  "Sign in to view this listing - Fathom Realty",
+  `<div class="wrap">
+     <h1>Sign in to view this listing</h1>
+     <p>You have viewed 3 of 3 free listings. Please sign in to continue viewing
+     property details, photos and pricing.</p>
+     <form method="post" action="/account/login">
+       <label for="email">Email</label>
+       <input id="email" name="email" type="email" placeholder="Email address" />
+       <label for="password">Password</label>
+       <input id="password" name="password" type="password" placeholder="Password" />
+       <button type="submit">Sign in</button>
+     </form>
+     <p>No account? <a href="/account/register">Register free</a></p>
+   </div>`
+);
+
+/** The listing, once signed in. The sign-out link is what confirms the session. */
+const MAIN_ST_SIGNED_IN = MAIN_ST.replace(
+  '<header class="site-header">',
+  '<header class="site-header"><a href="/account/logout">Sign out</a>'
+);
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+      // A fixture does not need to accept an unbounded body.
+      if (raw.length > 8000) req.destroy();
+    });
+    req.on("end", () => resolve(raw));
+  });
+}
+
+/**
+ * A site that hides its listings behind a login and opens up for the right
+ * credentials. Nothing here is a real account: the email and password are the
+ * fixture's own, and the test points the QUAL config at them.
+ */
+const LOGIN_WALL_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/listings": LISTINGS_INDEX,
+  "/listings/123-main-st": (req, res, { signedIn }) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(signedIn ? MAIN_ST_SIGNED_IN : LOGIN_WALL_PAGE);
+  },
+  "/account/login": async (req, res) => {
+    if (req.method !== "POST") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(LOGIN_WALL_PAGE);
+      return;
+    }
+    const fields = new URLSearchParams(await readBody(req));
+    const ok = fields.get("email") === ACCOUNT.email && fields.get("password") === ACCOUNT.password;
+    if (!ok) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(LOGIN_WALL_PAGE.replace("<h1>", "<p>Those details are incorrect.</p><h1>"));
+      return;
+    }
+    res.writeHead(302, { location: "/listings/123-main-st", "set-cookie": `${SESSION_COOKIE}; Path=/` });
+    res.end();
+  },
+};
+
+/** The same site, but it will not accept the password either. */
+const LOGIN_WALL_REFUSES = {
+  ...LOGIN_WALL_SITE,
+  "/account/login": async (req, res) => {
+    if (req.method === "POST") await readBody(req);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(LOGIN_WALL_PAGE.replace("<h1>", "<p>Those details are incorrect.</p><h1>"));
+  },
+};
+
+function createServer(routes = ROUTES, hits = {}, requests = []) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
     hits[url.pathname] = (hits[url.pathname] || 0) + 1;
+    // Kept so a test can check what a realtor's site is actually sent, rather
+    // than what we believe we are sending it.
+    requests.push({ path: url.pathname, method: req.method, headers: { ...req.headers } });
 
     const route = routes[url.pathname];
+
+    /*
+     * A route can be a function when it needs to answer differently depending on
+     * the request - a login that sets a cookie, and a listing that is a wall
+     * until that cookie is there.
+     */
+    if (typeof route === "function") {
+      const signedIn = (req.headers.cookie || "").includes(SESSION_COOKIE);
+      Promise.resolve(route(req, res, { url, signedIn })).catch(() => {
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
+      });
+      return;
+    }
+
     const spec = route && typeof route === "object" ? route : { body: route };
     // A route can ask to be slow, so the capture budget can be exercised.
     const body = spec.body;
@@ -744,9 +901,10 @@ function createServer(routes = ROUTES, hits = {}) {
 function listen(routes = ROUTES) {
   return new Promise((resolve) => {
     const hits = {};
-    const server = createServer(routes, hits);
+    const requests = [];
+    const server = createServer(routes, hits, requests);
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, hits, origin: `http://127.0.0.1:${server.address().port}` });
+      resolve({ server, hits, requests, origin: `http://127.0.0.1:${server.address().port}` });
     });
   });
 }
@@ -773,6 +931,13 @@ module.exports = {
   SEARCH_WITH_NO_LISTINGS,
   IDX_LISTING_PATH,
   FORBIDDEN_SITE,
+  DETAIL_URL_SITE,
+  DETAIL_URL_SITE_FORBIDDEN,
+  ROSEMEAD_PATH,
+  BLOCKS_ITS_LISTINGS,
+  LOGIN_WALL_SITE,
+  LOGIN_WALL_REFUSES,
+  ACCOUNT,
   createServer,
   listen,
 };
