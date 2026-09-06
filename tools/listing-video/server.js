@@ -83,6 +83,24 @@ function acceptListingImage(req, res, next) {
   });
 }
 
+/**
+ * Mark a job as being worked on, before the request is answered.
+ *
+ * The render is queued, so it may not start for a moment - and until it does,
+ * the job still carries the previous run's status. The browser polls every two
+ * and a half seconds, so a retry could be answered with the LAST attempt's
+ * "silent-ready" and paint the old video as though the new one had finished
+ * already. Claiming the job here closes that window; renderSilent sets the same
+ * status again when it actually begins, which costs nothing.
+ */
+function startCapture(job, message) {
+  job.status = "capturing";
+  job.error = null;
+  job.errorCode = null;
+  job.retryable = false;
+  store.logProgress(job, message);
+}
+
 /** A rejected upload must not be left sitting in the uploads directory. */
 async function discardUpload(file) {
   if (file && file.path) await fsp.rm(file.path, { force: true }).catch(() => {});
@@ -419,8 +437,8 @@ app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req,
 
   job.result = null;
   job.review = { reviewed: false, at: null, how: null };
+  startCapture(job, "Trying the capture again");
   await store.persist(job);
-  store.logProgress(job, "Trying the capture again");
   enqueue(() => renderSilent(job).catch(() => {}));
   return res.status(202).json({ id: job.id });
 });
@@ -472,8 +490,8 @@ app.post(
     job.input.uploadedListing = kept;
     job.result = null;
     job.review = { reviewed: false, at: null, how: null };
+    startCapture(job, `Using the screenshot you uploaded for ${kept.address.street}`);
     await store.persist(job);
-    store.logProgress(job, `Using the screenshot you uploaded for ${kept.address.street}`);
     enqueue(() => renderSilent(job).catch(() => {}));
     return res.status(202).json({ id: job.id });
   }
