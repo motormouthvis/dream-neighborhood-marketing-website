@@ -90,7 +90,38 @@
               <span class="hint" id="websiteHint"></span>
             </label>
 
-            <label class="field">
+            <!--
+              Where the listing picture comes from.
+
+              Nearly always the live site. The upload is here as a first-class
+              choice because some sites refuse an automated browser outright and
+              there is no point finding that out a minute into a render.
+            -->
+            <fieldset class="field" id="sourceField">
+              <legend class="label">Where does the listing picture come from?</legend>
+              <div class="choices" role="radiogroup" id="sourceChoices">
+                <label class="choice">
+                  <input type="radio" name="pictureSource" value="site" checked />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">Their live site</strong>
+                      <span class="choice__note">The normal way. We open it and film one of their listings.</span>
+                    </span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="pictureSource" value="upload" />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">A screenshot I upload</strong>
+                      <span class="choice__note">
+                        For a site that blocks us. Their site is never opened, so nothing can refuse us.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="field" id="listingUrlField">
               <span class="label">Listing page URL <span class="opt">optional</span></span>
               <input class="input" id="listingUrl" name="listingUrl" placeholder="Paste one of their listing pages" />
               <span class="hint">
@@ -98,6 +129,28 @@
                 after a failed search.
               </span>
             </label>
+
+            <!-- Shown only when the picture is being uploaded. -->
+            <div class="field upload" id="uploadField" hidden>
+              <span class="label">The listing screenshot</span>
+              <span class="hint hint--above">
+                Open the listing in your own browser, screenshot the page, and upload it here. PNG or JPG, up to 12MB. A
+                screenshot of the browser window works best; the whole scrolled page will be shrunk to fit.
+              </span>
+              <input class="input" id="listingImage" type="file" accept="image/png,image/jpeg" />
+
+              <span class="label label--sub">And the listing's address</span>
+              <span class="hint hint--above">
+                Type this in. Nothing is read off the picture, because the Explorer is pointed at coordinates and a
+                misread house number would quietly film another street's schools.
+              </span>
+              <input class="input" id="addressStreet" placeholder="Street address, e.g. 6031 N Rosemead Dr" />
+              <div class="row">
+                <input class="input" id="addressCity" placeholder="City, e.g. Peoria" />
+                <input class="input input--short" id="addressState" placeholder="State, e.g. IL" />
+                <input class="input input--short" id="addressZip" placeholder="ZIP, e.g. 61614" />
+              </div>
+            </div>
 
             <label class="field">
               <span class="label">Customer email</span>
@@ -327,6 +380,55 @@
               Try that listing
             </button>
           </div>
+
+          <!--
+            The way out when their site will not be filmed at all.
+
+            Shown for every capture refusal, and opened for you when the site
+            answered 403 - at that point pasting another URL from the same site is
+            the one thing already known not to work.
+          -->
+          <details class="escape" id="uploadEscape" hidden>
+            <summary id="uploadEscapeSummary">Upload a screenshot of the listing instead</summary>
+            <p class="hint hint--above" id="uploadEscapeWhy"></p>
+
+            <label class="field">
+              <span class="label">The listing screenshot</span>
+              <input class="input" id="retryListingImage" type="file" accept="image/png,image/jpeg" />
+              <span class="hint">
+                Open the listing in your own browser, where it loads fine, and screenshot the page. PNG or JPG, up to
+                12MB.
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="label">Street address</span>
+              <input class="input" id="retryAddressStreet" placeholder="e.g. 6031 N Rosemead Dr" />
+              <span class="hint">
+                Type it in. Nothing is read off the picture: the Explorer is pointed at coordinates, and a misread house
+                number would film another street's schools while looking perfectly fine.
+              </span>
+            </label>
+
+            <div class="field">
+              <span class="label">Town, state and ZIP <span class="opt">recommended</span></span>
+              <div class="row">
+                <input class="input" id="retryAddressCity" placeholder="City, e.g. Peoria" />
+                <input class="input input--short" id="retryAddressState" placeholder="IL" />
+                <input class="input input--short" id="retryAddressZip" placeholder="61614" />
+              </div>
+              <span class="hint">
+                Without a town there is nothing to check the map against, so the Explorer may land on a street of the
+                same name elsewhere.
+              </span>
+            </div>
+
+            <p class="error" id="uploadError" hidden></p>
+            <button type="button" class="btn btn--primary" id="uploadListingBtn">
+              Use this screenshot
+            </button>
+          </details>
+
           <button type="button" class="btn btn--ghost" id="retryBtn" style="margin-top: 18px">Back to the form</button>
         </section>
       </section>
