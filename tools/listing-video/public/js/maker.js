@@ -425,7 +425,7 @@
     D.setText(
       el("uploadEscapeSummary"),
       refused
-        ? "Upload a screenshot of the listing instead \u2014 do this"
+        ? "Upload a screenshot of the listing instead \u2014 start here"
         : "Upload a screenshot of the listing instead"
     );
     D.setText(

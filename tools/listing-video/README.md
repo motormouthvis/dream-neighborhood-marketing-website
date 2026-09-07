@@ -5,6 +5,12 @@ customer, record their own voice over a silent video, hear it against the
 pictures, add it to the video, review the finished file, and send a shareable
 link.
 
+The picture normally comes from one of the customer's own live listings. Some
+sites refuse an automated browser and will go on refusing it, so the picture can
+also be **uploaded** — a screenshot taken in a real browser, plus the address —
+and their site is then never opened at all. See
+[When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
+
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
 static site build, and it does not touch any Dream Neighborhood product code. No
@@ -43,6 +49,11 @@ talking to. Each script says which it needs, and capture obeys it.
 
 First name, company, website URL, customer email. There is also an optional
 **Listing page URL** for when you already know the exact listing you want.
+
+**Where does the listing picture come from?** is normally *their live site*, and
+that is the whole flow below. The other choice — *a screenshot I upload* — is for
+a site that refuses an automated browser outright, and is described in
+[When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
 
 ### 3. The tool finds a listing detail page
 
@@ -755,8 +766,8 @@ lot, and it can be read with `tail`. Each line has:
 | `jobId` | the job, so the Library card and the picture can be found |
 | `firstName`, `company` | who it was for |
 | `websiteUrl`, `listingUrl` | what it was given |
-| `stage` | `capture`, `explorer-walk`, `geocode` or `render` |
-| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, and so on |
+| `stage` | `capture`, `uploaded-picture`, `explorer-walk`, `geocode` or `render` |
+| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, `LISTING_IMAGE_NOT_AN_IMAGE`, and so on |
 | `reason` | the message Bill saw, cut to one line |
 | `httpStatus` | only when a status caused it. A refusal that was not about a status does not claim one — the last page to load might have been a 404 on a path we guessed at |
 | `pageKind` | what the page was classified as, if it was |
@@ -774,6 +785,174 @@ added. The log and that endpoint are the report.
 Both of these live on the dyno's own disk, so they go when it restarts — the same
 as the jobs and the videos. They answer "what happened on that job just now", not
 "what happened last month". See [Disk](#disk).
+
+---
+
+## When their site will not be filmed at all
+
+Some sites refuse an automated browser and go on refusing it. Scott Rodgers Real
+Estate answers 403 on every page that holds a listing; refusing us is what they
+are paying for, and no user agent changes that.
+
+Until this existed, that was the end of the road. Bill's panel said *"blocked the
+capture on 4 pages (HTTP 403)"* and offered him one thing — paste a listing URL —
+and the listing URL is refused in the same way. Nowhere to go.
+
+### Upload the listing picture instead
+
+Open the listing in your own browser, where it loads perfectly. Screenshot the
+page. Upload it, with the address.
+
+**No browser is opened on this path at all.** That is the point: their site is
+never asked for anything, so it has nothing left to refuse. Everything after the
+picture is identical — the scenes, both Explorer popups, the silent cut, the
+voice, the review, the send.
+
+It is offered in two places:
+
+- **On the failure panel**, where the refusal actually happened. For a refusal by
+  HTTP status it is open and explained, because at that point it is not an
+  alternative, it is the answer. Other capture failures get it too, folded away,
+  as a way out.
+- **On the form**, so a site already known to block us does not have to fail once
+  first. Picking it hides the Listing page URL box — a URL and a screenshot would
+  be two answers to one question, and the upload would win silently.
+
+### The address is typed in, and never read off the picture
+
+There is no OCR here, on purpose, and no guessing from the file name.
+
+The Explorer is pointed at **coordinates**. A house number misread off a
+screenshot would film another street's schools, commutes and walk scores while
+looking completely convincing — a wrong video that reviews as a right one. So the
+street address is typed by the person who can see the listing, or there is no
+video.
+
+The town, state and ZIP are optional but asked for: without a town there is
+nothing to check the geocoder's answer against, so it may land on a street of the
+same name in another state. A state that is not a state is refused rather than
+quietly dropped.
+
+### What is accepted
+
+| | |
+| --- | --- |
+| Types | PNG or JPG. Checked by **signature**, not by what the upload claims — a browser will label a file whatever it likes |
+| Size | Up to 12MB |
+| Smallest | 320px on both sides; below that the video is just blurry |
+| Shape | Anything. It is **fitted whole and never cropped** — the address is usually near an edge, and cropping to fill would cut off the one thing the video is about |
+
+A screenshot of a browser window is about 16:9, so the common case scales to
+exactly 1920x1080 and is padded by nothing at all. A full-page grab is shown
+whole and small rather than cropped to its top strip.
+
+### It says so afterwards
+
+A video built this way is not a capture of their site, and nothing pretends it
+is. The record step reads *"on the screenshot you uploaded for 6031 N Rosemead
+Dr"* rather than *"filmed on their listing for…"*, there is no captured page URL
+because no page was filmed, and a note names the file and repeats the address
+that was typed so the map can be checked in the review.
+
+Retrying with a listing URL means going back to the live site, so it drops the
+upload. Leaving it in place would let the upload win silently while the pasted
+URL looked ignored.
+
+### Best-effort 403 hardening, and what it is not
+
+Three things changed, none of which is a bypass:
+
+- The user agent said Chrome 131 on a Mac while Chrome's own `Sec-CH-UA` headers
+  said `HeadlessChrome`, so the request **disagreed with itself** — and to bot
+  protection the disagreement is worth more than either header alone. Those now
+  match, `Accept-Language` is sent, and `navigator.webdriver` is not left on for
+  the one-line bot check.
+- **A refusal is not retried.** Loading the same URL again seconds after being
+  refused is the worst thing to do with one: the site has just decided about us,
+  and a repeat hit is what rate limiters count. A timeout still gets a second go.
+- **The crawl stops after two refusals** instead of collecting four. Bill's run
+  walked four pages and was refused four times; pages three and four told us
+  nothing the second had not, and left two more hits in their logs.
+
+**A site that fingerprints properly still knows.** Scott Rodgers is expected to
+carry on refusing, and the upload is what actually gets that video made there.
+
+### A pasted detail URL is one house, not a search page
+
+Worth calling out separately, because it was the other half of Bill's failure and
+had nothing to do with the 403.
+
+Scott Rodgers writes one listing as
+`/property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614`.
+No single-listing URL pattern matched that shape, while `property-search` **does**
+match the search pattern — so the URL he pasted was read as the site's search
+page.
+
+That is why his run crawled at all. Being taken for a search page made capture
+ignore the house he had named and go hunting for one of its own choosing, and it
+was those four crawl hops that came back 403. A pasted detail URL is now one hit
+on the page he asked for. kvCORE, Real Estate Webmasters and Placester shapes are
+covered too.
+
+---
+
+## Signing in to a realtor site (the QUAL account)
+
+Separate problem, separate answer, and the two get confused.
+
+An **account wall** is a door with a form on it: the site served us a page, and
+that page asks us to log in. Capture used to refuse those outright and say "paste
+a listing URL", which is no help when every listing is behind the same door. With
+the QUAL account configured it fills the sign-in form in, and if the key turns it
+opens the listing again and films it.
+
+**It does nothing whatsoever for a 403**, and the difference matters. A 403 is bot
+protection refusing to send the page at all — there is no form, no page and
+nothing to sign in to. Credentials are not even offered to a site that has already
+refused us. Scott Rodgers is that case, and the upload is what works there.
+
+### Switching it on
+
+Off unless **both** `LISTING_VIDEO_QUAL_EMAIL` and `LISTING_VIDEO_QUAL_PASSWORD`
+are set. They are set on staging and not on production, and that is what keeps
+this off production — not a flag somebody could flip by accident.
+
+| Setting | What it does |
+| --- | --- |
+| `LISTING_VIDEO_QUAL_EMAIL` | The QUAL account's address. **Both this and the password are required**; either on its own is off |
+| `LISTING_VIDEO_QUAL_PASSWORD` | Its password. Never logged, and never sent to the browser |
+| `LISTING_VIDEO_QUAL_NAME` | Name to put in a registration form. Defaults to `Motormouth QUAL` |
+| `LISTING_VIDEO_QUAL_PHONE` | Phone for a registration form that insists on one |
+| `LISTING_VIDEO_QUAL_HOSTS` | Comma-separated hostnames. **Empty means any site**; a list is an allowlist, which is the safer way to switch this on one customer at a time |
+| `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account. Off. See below |
+
+### Why registering is its own switch, and off
+
+Signing in to an account that already exists is quiet.
+
+**Registering is not.** Creating an account on an IDX site is precisely how that
+site's agent gets a "you have a new lead" email, and not emailing realtors is a
+hard rule here. So it has to be turned on deliberately, ideally alongside
+`LISTING_VIDEO_QUAL_HOSTS`, for a site where somebody has decided that is
+acceptable.
+
+### What it will and will not do
+
+- Tried **once per capture**, and only when the page we were served was read as a
+  wall.
+- The sign-in form is preferred over the registration form on the same page. Two
+  password boxes, or a "confirm password", means it is a registration form.
+- A form mentioning card numbers, billing or payment is never touched.
+- One hop to a "already have an account? sign in" link, and no more.
+- Success is judged on the **page having stopped asking** — a sign-out link, an
+  account link, or the password box being gone. A form that submits and comes back
+  with the same password box on it has not signed anybody in.
+- A wall it could not get past is still a refusal, and says the key was tried and
+  did not turn, which is a different problem to there being no key at all.
+
+A video filmed behind a login **says so on the job**, because the page a
+signed-in visitor sees is not always the page the public sees, and whoever
+reviews it should know which one they have.
 
 ---
 
@@ -983,6 +1162,10 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
 | `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. |
 | `LISTING_VIDEO_GEOCODER` | Address lookup. Defaults to OpenStreetMap's Nominatim, which needs no key. |
+| `LISTING_VIDEO_QUAL_EMAIL`, `LISTING_VIDEO_QUAL_PASSWORD` | The QUAL account, for realtor sites that put a listing behind a login. Off unless **both** are set, which is what keeps it off production. Nothing here helps with a 403. See [Signing in to a realtor site](#signing-in-to-a-realtor-site-the-qual-account). |
+| `LISTING_VIDEO_QUAL_NAME`, `LISTING_VIDEO_QUAL_PHONE` | Details for a registration form. The name defaults to `Motormouth QUAL`. |
+| `LISTING_VIDEO_QUAL_HOSTS` | Which sites the QUAL account may be used on. Empty means any; a comma-separated list is an allowlist. |
+| `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account, not just signing in. Off, because registering on an IDX site is what emails that site's agent a new lead. |
 
 ### Memory
 
@@ -1048,8 +1231,9 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | --- | --- |
 | `GET /tools/listing-video` | Bill and Myles, after the password |
 | `GET/POST/PUT/DELETE /tools/listing-video/api/templates...` | Signed in only |
-| `POST /tools/listing-video/api/jobs` | Signed in only |
-| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only |
+| `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields |
+| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. Goes back to the live site, dropping any uploaded screenshot |
+| `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus `addressStreet` and optionally `addressCity`, `addressState`, `addressZip` |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
@@ -1071,6 +1255,8 @@ src/templates.js             script templates on disk: load, save, validate, ren
 src/default-templates.js     the three shipped scripts
 src/browser.js               Chrome, kept small, and killed for certain
 src/capture.js               opens their site, accepts cookies, walks to a listing
+src/site-account.js          signs in with the QUAL account at an account wall
+src/listing-image.js         an uploaded screenshot, checked and fitted to the frame
 src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
@@ -1086,4 +1272,6 @@ public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
+test/uploaded-listing.test.js  the 403 dead end, and the upload out of it
+test/site-account.test.js    the QUAL account, and what it must not be used for
 ```
