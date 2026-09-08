@@ -7,9 +7,14 @@ link.
 
 The picture normally comes from one of the customer's own live listings. Some
 sites refuse an automated browser and will go on refusing it, so the picture can
-also be **uploaded** — a screenshot taken in a real browser, plus the address —
-and their site is then never opened at all. See
+also be **uploaded** — a screenshot taken in a real browser, plus the address
+picked from the Explorer's own suggestions — and their site is then never opened at
+all. See
 [When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
+
+Both Explorer popups in the video are **photographs of the live product** at that
+listing's address. Neither is drawn by this tool. See
+[Filming the Explorers](#filming-the-explorers).
 
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
@@ -448,34 +453,78 @@ audio track at all**:
   in the same place and at the same size as each other.
 - School Explorer is always the first explorer on screen. Neighborhood Explorer
   beats only run after it, and only in a `se-ne` script.
-- Each Neighborhood Explorer beat is a **photograph of that tab in the live
-  product**, taken at this listing's own address. See
-  [Filming the Explorer](#filming-the-explorer).
+- **Both** cards are photographs of the live product at this listing's own
+  address — the School Explorer's schools list, and each Neighborhood Explorer
+  tab. See [Filming the Explorers](#filming-the-explorers).
 
-#### Filming the Explorer
+#### Filming the Explorers
 
-The seven Neighborhood Explorer tabs each show genuinely different data, so each
-tab beat is a screenshot of that tab **in the live product, at this listing's
-address**. Nothing about a tab's contents is drawn by this tool.
+Neither card is drawn by this tool. Both are screenshots of the real product
+opened at **this listing's address**, so nothing on screen can be about anywhere
+else.
 
-It used to be. The card was ours, and between tab beats only the highlighted chip
-moved while the body stayed on Map and Summary — so Schools, Commutes and
-Walk & Bike all showed the same income and rent bars. Because each beat is now one
-photograph, the highlighted chip and the body underneath it cannot disagree.
+Both were drawn once, and both went wrong the same way:
+
+- The **Neighborhood Explorer** card was ours, and between tab beats only the
+  highlighted chip moved while the body stayed on Map and Summary — so Schools,
+  Commutes and Walk & Bike all showed the same income and rent bars.
+- The **School Explorer** card was ours too, drawn from a fixed list: the eight
+  schools of the neighborhood in the approved reference video. Every video ever
+  made showed *Smyrna, GA · Cobb County School District*, Nickajack Elementary and
+  Griffin Middle, whatever address it was about. Bill found it on a listing at
+  6031 N Rosemead Dr, Peoria, IL: he typed the Peoria address, and the School
+  Explorer in the video was about Georgia. It was not the wrong address — the card
+  was not the product.
+
+Because each beat is now one photograph, nothing in a card can disagree with
+anything else in it, or with the address the video is about.
 
 How it runs, after the listing still is in hand:
 
 1. The listing browser is **closed first**. It is deliberately starved to survive
    a small dyno, and the Explorer's map needs WebGL — without a GPU the widget
-   sits on "Loading location..." forever. The walk gets its own browser, so only
+   sits on "Loading location..." forever. The walks get their own browser, so only
    one Chrome is ever alive at a time.
-2. The address captured from the realtor page is turned into coordinates. Every
-   answer is checked against the town and state the listing gave, because a loose
-   geocode once put "123 Main St, Long Beach, CA" in Lake Huron, and filming that
-   would have put another town's schools in the video. If only the town or
-   postcode resolves, the job log says the Explorer was centred nearby.
-3. The live widget is opened at those coordinates, and each tab is clicked and
-   photographed once its own content has arrived and stopped moving.
+2. The address is turned into coordinates **once**, and both Explorers are filmed
+   at that one point, so they cannot be about two different places. On the upload
+   path the address is already a place the Explorer named and resolved before the
+   job started — see
+   [The address is picked from the Explorer's own suggestions](#the-address-is-picked-from-the-explorers-own-suggestions).
+   Otherwise the address read off the realtor page is looked up: the Explorer's own
+   geocoder first, since it is the one that decides what the Explorer shows, and
+   OpenStreetMap behind it. Every answer is checked against the town and state the
+   listing gave, because a loose geocode once put "123 Main St, Long Beach, CA" in
+   Lake Huron. If only the town or postcode resolves, the job log says the Explorer
+   was centred nearby.
+3. The **School Explorer** embed is opened at that address and photographed. It
+   refuses if it will not load schools, because a card of our own is the bug.
+4. The **Neighborhood Explorer** widget is opened at the same coordinates, and each
+   tab is clicked and photographed once its own content has arrived and stopped
+   moving.
+
+Where each one landed is written into the job and shown beside the silent video —
+*"The School Explorer in this video is the live product at Peoria, IL · Peoria Sd
+150 School District, showing 30 schools nearby"* — so the review can see it is
+about the right house before anything is sent. That is the check nobody had on the
+video Bill was sent.
+
+#### The School Explorer beats
+
+A script has more than one School Explorer beat, so the list is photographed
+scrolled a little further each time and each beat gets its own picture, up to
+three. A short list gives fewer, and the last one is held rather than running out.
+
+It refuses rather than falling back to anything drawn by us:
+
+| What happened | What it says |
+| --- | --- |
+| the address cannot be placed | it could not place that address, so it has no schools for it |
+| it loads, but never lists schools | it did not load any schools for that address, try again in a minute |
+| it takes too long to photograph | it took too long, try again |
+
+Every refusal saves a picture of the popup as it stood, which usually answers
+"why" faster than the message does: its own front door with the search box on it
+means it never got the address at all.
 
 #### How big the popup is, and how sharp
 
@@ -498,18 +547,25 @@ The listing behind an explorer card is **dimmed**. It used to be washed with
 card sitting on it had no edge to see. On a light listing the popup disappeared
 into the page.
 
-Around the Neighborhood Explorer shot the video now draws the popup's own
-**chrome**: a border, a strong shadow, a header bar with the brand and the address
-being shown, and an **X** in the corner. The shots are of the inner widget
-(`popup=true`), so the real popup's header and close button are not in them — 
-without this there was no header and no way out anywhere in the video.
+Around each Explorer shot the video draws that popup's own **chrome**: a border, a
+strong shadow, a header bar with the product's name and the address being shown,
+and an **X** in the corner. The shots are of the inner widget and the inner embed,
+so the real popups' headers and close buttons are not in them — without this there
+was no header and no way out anywhere in the video.
 
-That is chrome and nothing else. No tabs, no data and no Explorer features are
-invented: everything inside the frame is the photograph of the real product.
+The Neighborhood Explorer's header is white with green type, as its own popup's is;
+the School Explorer's is a solid green bar with white type, as its own popup's is.
 
-**School Explorer keeps the size and position the approved v11 cuts used**, but it
-sits on the same dimmed listing now — the white wash was washing it out too, so
-the dim is shared.
+That is chrome and nothing else. No tabs, no schools, no ratings and no Explorer
+features are invented: everything inside the frame is the photograph of the real
+product.
+
+**Both cards are the same size and in the same place** — 1600x780 at 150,168 — so
+the upgrade script's "same button, it just does more" cuts between two popups
+rather than between two differently shaped rectangles. The School Explorer card was
+1340x764, the size the approved v11 cuts used for the drawing; now that it holds a
+photograph it is filmed and framed like the other one, which is also what fixed it
+reading small and washed out.
 
 There is a test that renders a card over a white listing and measures the pixels:
 the listing has to get **darker**, the card has to stay bright, and the header and
@@ -822,16 +878,44 @@ It is offered in two places:
 
 There is no OCR here, on purpose, and no guessing from the file name.
 
-The Explorer is pointed at **coordinates**. A house number misread off a
+The Explorers are pointed at **coordinates**. A house number misread off a
 screenshot would film another street's schools, commutes and walk scores while
 looking completely convincing — a wrong video that reviews as a right one. So the
-street address is typed by the person who can see the listing, or there is no
-video.
+address is typed by the person who can see the listing, or there is no video.
 
-The town, state and ZIP are optional but asked for: without a town there is
-nothing to check the geocoder's answer against, so it may land on a street of the
-same name in another state. A state that is not a state is refused rather than
-quietly dropped.
+### The address is picked from the Explorer's own suggestions
+
+Typing it is not enough on its own. It used to be four free-text boxes, and Bill's
+Peoria job showed why that is not the same thing as an address: nothing checked
+what he typed until a job was already running, and a geocoder will answer a loose
+query with a street of the same name somewhere else. "123 Main St, Long Beach, CA"
+comes back in El Segundo.
+
+So the box is **the Neighborhood Explorer's own place picker** — not a second one
+built here. As you type, the Explorer's `autocomplete` endpoint is asked what it
+would offer, and the suggestion you pick is resolved by the Explorer's own
+`geocode` endpoint. Both live beside the widget URL, so moving
+`LISTING_VIDEO_EXPLORER_URL` to staging moves the picker with it, and the address
+behind a job is one the Explorer itself named and placed.
+
+They are proxied through `GET /api/places` rather than called from the browser, so
+the tool stays one origin and CORS never comes into it.
+
+What that buys:
+
+- The address is settled **before the job exists**. An address the Explorer cannot
+  place is a form to send back — "pick one of the suggestions" — not a video a
+  minute later that filmed the wrong town.
+- Both Explorers are filmed at exactly the point the picker resolved. Nothing is
+  looked up a second time, so nothing can come back differently.
+- Typing the whole address by hand still works, because a picker that will not
+  suggest must not be a dead end. Free text is resolved the same way and checked
+  against the town that was typed: if the Explorer places it somewhere else, the
+  form says where and asks you to pick from the list.
+- A picker that **cannot be reached** blocks nothing. The address goes on as typed
+  and is looked up at render time, where the town check and OpenStreetMap are both
+  still there. The form says the lookup was unreachable rather than looking like it
+  has no suggestions.
 
 ### What is accepted
 
@@ -853,6 +937,11 @@ is. The record step reads *"on the screenshot you uploaded for 6031 N Rosemead
 Dr"* rather than *"filmed on their listing for…"*, there is no captured page URL
 because no page was filmed, and a note names the file and repeats the address
 that was typed so the map can be checked in the review.
+
+Beside it, a note says where each Explorer was actually filmed — *"the live product
+at Peoria, IL · Peoria Sd 150 School District, showing 30 schools nearby"* — which
+is the line that would have said "Smyrna, GA · Cobb County School District" on the
+video Bill was sent, and nothing said it at all.
 
 Retrying with a listing URL means going back to the live site, so it drops the
 upload. Leaving it in place would let the upload win silently while the pasted
@@ -1160,8 +1249,10 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `PIPER_BIN`, `PIPER_VOICE` | Point at a Piper install if `setup-voice.sh` put it somewhere unusual. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
-| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. |
-| `LISTING_VIDEO_GEOCODER` | Address lookup. Defaults to OpenStreetMap's Nominatim, which needs no key. |
+| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. The address picker follows this URL, so pointing it at staging points the suggestions at staging too. |
+| `LISTING_VIDEO_PLACE_SUGGEST`, `LISTING_VIDEO_PLACE_RESOLVE` | The Explorer's `autocomplete/` and `geocode/` endpoints, if they ever move away from beside the widget URL. |
+| `LISTING_VIDEO_SCHOOL_EXPLORER_URL`, `LISTING_VIDEO_SCHOOL_EXPLORER_ACCENT` | Which School Explorer embed the school beats are filmed from, and its accent colour. Defaults to the embed the popup snippet loads on a realtor's page. |
+| `LISTING_VIDEO_GEOCODER` | Address lookup for when the Explorer's own geocoder cannot place an address. Defaults to OpenStreetMap's Nominatim, which needs no key. |
 | `LISTING_VIDEO_QUAL_EMAIL`, `LISTING_VIDEO_QUAL_PASSWORD` | The QUAL account, for realtor sites that put a listing behind a login. Off unless **both** are set, which is what keeps it off production. Nothing here helps with a 403. See [Signing in to a realtor site](#signing-in-to-a-realtor-site-the-qual-account). |
 | `LISTING_VIDEO_QUAL_NAME`, `LISTING_VIDEO_QUAL_PHONE` | Details for a registration form. The name defaults to `Motormouth QUAL`. |
 | `LISTING_VIDEO_QUAL_HOSTS` | Which sites the QUAL account may be used on. Empty means any; a comma-separated list is an allowlist. |
@@ -1231,9 +1322,10 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | --- | --- |
 | `GET /tools/listing-video` | Bill and Myles, after the password |
 | `GET/POST/PUT/DELETE /tools/listing-video/api/templates...` | Signed in only |
+| `GET /tools/listing-video/api/places?q=` | Signed in only. The Neighborhood Explorer's own address suggestions, proxied so the tool stays one origin |
 | `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields |
 | `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. Goes back to the live site, dropping any uploaded screenshot |
-| `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus `addressStreet` and optionally `addressCity`, `addressState`, `addressZip` |
+| `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
@@ -1264,14 +1356,19 @@ src/audio.js                 recorded takes, the optional AI voice, 0.6s lead si
 src/render.js                phase one (silent picture) and phase two (attach audio)
 src/store.js                 jobs on disk, the library list, delete
 src/mail.js                  the two from-addresses, honest "not connected" state
-src/demo-data.js             the demo neighborhood shown inside the School Explorer card
+src/ne-tabs.js               the seven chips, their old names, and the order they are walked
 src/explorer.js              films the live Neighborhood Explorer, one tab at a time
+src/school-explorer.js       films the live School Explorer at the listing's address
+src/places.js                the Explorer's own address suggestions and geocoder
 src/geocode.js               the listing's address as coordinates, checked against its town
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
+public/js/place-picker.js    the address box: the Explorer's suggestions as you type
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
-test/uploaded-listing.test.js  the 403 dead end, and the upload out of it
+test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
+test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
+test/places.test.js          the address is a place the Explorer named, not free text
 test/site-account.test.js    the QUAL account, and what it must not be used for
 ```
