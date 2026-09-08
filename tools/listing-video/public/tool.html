@@ -141,15 +141,20 @@
 
               <span class="label label--sub">And the listing's address</span>
               <span class="hint hint--above">
-                Type this in. Nothing is read off the picture, because the Explorer is pointed at coordinates and a
-                misread house number would quietly film another street's schools.
+                Start typing and pick the address from the list. These are the Explorer's own suggestions, so a picked
+                address is one it can place - nothing is read off the picture, and both Explorer popups in the video are
+                filmed at whatever you choose here.
               </span>
-              <input class="input" id="addressStreet" placeholder="Street address, e.g. 6031 N Rosemead Dr" />
-              <div class="row">
-                <input class="input" id="addressCity" placeholder="City, e.g. Peoria" />
-                <input class="input input--short" id="addressState" placeholder="State, e.g. IL" />
-                <input class="input input--short" id="addressZip" placeholder="ZIP, e.g. 61614" />
+              <div class="suggest">
+                <input
+                  class="input"
+                  id="addressSearch"
+                  autocomplete="off"
+                  placeholder="e.g. 6031 N Rosemead Dr, Peoria, IL 61614"
+                />
+                <div class="suggest__list" id="addressSuggestions" hidden></div>
               </div>
+              <p class="hint" id="addressNote" hidden></p>
             </div>
 
             <label class="field">
@@ -401,25 +406,22 @@
               </span>
             </label>
 
-            <label class="field">
-              <span class="label">Street address</span>
-              <input class="input" id="retryAddressStreet" placeholder="e.g. 6031 N Rosemead Dr" />
-              <span class="hint">
-                Type it in. Nothing is read off the picture: the Explorer is pointed at coordinates, and a misread house
-                number would film another street's schools while looking perfectly fine.
-              </span>
-            </label>
-
             <div class="field">
-              <span class="label">Town, state and ZIP <span class="opt">recommended</span></span>
-              <div class="row">
-                <input class="input" id="retryAddressCity" placeholder="City, e.g. Peoria" />
-                <input class="input input--short" id="retryAddressState" placeholder="IL" />
-                <input class="input input--short" id="retryAddressZip" placeholder="61614" />
+              <span class="label">The listing's address</span>
+              <div class="suggest">
+                <input
+                  class="input"
+                  id="retryAddressSearch"
+                  autocomplete="off"
+                  placeholder="e.g. 6031 N Rosemead Dr, Peoria, IL 61614"
+                />
+                <div class="suggest__list" id="retryAddressSuggestions" hidden></div>
               </div>
+              <p class="hint" id="retryAddressNote" hidden></p>
               <span class="hint">
-                Without a town there is nothing to check the map against, so the Explorer may land on a street of the
-                same name elsewhere.
+                Start typing and pick it from the list. These are the Explorer's own suggestions, so a picked address is
+                one it can place - nothing is read off the picture, and the School Explorer and Neighborhood Explorer
+                popups in the video are both filmed at whatever you choose.
               </span>
             </div>
 
@@ -522,6 +524,7 @@
     </main>
 
     <script src="/tools/listing-video/static/js/core.js"></script>
+    <script src="/tools/listing-video/static/js/place-picker.js"></script>
     <script src="/tools/listing-video/static/js/maker.js"></script>
     <script src="/tools/listing-video/static/js/library.js"></script>
     <script src="/tools/listing-video/static/js/scripts-page.js"></script>

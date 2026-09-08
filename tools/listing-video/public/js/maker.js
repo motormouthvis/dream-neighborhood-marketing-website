@@ -274,15 +274,21 @@
     return D.json(url, { method: "POST", body: form });
   }
 
-  /* The typed address, from whichever set of boxes is on screen. */
-  function addressFields(prefix) {
-    return {
-      addressStreet: el(prefix + "Street").value.trim(),
-      addressCity: el(prefix + "City").value.trim(),
-      addressState: el(prefix + "State").value.trim(),
-      addressZip: el(prefix + "Zip").value.trim(),
-    };
-  }
+  /*
+   * The two address boxes, each driven by the Explorer's own picker: the one on
+   * the form and the one on the failure panel's way out. Picking a suggestion is
+   * what fills the address in - see public/js/place-picker.js.
+   */
+  var addressPicker = D.placePicker.attach({
+    input: "addressSearch",
+    list: "addressSuggestions",
+    note: "addressNote",
+  });
+  var retryAddressPicker = D.placePicker.attach({
+    input: "retryAddressSearch",
+    list: "retryAddressSuggestions",
+    note: "retryAddressNote",
+  });
 
   el("form").addEventListener("submit", function (event) {
     event.preventDefault();
@@ -311,10 +317,10 @@
       D.showMessage(el("form-error"), "Pick the screenshot to use, or switch back to their live site.");
       return;
     }
-    if (uploading && !el("addressStreet").value.trim()) {
+    if (uploading && !addressPicker.typed()) {
       D.showMessage(
         el("form-error"),
-        "Type the listing's street address. Nothing is read off the picture, so without it there is nothing to point the Explorer at."
+        "Start typing the listing's address and pick it from the list. Nothing is read off the picture, so without it there is nothing to point the Explorers at."
       );
       return;
     }
@@ -323,12 +329,7 @@
     D.setText(el("makeBtn"), "Starting...");
 
     var started = uploading
-      ? postForm(
-          API + "/jobs",
-          Object.assign({}, payload, addressFields("address")),
-          file,
-          "listingImage"
-        )
+      ? postForm(API + "/jobs", Object.assign({}, payload, addressPicker.value()), file, "listingImage")
       : D.send("POST", API + "/jobs", payload);
 
     started.then(function (result) {
@@ -1168,10 +1169,10 @@
       D.showMessage(el("uploadError"), "Pick a PNG or JPG screenshot of the listing page.");
       return;
     }
-    if (!el("retryAddressStreet").value.trim()) {
+    if (!retryAddressPicker.typed()) {
       D.showMessage(
         el("uploadError"),
-        "Type the listing's street address. Nothing is read off the picture, so without it there is nothing to point the Explorer at."
+        "Start typing the listing's address and pick it from the list. Nothing is read off the picture, so without it there is nothing to point the Explorers at."
       );
       return;
     }
@@ -1188,7 +1189,7 @@
 
     postForm(
       API + "/jobs/" + mine.jobId + "/listing-image",
-      addressFields("retryAddress"),
+      retryAddressPicker.value(),
       file,
       "listingImage"
     ).then(function (result) {
@@ -1213,6 +1214,8 @@
 
   el("againBtn").addEventListener("click", function () {
     el("form").reset();
+    // form.reset() does not know about the picked place behind the address box.
+    addressPicker.reset();
     resetTake();
     paintTemplateChoices();
     paintFromChoices();

@@ -107,6 +107,29 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .upload .input[type="file"] { padding: 12px 14px; background: #fff; cursor: pointer; }
 .upload > .input + .label--sub { margin-top: 22px; }
 .upload .row { margin-top: 12px; }
+
+/*
+ * The address box and the Explorer's own suggestions under it.
+ *
+ * The list sits over whatever is below rather than pushing the form around as
+ * somebody types, so the button they are heading for does not move.
+ */
+.suggest { position: relative; }
+.suggest__list {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+  background: #fff; border: 2px solid var(--line); border-radius: 11px;
+  box-shadow: 0 18px 40px rgba(15, 32, 24, 0.16);
+  overflow: hidden;
+}
+.suggest__item {
+  display: block; width: 100%; text-align: left; font: inherit; cursor: pointer;
+  background: #fff; border: 0; border-bottom: 1px solid var(--line);
+  padding: 12px 16px; color: var(--ink);
+}
+.suggest__item:last-child { border-bottom: 0; }
+.suggest__item:hover, .suggest__item:focus { background: #eef5f1; outline: none; }
+.suggest__item strong { display: block; font-size: 17px; font-weight: 700; }
+.suggest__item span { display: block; font-size: 15px; color: var(--ink-soft); margin-top: 2px; }
 /*
  * The way out of a capture that will not work: the upload, offered on the
  * failure panel itself rather than back on the form.

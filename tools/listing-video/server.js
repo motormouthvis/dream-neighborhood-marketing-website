@@ -17,7 +17,8 @@ const { availableVoiceEngines } = require("./src/audio");
 const elevenVoices = require("./src/voices");
 const voiceUsage = require("./src/voice-usage");
 const { normalizeUrl } = require("./src/capture");
-const { addressFromFields } = require("./src/geocode");
+const { addressFromFields, confirmAddress } = require("./src/geocode");
+const places = require("./src/places");
 
 const TOOL_PATH = "/tools/listing-video";
 const uploadsDir = path.join(config.dataDir, "uploads");
@@ -107,20 +108,31 @@ async function discardUpload(file) {
 }
 
 /**
- * Move an accepted screenshot into the job's own folder and read the address off
- * the form beside it.
+ * The address that came with an uploaded screenshot, settled before anything is
+ * filmed.
  *
- * The address is typed in, never taken from the picture - see
- * src/geocode.js addressFromFields.
+ * Typed in, never taken from the picture, and never taken on trust: the form
+ * offers the Neighborhood Explorer's own suggestions and this resolves the chosen
+ * one through the Explorer's own geocoder, so both Explorers are filmed at a place
+ * the Explorer named. See src/places.js and src/geocode.js confirmAddress.
  */
-async function keepUploadedListing(jobId, file, body) {
-  const address = addressFromFields({
-    street: body.addressStreet,
-    city: body.addressCity,
-    state: body.addressState,
-    zip: body.addressZip,
-  });
+async function addressFromUploadForm(body) {
+  return confirmAddress(
+    addressFromFields({
+      street: body.addressStreet,
+      city: body.addressCity,
+      state: body.addressState,
+      zip: body.addressZip,
+      // What was picked from the suggestions, and where the picker put it.
+      place: body.addressPlace,
+      lat: body.addressLat,
+      lng: body.addressLng,
+    })
+  );
+}
 
+/** Move an accepted screenshot into the job's own folder, with its address. */
+async function keepUploadedListing(jobId, file, address) {
   const kept = path.join(store.jobDir(jobId), `listing-upload${path.extname(file.filename) || ".png"}`);
   await fsp.mkdir(path.dirname(kept), { recursive: true });
   await fsp.rename(file.path, kept);
@@ -226,6 +238,23 @@ app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
 app.get(`${TOOL_PATH}/api/voice-usage`, auth.requireSession, async (req, res) => {
   const usage = await voiceUsage.readUsage().catch(() => ({ state: "unreadable" }));
   return res.json({ usage });
+});
+
+/**
+ * Address suggestions, from the Neighborhood Explorer's own picker.
+ *
+ * The form asks this as somebody types, so the address behind an uploaded
+ * screenshot is one the Explorer named rather than free text that a geocoder
+ * might place in another state. Proxied through here rather than called from the
+ * browser: the tool stays one origin, and staging can be pointed at a staging
+ * Explorer with LISTING_VIDEO_EXPLORER_URL without CORS coming into it.
+ *
+ * An unreachable picker says so, so the form can tell somebody to type the whole
+ * address instead of leaving them staring at a box that stopped suggesting.
+ */
+app.get(`${TOOL_PATH}/api/places`, auth.requireSession, async (req, res) => {
+  const found = await places.suggestPlaces(String(req.query.q || ""));
+  return res.json(found);
 });
 
 /* ---------------------------------------------------------------- */
@@ -362,21 +391,17 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
   }
 
   /*
-   * The address that comes with an upload, checked before the job exists.
+   * The address that comes with an upload, settled before the job exists.
    *
-   * There is no page to read it off on this path, so a blank street address is a
-   * form to send back rather than a job to fail. It is parsed here so the person
-   * gets "type the street address" on the form they are looking at, instead of a
-   * failed video a minute later.
+   * There is no page to read it off on this path, so a blank or unplaceable
+   * address is a form to send back rather than a job to fail. It is resolved here
+   * so the person gets "pick one of the suggestions" on the form they are looking
+   * at, instead of a video a minute later that filmed another town's schools.
    */
+  let uploadedAddress = null;
   if (req.file) {
     try {
-      addressFromFields({
-        street: body.addressStreet,
-        city: body.addressCity,
-        state: body.addressState,
-        zip: body.addressZip,
-      });
+      uploadedAddress = await addressFromUploadForm(body);
     } catch (error) {
       return refuse(error.status || 400, error.message);
     }
@@ -392,7 +417,7 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
 
   if (req.file) {
     try {
-      job.input.uploadedListing = await keepUploadedListing(job.id, req.file, body);
+      job.input.uploadedListing = await keepUploadedListing(job.id, req.file, uploadedAddress);
       await store.persist(job);
     } catch (error) {
       await discardUpload(req.file);
@@ -475,7 +500,7 @@ app.post(
 
     let kept;
     try {
-      kept = await keepUploadedListing(job.id, req.file, req.body || {});
+      kept = await keepUploadedListing(job.id, req.file, await addressFromUploadForm(req.body || {}));
     } catch (error) {
       await discardUpload(req.file);
       return fail(res, error);

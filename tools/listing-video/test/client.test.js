@@ -160,17 +160,95 @@ test("a 403 opens the upload and explains why another URL will not help", option
     assert.match(shown.uploadWhy, /refused in the same way|refusing an automated browser/i);
     assert.match(shown.uploadWhy, /your own browser/i);
 
-    // The boxes he needs are all there: the picture and the address.
+    // The boxes he needs are both there: the picture, and the address as the
+    // Explorer's own picker rather than free text a geocoder might misplace.
     const boxes = await tool.page.evaluate(() => ({
       file: document.getElementById("retryListingImage").accept,
-      street: Boolean(document.getElementById("retryAddressStreet")),
-      city: Boolean(document.getElementById("retryAddressCity")),
-      state: Boolean(document.getElementById("retryAddressState")),
-      zip: Boolean(document.getElementById("retryAddressZip")),
+      address: Boolean(document.getElementById("retryAddressSearch")),
+      suggestions: Boolean(document.getElementById("retryAddressSuggestions")),
     }));
     assert.match(boxes.file, /image\/png/);
     assert.match(boxes.file, /image\/jpeg/);
-    assert.ok(boxes.street && boxes.city && boxes.state && boxes.zip);
+    assert.ok(boxes.address && boxes.suggestions);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The address on the upload path, in the browser.
+ *
+ * Bill typed a Peoria address into four free-text boxes and got a video about
+ * Smyrna, Georgia. It is one box now, with the Neighborhood Explorer's own
+ * suggestions under it, and picking one is what fills the address in - so what the
+ * form posts is a place the Explorer named rather than whatever was typed.
+ */
+test("the address box offers the Explorer's suggestions, and picking one is what fills it in", options, async () => {
+  const tool = await openTool();
+  try {
+    // Answer the suggestions ourselves, so this is about the form and not the
+    // Explorer being up.
+    const asked = await tool.page.evaluate(() => {
+      window.__placeQueries = [];
+      const real = window.fetch;
+      window.fetch = function (url, init) {
+        if (typeof url === "string" && url.includes("/api/places?q=")) {
+          window.__placeQueries.push(decodeURIComponent(url.split("q=")[1]));
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                reachable: true,
+                asked: true,
+                suggestions: [
+                  { description: "6031 N Rosemead Dr, Peoria, IL 61614", street: "6031 N Rosemead Dr", city: "Peoria", state: "IL", zip: "61614" },
+                  { description: "6031 N Rosemary Ct, Peoria, IL 61614", street: "6031 N Rosemary Ct", city: "Peoria", state: "IL", zip: "61614" },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+        return real(url, init);
+      };
+      return true;
+    });
+    assert.equal(asked, true);
+
+    // The address box only exists on the upload path, so choose it first.
+    await tool.page.evaluate(() => {
+      document.querySelector('input[name="pictureSource"][value="upload"]').click();
+    });
+    await tool.page.waitForFunction(() => !document.getElementById("uploadField").hidden, { timeout: 5000 });
+
+    await tool.page.focus("#addressSearch");
+    await tool.page.type("#addressSearch", "6031 N Rosem", { delay: 12 });
+    await tool.page.waitForFunction(
+      () => document.querySelectorAll("#addressSuggestions .suggest__item").length > 0,
+      { timeout: 5000 }
+    );
+
+    const offered = await tool.page.evaluate(() =>
+      Array.from(document.querySelectorAll("#addressSuggestions .suggest__item")).map((row) =>
+        row.innerText.replace(/\s+/g, " ").trim()
+      )
+    );
+    assert.equal(offered.length, 2, JSON.stringify(offered));
+    assert.match(offered[0], /6031 N Rosemead Dr/);
+    assert.match(offered[0], /Peoria, IL 61614/);
+
+    // Picking one puts the Explorer's own description in the box and closes the list.
+    await tool.page.click("#addressSuggestions .suggest__item");
+    const picked = await tool.page.evaluate(() => ({
+      value: document.getElementById("addressSearch").value,
+      listShown: !document.getElementById("addressSuggestions").hidden,
+      // What the form would post, which is the point of all of this.
+      queries: window.__placeQueries,
+    }));
+
+    assert.equal(picked.value, "6031 N Rosemead Dr, Peoria, IL 61614");
+    assert.equal(picked.listShown, false);
+    assert.ok(picked.queries.length >= 1, "the Explorer should have been asked");
+    assert.equal(picked.queries[picked.queries.length - 1], "6031 N Rosem");
   } finally {
     await tool.close();
   }
