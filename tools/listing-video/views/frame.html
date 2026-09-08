@@ -93,7 +93,6 @@
       #stage.hide-popup #popup { display: none; }
 
       /* ---------- explorer card ---------- */
-      /* School Explorer keeps the size and place the approved v11 cuts used. */
       #card {
         position: absolute; left: 290px; top: 208px; width: 1340px; height: 764px;
         background: #f6f7f5; border-radius: 16px;
@@ -138,8 +137,24 @@
           0 48px 120px rgba(4, 14, 9, 0.55),
           0 0 0 1px rgba(255, 255, 255, 0.5) inset;
       }
+      /*
+       * School Explorer is the same shape, because it is the same popup on the
+       * same page: 1600x700 of photographed product under a header of its own.
+       * The two cards cut between each other in the upgrade script, and a popup
+       * that changed size and place between beats would read as two products.
+       */
+      #card.card--se {
+        box-sizing: content-box;
+        left: 150px; top: 168px; width: 1600px; height: 780px;
+        background: #ffffff;
+        border: 1px solid rgba(12, 30, 22, 0.22);
+        border-radius: 20px;
+        box-shadow:
+          0 48px 120px rgba(4, 14, 9, 0.55),
+          0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+      }
       /* No tint or fade over the shot: the text in it has to stay readable. */
-      #card.card--ne::after { content: none; }
+      #card.card--ne::after, #card.card--se::after { content: none; }
 
       .ne__head {
         height: 80px; flex: 0 0 80px;
@@ -163,95 +178,36 @@
       }
       .ne__x svg { width: 22px; height: 22px; }
 
-      /* ===== School Explorer ===== */
-      .se { padding: 26px 30px 0; height: 100%; }
-      .se__top { display: flex; align-items: center; justify-content: space-between; }
-      .se__brand { display: flex; align-items: center; gap: 12px; }
+      /*
+       * ===== School Explorer: a photograph of the real product =====
+       *
+       * Its own popup chrome, drawn as the real one is: a solid accent header
+       * with the product's name and a way out. The shot inside is of the embed
+       * only, so without this there is no header and no X anywhere in the video.
+       */
+      .se__head {
+        height: 80px; flex: 0 0 80px;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 26px; background: #1f7a4d;
+      }
+      .se__brand { display: flex; align-items: center; gap: 13px; }
       .se__logo {
-        width: 34px; height: 34px; border-radius: 9px; background: #1f7a4d;
+        width: 38px; height: 38px; border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
         display: flex; align-items: center; justify-content: center;
       }
-      .se__logo svg { width: 20px; height: 20px; }
-      .se__brandname { font-size: 21px; font-weight: 700; color: #1f7a4d; }
-      .burger { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 9px; background: #fff;
-        display: flex; align-items: center; justify-content: center; }
-      .burger span { display: block; width: 20px; height: 2px; background: #4a5866; box-shadow: 0 6px 0 #4a5866, 0 -6px 0 #4a5866; }
+      .se__logo svg { width: 22px; height: 22px; }
+      .se__title { font-size: 25px; font-weight: 700; color: #ffffff; letter-spacing: -0.2px; }
+      .se__sub { font-size: 17px; font-weight: 600; color: rgba(255, 255, 255, 0.82); margin-top: 1px; }
+      .se__x {
+        width: 48px; height: 48px; border-radius: 12px;
+        background: rgba(255, 255, 255, 0.16);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .se__x svg { width: 22px; height: 22px; }
 
-      .heading { display: flex; align-items: center; gap: 14px; margin-top: 26px; }
-      .heading__bar { width: 6px; height: 30px; background: #1f7a4d; border-radius: 3px; }
-      .heading__text { font-size: 31px; font-weight: 800; color: var(--ink); letter-spacing: -0.4px; }
-      .heading__right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
-      .heading__count { font-size: 17px; color: var(--ink-soft); font-weight: 500; }
-
-      .se__locrow { display: flex; align-items: stretch; gap: 14px; margin-top: 20px; }
-      .pillbtn {
-        display: inline-flex; align-items: center; gap: 9px; background: #fff; border: 1px solid var(--line);
-        border-radius: 11px; padding: 12px 18px; font-size: 18px; font-weight: 600; color: #2c3a47;
-      }
-      .pillbtn svg { width: 19px; height: 19px; }
-      .se__loc {
-        flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 11px;
-        padding: 12px 18px; display: flex; align-items: center; gap: 16px;
-      }
-      .se__loc-main { flex: 1; min-width: 0; }
-      .se__loc-line1 { font-size: 19px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .se__loc-line1 .pin { color: var(--red); }
-      .se__loc-line2 { font-size: 15px; color: var(--ink-soft); margin-top: 4px; }
-      .btn-outline {
-        border: 1px solid #b8ddc7; color: #1f7a4d; background: #fff; border-radius: 9px;
-        padding: 10px 16px; font-size: 17px; font-weight: 700; white-space: nowrap;
-      }
-
-      .filters { display: flex; align-items: center; gap: 28px; margin-top: 18px; }
-      .filters__group { display: flex; align-items: center; gap: 10px; }
-      .filters__label { font-size: 16px; color: var(--ink-soft); font-weight: 600; }
-      .chip {
-        border: 1px solid var(--line); background: #fff; color: #4a5866; border-radius: 999px;
-        padding: 7px 17px; font-size: 16px; font-weight: 600;
-      }
-      .chip--on { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
-      .chip--dark { background: #16202b; border-color: #16202b; color: #fff; }
-
-      .schools { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 20px; }
-      .school {
-        background: #fff; border: 1px solid var(--line); border-radius: 13px;
-        display: flex; align-items: stretch; overflow: hidden; min-height: 96px;
-      }
-      .school__score {
-        width: 82px; flex: 0 0 82px; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; color: #fff; position: relative; padding: 6px;
-      }
-      .school__score--amber { background: var(--amber); }
-      .school__score--red { background: var(--red); }
-      .school__score--green { background: var(--green); }
-      .school__score--grey { background: #aab5c0; }
-      .school__score-num { font-size: 30px; font-weight: 800; line-height: 1; }
-      .school__score-den { font-size: 14px; font-weight: 600; opacity: 0.92; margin-top: 2px; }
-      .school__score-nr { font-size: 13px; font-weight: 800; line-height: 1.1; text-align: center; letter-spacing: 0.2px; }
-      .school__rank {
-        position: absolute; top: 5px; left: 7px; font-size: 13px; font-weight: 800; opacity: 0.95;
-      }
-      .school__body { flex: 1; min-width: 0; padding: 13px 14px; }
-      .school__name { font-size: 19px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .school__private {
-        display: inline-block; background: #efeaff; color: var(--purple); font-size: 11px; font-weight: 800;
-        letter-spacing: 0.6px; border-radius: 5px; padding: 3px 7px; margin-right: 8px; vertical-align: 2px;
-      }
-      .school__meta { font-size: 15px; color: var(--ink-soft); margin-top: 5px; }
-      .school__foot { font-size: 15px; font-weight: 600; margin-top: 7px; display: flex; align-items: center; gap: 10px; }
-      .school__rating--amber { color: #d97e14; }
-      .school__rating--red { color: #d02f5f; }
-      .school__rating--grey { color: var(--grey); }
-      .school__dist { color: var(--ink-soft); font-weight: 500; }
-      .school__compare {
-        width: 84px; flex: 0 0 84px; border-left: 1px solid #f0f3f6;
-        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
-      }
-      .school__box { width: 19px; height: 19px; border: 2px solid #cbd5e0; border-radius: 4px; }
-      .school__compare span { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
-
-      /* ===== Neighborhood Explorer: a photograph of the real product ===== */
-      .ne__shot {
+      /* ===== the photograph itself, for either Explorer ===== */
+      .ne__shot, .se__shot {
         display: block; width: 100%; height: 700px;
         object-fit: cover; object-position: top center;
         /* Taken at twice the size, so let the browser downsample it properly. */
@@ -273,11 +229,12 @@
       const ICONS = {
         house:
           '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
-        houseGreen:
-          '<svg viewBox="0 0 24 24" fill="none" stroke="#1f7a4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5h4v5"/></svg>',
-        // The way out of the popup, in its header.
+        // The way out of the popup, in its header. Dark on the Neighborhood
+        // Explorer's white header, white on the School Explorer's green one.
         close:
           '<svg viewBox="0 0 24 24" fill="none" stroke="#41504a" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>',
+        closeLight:
+          '<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>',
       };
 
       function esc(value) {
@@ -286,85 +243,29 @@
         );
       }
 
+      /*
+       * The School Explorer card is a photograph of the real product.
+       *
+       * This used to draw its own card from a fixed list of Smyrna, Georgia
+       * schools, so every video showed Cobb County's district whatever address it
+       * was about - a Peoria listing included. Now the beat is a screenshot of the
+       * live School Explorer opened at this listing's address, taken by
+       * src/school-explorer.js, with the popup's own chrome drawn around it: the
+       * accent header the real popup has, and a way out of it.
+       */
       function seCard(spec) {
-        const demo = spec.demo;
-        const rows = spec.schools
-          .map((school) => {
-            const score =
-              school.score === "NOT RATED"
-                ? '<div class="school__score-nr">NOT<br />RATED</div>'
-                : `<div class="school__score-num">${esc(school.score)}</div><div class="school__score-den">/ 10</div>`;
-            const privateChip = school.private ? '<span class="school__private">PRIVATE</span>' : "";
-            return `
-              <div class="school">
-                <div class="school__score school__score--${esc(school.tone)}">
-                  <div class="school__rank">${esc(school.rank)}</div>${score}
-                </div>
-                <div class="school__body">
-                  <div class="school__name">${privateChip}${esc(school.name)}</div>
-                  <div class="school__meta">${esc(school.meta)}</div>
-                  <div class="school__foot">
-                    <span class="school__rating--${esc(school.ratingTone)}">${esc(school.rating)}</span>
-                    <span class="school__dist">&#9678; ${esc(school.distance)}</span>
-                  </div>
-                </div>
-                <div class="school__compare"><div class="school__box"></div><span>Compare</span></div>
-              </div>`;
-          })
-          .join("");
-
         return `
-          <div class="se">
-            <div class="se__top">
-              <div class="se__brand">
-                <div class="se__logo">${ICONS.house}</div>
-                <div class="se__brandname">Dream Neighborhood</div>
-              </div>
-              <div class="burger"><span></span></div>
-            </div>
-
-            <div class="heading">
-              <div class="heading__bar"></div>
-              <div class="heading__text">Find Your Dream School</div>
-            </div>
-
-            <div class="se__locrow">
-              <div class="pillbtn">${ICONS.houseGreen}<span>Home</span></div>
-              <div class="se__loc">
-                <div class="se__loc-main">
-                  <div class="se__loc-line1"><span class="pin">&#9679;</span> ${esc(demo.cityState)} &middot; ${esc(demo.district)}</div>
-                  <div class="se__loc-line2">${esc(demo.schoolsNearby)} schools nearby &middot; ${esc(demo.students)} students (public + private)</div>
-                </div>
-                <div class="btn-outline">Change address</div>
+          <div class="se__head">
+            <div class="se__brand">
+              <div class="se__logo">${ICONS.house}</div>
+              <div>
+                <div class="se__title">School Explorer</div>
+                <div class="se__sub">${esc(spec.address && spec.address.street ? spec.address.street : "")}</div>
               </div>
             </div>
-
-            <div class="heading">
-              <div class="heading__bar"></div>
-              <div class="heading__text" style="font-size: 27px">Schools near you</div>
-              <div class="heading__right">
-                <span class="heading__count">12 of ${esc(demo.schoolsNearby)} nearest</span>
-                <span class="chip chip--dark">List</span>
-                <span class="chip">Map</span>
-              </div>
-            </div>
-
-            <div class="filters">
-              <div class="filters__group">
-                <span class="filters__label">Sort</span>
-                <span class="chip chip--on">Distance</span>
-                <span class="chip">Rating</span>
-              </div>
-              <div class="filters__group">
-                <span class="filters__label">Show</span>
-                <span class="chip chip--on">All</span>
-                <span class="chip">Public</span>
-                <span class="chip">Private</span>
-              </div>
-            </div>
-
-            <div class="schools">${rows}</div>
-          </div>`;
+            <div class="se__x">${ICONS.closeLight}</div>
+          </div>
+          <img class="se__shot" src="${esc(spec.tabImage)}" alt="" />`;
       }
 
       /*
@@ -424,10 +325,24 @@
         else if (spec.card === "ne") card.innerHTML = neCard(spec);
         else card.innerHTML = "";
 
-        return new Promise((resolve) => {
-          if (bg.complete) requestAnimationFrame(() => requestAnimationFrame(resolve));
-          else bg.onload = bg.onerror = () => requestAnimationFrame(() => requestAnimationFrame(resolve));
-        });
+        /*
+         * Wait for the listing behind AND the photograph in the card.
+         *
+         * Only the background used to be waited for, and the Explorer shot in the
+         * card was left to load in whatever time the screenshot took to be asked
+         * for. A card photographed before its picture had decoded would come out
+         * as an empty white rectangle.
+         */
+        const pictures = Array.from(document.querySelectorAll("#stage img")).filter((img) => img.getAttribute("src"));
+        return Promise.all(
+          pictures.map(
+            (img) =>
+              new Promise((resolve) => {
+                if (img.complete) return resolve();
+                img.onload = img.onerror = () => resolve();
+              })
+          )
+        ).then(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       };
     </script>
   </body>

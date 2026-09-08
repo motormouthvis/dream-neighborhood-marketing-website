@@ -28,7 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const { launchExplorerBrowser, closeBrowser } = require("./browser");
 const config = require("./config");
-const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("./demo-data");
+const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("./ne-tabs");
 
 /*
  * The size and sharpness of the popup in the finished video.
@@ -428,6 +428,9 @@ async function captureExplorerTabs({ lat, lng, tabs = NE_TABS, outDir, log = () 
 module.exports = {
   captureExplorerTabs,
   widgetUrlFor,
+  // The School Explorer is filmed the same way and scrolls the same way, so it
+  // uses this rather than keeping a second copy of it - see src/school-explorer.js.
+  scrollPanel,
   TAB_VIEWPORT,
   TAB_PIXEL_RATIO,
   WALK_BUDGET_MS,

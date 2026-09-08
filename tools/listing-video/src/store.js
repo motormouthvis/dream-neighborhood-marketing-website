@@ -241,6 +241,7 @@ function publicView(job) {
         }
       : null,
     review: job.review || { reviewed: false },
+    explorers: explorersView(job),
     email: job.email,
     input: {
       firstName: job.input.firstName,
@@ -286,6 +287,29 @@ function libraryView(job) {
   };
 }
 
+/**
+ * Where the two Explorers were filmed.
+ *
+ * Both cards in the video are photographs of the live product at the listing's
+ * address, so this is the answer to "is this video about the right house" - the
+ * question nobody could answer on the job where the School Explorer was showing
+ * Smyrna, Georgia for a listing in Peoria, Illinois.
+ */
+function explorersView(job) {
+  const neighborhood = job.explorer || null;
+  const school = job.schoolExplorer || null;
+  if (!neighborhood && !school) return null;
+  return {
+    lat: neighborhood ? neighborhood.lat : null,
+    lng: neighborhood ? neighborhood.lng : null,
+    precision: (neighborhood && neighborhood.precision) || "",
+    matched: (neighborhood && neighborhood.matched) || "",
+    neighborhoodPlace: (neighborhood && neighborhood.place) || "",
+    schoolPlace: (school && school.place) || "",
+    schoolsNearby: (school && school.nearby) || 0,
+  };
+}
+
 /** What is worth showing about a failure, without the absolute file paths. */
 function failureView(job) {
   const failure = job.failure;
@@ -316,6 +340,7 @@ module.exports = {
   publicView,
   libraryView,
   failureView,
+  explorersView,
   recordFailure,
   listFailures,
   failureLogPath,

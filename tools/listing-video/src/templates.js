@@ -29,7 +29,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const config = require("./config");
-const { NE_TABS, canonicalTabName } = require("./demo-data");
+const { NE_TABS, canonicalTabName } = require("./ne-tabs");
 const { DEFAULT_TEMPLATES, DEFAULT_TEMPLATE_IDS } = require("./default-templates");
 
 const SCENES = ["listing", "listing-tap", "se", "ne"];

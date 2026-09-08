@@ -25,6 +25,8 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dnlv-upload-"));
 process.env.LISTING_VIDEO_DATA_DIR = dataDir;
 process.env.LISTING_VIDEO_TOKEN = "upload-test-token";
 
+const http = require("http");
+
 const config = require("../src/config");
 const store = require("../src/store");
 const { run } = require("../src/exec");
@@ -37,13 +39,95 @@ const TOOL = "/tools/listing-video";
 const noChrome = !config.chromePath;
 const options = noChrome ? { skip: "no Chrome or Chromium on this machine" } : {};
 
-/* Bill's listing, as he would type it in. */
+/* Bill's listing, as the form sends it once he has picked it from the list. */
 const ROSEMEAD = {
+  addressPlace: "6031 N Rosemead Dr, Peoria, IL 61614",
   addressStreet: "6031 N Rosemead Dr",
   addressCity: "Peoria",
   addressState: "IL",
   addressZip: "61614",
 };
+const ROSEMEAD_POINT = { lat: 40.76117841579057, lng: -89.61833048148893 };
+
+/* ---------------------------------------------------------------- */
+/* the Explorers, stood in for                                      */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The Explorer's place picker and the School Explorer embed, close enough for a
+ * render to go all the way through without leaving this machine.
+ *
+ * The School Explorer stand-in shows the address it was opened at, because that
+ * is the whole thing under test: a video about a Peoria listing has to end up
+ * with Peoria in its School Explorer card, whatever a fixed list once said.
+ */
+const SE_PAGE = `<!doctype html>
+<html><head><meta charset="utf-8"><title>School Explorer</title></head>
+<body style="font-family: sans-serif; margin: 0">
+  <div id="row" style="padding: 16px; border-bottom: 1px solid #ddd">
+    Home &#128205;<span id="place"></span> <button>Change</button>
+  </div>
+  <h2 style="padding: 0 16px">Schools near you</h2>
+  <p id="count" style="padding: 0 16px"></p>
+  <div id="list" style="padding: 0 16px"></div>
+  <script>
+    var asked = new URLSearchParams(location.search);
+    var address = asked.get("address") || "";
+    var town = address.split(",").slice(1).join(",").trim() || "somewhere";
+    document.getElementById("place").textContent = town + " \\u00b7 " + town.split(",")[0] + " School District";
+    document.getElementById("count").textContent = "12 of 30 nearest";
+    var rows = "";
+    for (var i = 1; i <= 24; i += 1) {
+      rows += "<div style='padding:14px 0;border-bottom:1px solid #eee'>" + i +
+        " &#183; School number " + i + " near " + town + " &#183; " + (i / 10) + " mi</div>";
+    }
+    document.getElementById("list").innerHTML = rows;
+  </script>
+</body></html>`;
+
+let stubs = null;
+
+async function startStubs() {
+  if (stubs) return stubs;
+
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith("/se-embed")) {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      return res.end(SE_PAGE);
+    }
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    return req.on("end", () => {
+      const asked = JSON.parse(body || "{}");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (req.url.startsWith("/autocomplete")) {
+        return res.end(JSON.stringify({ suggestions: [{ description: ROSEMEAD.addressPlace, main_text: ROSEMEAD.addressStreet, secondary_text: "Peoria, IL 61614" }] }));
+      }
+      // Anything in Peoria is placed; anything else is not, so a refusal can be
+      // tested without the Explorer being involved.
+      if (/peoria/i.test(asked.address || "")) {
+        return res.end(JSON.stringify({ success: true, ...ROSEMEAD_POINT, formatted_address: ROSEMEAD.addressPlace }));
+      }
+      return res.end(JSON.stringify({ success: false, error: "Address not found." }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  // Or the runner sits there after the last test waiting for a listening socket.
+  server.unref();
+  const origin = `http://127.0.0.1:${server.address().port}`;
+
+  // Read where they are used rather than at startup, so pointing them here is all
+  // it takes - the same way LISTING_VIDEO_EXPLORER_URL moves them on staging.
+  config.places.suggestUrl = `${origin}/autocomplete`;
+  config.places.resolveUrl = `${origin}/geocode`;
+  config.schoolExplorer.embedUrl = `${origin}/se-embed`;
+
+  stubs = { origin, close: () => new Promise((resolve) => server.close(resolve)) };
+  return stubs;
+}
 
 /* ---------------------------------------------------------------- */
 /* making test screenshots                                          */
@@ -79,6 +163,7 @@ async function frameColour(videoFile, crop) {
 /* ---------------------------------------------------------------- */
 
 async function startServer() {
+  await startStubs();
   const server = await new Promise((resolve) => {
     const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
   });
@@ -131,7 +216,8 @@ async function settle(tool, id, { timeoutMs = 180000 } = {}) {
 }
 
 /* The School-Explorer-only script has no Neighborhood Explorer beats, so nothing
- * here needs the live Explorer widget or the geocoder. */
+ * here needs the live Explorer widget - only the School Explorer, stood in for
+ * above. */
 const SE_ONLY = "vanessa-se-only-v11";
 
 const CUSTOMER = {
@@ -300,6 +386,8 @@ test(
       assert.equal(job.silent.capturedPageUrl, "", "no page was filmed, so there is no URL to show");
       assert.match(job.silent.notes.join(" "), /screenshot you uploaded/i);
       assert.match(job.silent.notes.join(" "), /6031 N Rosemead Dr, Peoria, IL, 61614/);
+      // And the popup on top of it is the live School Explorer at that address.
+      assert.match(job.silent.notes.join(" "), /School Explorer in this video is the live product at Peoria/i);
 
       // Their site was never touched. This is the whole point of the path.
       assert.deepEqual(site.hits, {}, `their site should never be opened, was asked for ${Object.keys(site.hits)}`);
@@ -382,6 +470,113 @@ test(
     }
   }
 );
+
+/* ---------------------------------------------------------------- */
+/* the report: the schools have to be this listing's                */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill, on staging: he used a screenshot for the background, entered the Peoria
+ * address, and the School Explorer in the video did not show schools around it -
+ * it showed Smyrna, GA and Cobb County School District, because the card was
+ * drawn from a fixed list rather than filmed.
+ */
+test(
+  "the School Explorer in an uploaded job is the one for the address that was typed",
+  options,
+  async () => {
+    const tool = await startServer();
+    try {
+      const started = await postForm(
+        tool,
+        `${TOOL}/api/jobs`,
+        { ...CUSTOMER, ...ROSEMEAD },
+        await makeImage({ width: 1440, height: 810 })
+      );
+      assert.equal(started.status, 202, JSON.stringify(started.body));
+
+      const job = await settle(tool, started.body.id);
+      assert.equal(job.status, "silent-ready", job.error || "");
+
+      // Where the popup was filmed, which is the answer to "is this video about
+      // the right house" - and the thing nobody could see on the video Bill got.
+      assert.match(job.explorers.schoolPlace, /Peoria/i, `filmed at "${job.explorers.schoolPlace}"`);
+      assert.doesNotMatch(job.explorers.schoolPlace, /Smyrna|Cobb/i, job.explorers.schoolPlace);
+      assert.equal(job.explorers.lat, ROSEMEAD_POINT.lat, "filmed where the form resolved the address");
+      assert.equal(job.explorers.lng, ROSEMEAD_POINT.lng);
+
+      // And it is said beside the video, so the review can see it before it goes.
+      const notes = job.silent.notes.join(" ");
+      assert.match(notes, /School Explorer in this video is the live product at Peoria/i, notes);
+
+      // The address the form settled on is the one the Explorer named.
+      const stored = await store.getJob(started.body.id);
+      assert.equal(stored.input.uploadedListing.address.place, ROSEMEAD.addressPlace);
+      assert.equal(stored.input.uploadedListing.address.lat, ROSEMEAD_POINT.lat);
+
+      // The scenes really are drawn on the photographed popup, not on a card of
+      // our own: three School Explorer beats, three pictures of the real thing.
+      const schoolShots = fs
+        .readdirSync(path.join(store.jobDir(started.body.id), "work"))
+        .filter((name) => /^se-\d+\.jpg$/.test(name));
+      assert.ok(schoolShots.length >= 1, "the School Explorer was never photographed");
+    } finally {
+      await tool.close();
+    }
+  }
+);
+
+/*
+ * An address the Explorer cannot place is a form to send back, not a video to
+ * make. Filming a guess is how another town's schools got into a video that
+ * looked perfectly convincing.
+ */
+test("an address the Explorer cannot place never becomes a job", async () => {
+  const tool = await startServer();
+  try {
+    const before = (await store.listJobs()).length;
+    const refused = await postForm(
+      tool,
+      `${TOOL}/api/jobs`,
+      { ...CUSTOMER, addressStreet: "zzqq nowhere street", addressCity: "Narnia" },
+      await makeImage()
+    );
+
+    assert.equal(refused.status, 400);
+    assert.match(refused.body.error, /cannot place|pick one of the suggestions/i);
+    assert.equal((await store.listJobs()).length, before, "a refused form must not leave a job behind");
+    const uploads = await fsp.readdir(path.join(dataDir, "uploads")).catch(() => []);
+    assert.deepEqual(uploads.filter((name) => name.startsWith("listing-")), []);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the form offers the Explorer's own suggestions as somebody types", async () => {
+  const tool = await startServer();
+  try {
+    const response = await fetch(`${tool.origin}${TOOL}/api/places?q=6031%20N%20Rosem`, {
+      headers: { cookie: tool.cookie },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.reachable, true);
+    assert.equal(body.suggestions[0].description, ROSEMEAD.addressPlace);
+    assert.equal(body.suggestions[0].city, "Peoria");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the suggestions need the password, like everything else", async () => {
+  const tool = await startServer();
+  try {
+    const response = await fetch(`${tool.origin}${TOOL}/api/places?q=6031`);
+    assert.equal(response.status, 401);
+  } finally {
+    await tool.close();
+  }
+});
 
 test("a screenshot with no street address is sent back, and no job is started", async () => {
   const tool = await startServer();
@@ -530,4 +725,8 @@ test("what the browser is told about an upload carries no server paths", options
   } finally {
     await tool.close();
   }
+});
+
+test.after(async () => {
+  if (stubs) await stubs.close();
 });

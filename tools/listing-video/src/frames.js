@@ -3,7 +3,7 @@
 const path = require("path");
 const { pathToFileURL } = require("url");
 const config = require("./config");
-const { DEMO_NEIGHBORHOOD, DEMO_SCHOOLS, NE_TABS } = require("./demo-data");
+const { NE_TABS } = require("./ne-tabs");
 
 function tooltipFor(address) {
   const street = address && address.street ? address.street : "";
@@ -11,25 +11,55 @@ function tooltipFor(address) {
   return "Click here to explore this neighborhood";
 }
 
-function specForBeat(beat, context) {
+/**
+ * The School Explorer picture for this beat.
+ *
+ * A script has more than one School Explorer beat, and the walk photographs the
+ * list scrolled a little further each time, so each beat gets its own picture -
+ * and a script with more beats than pictures holds the last one rather than
+ * running out.
+ */
+function schoolShotFor(context, position) {
+  const shots = (context && context.schoolExplorerShots) || [];
+  const files = (Array.isArray(shots) ? shots : [shots]).filter(Boolean);
+  if (!files.length) return "";
+  return files[Math.min(Math.max(Number(position) || 0, 0), files.length - 1)];
+}
+
+function specForBeat(beat, context, { sePosition = 0 } = {}) {
   const base = {
     bg: context.bgUrl,
     caption: beat.caption || { headline: "", subline: "" },
     tooltip: tooltipFor(context.address),
-    // The header of the Neighborhood Explorer card names the house it is about.
+    // The header of each Explorer card names the house it is about.
     address: context.address || null,
     tapping: false,
     hidePopup: false,
     card: null,
     tabImage: "",
     company: context.company,
-    demo: DEMO_NEIGHBORHOOD,
-    schools: DEMO_SCHOOLS,
     year: new Date().getFullYear(),
   };
 
   if (beat.scene === "listing-tap") return { ...base, tapping: true };
-  if (beat.scene === "se") return { ...base, card: "se", hidePopup: true };
+  if (beat.scene === "se") {
+    /*
+     * The School Explorer card is a photograph of the real product at this
+     * listing's address, taken by src/school-explorer.js.
+     *
+     * It used to be drawn here from a fixed list of Smyrna, Georgia schools, so
+     * every video showed that same district whatever address it was about - which
+     * is how a Peoria listing went out with Cobb County's schools in it. There is
+     * no drawn stand-in to fall back on: a card we made up is the bug.
+     */
+    const shot = schoolShotFor(context, sePosition);
+    if (!shot) {
+      throw new Error(
+        "There is no School Explorer screenshot for this listing, so that beat cannot be drawn."
+      );
+    }
+    return { ...base, card: "se", hidePopup: true, tabImage: pathToFileURL(shot).toString() };
+  }
   if (beat.scene === "ne") {
     // The Neighborhood Explorer card is a photograph of the real tab, taken by
     // src/explorer.js for this listing's address.
@@ -55,8 +85,8 @@ function specForBeat(beat, context) {
  * sections - so the beat's seconds are spread across its own sections rather
  * than held on a still of the top.
  */
-function specsForBeat(beat, context) {
-  if (beat.scene !== "ne") return [specForBeat(beat, context)];
+function specsForBeat(beat, context, options = {}) {
+  if (beat.scene !== "ne") return [specForBeat(beat, context, options)];
 
   const tab = beat.neTabName || NE_TABS[Number(beat.neTab || 0)];
   const shots = (context.explorerShots && context.explorerShots[tab]) || [];
@@ -81,7 +111,17 @@ function specsForBeat(beat, context) {
  * for the whole life of the job so a re-recorded voice can be re-timed against
  * the same pictures without opening Chrome again.
  */
-async function renderFrames({ browser, beats, screenshot, address, company, explorerShots, outDir, log }) {
+async function renderFrames({
+  browser,
+  beats,
+  screenshot,
+  address,
+  company,
+  explorerShots,
+  schoolExplorerShots,
+  outDir,
+  log,
+}) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
   const templateUrl = pathToFileURL(path.join(config.root, "views", "frame.html")).toString();
@@ -92,6 +132,7 @@ async function renderFrames({ browser, beats, screenshot, address, company, expl
     address,
     company,
     explorerShots: explorerShots || {},
+    schoolExplorerShots: schoolExplorerShots || [],
   };
 
   const frames = [];
@@ -103,9 +144,12 @@ async function renderFrames({ browser, beats, screenshot, address, company, expl
    * stills later, whatever the voice turns out to be - see spreadDurations.
    */
   const frameBeats = [];
+  // Which School Explorer beat this is, so each gets its own picture of the list.
+  let sePosition = 0;
   try {
     for (let index = 0; index < beats.length; index += 1) {
-      const specs = specsForBeat(beats[index], context);
+      const specs = specsForBeat(beats[index], context, { sePosition });
+      if (beats[index].scene === "se") sePosition += 1;
       for (let part = 0; part < specs.length; part += 1) {
         await page.evaluate((value) => window.renderFrame(value), specs[part]);
         const filePath = path.join(
@@ -152,4 +196,4 @@ function spreadDurations(beatSeconds, frameBeats) {
   });
 }
 
-module.exports = { renderFrames, tooltipFor, specForBeat, specsForBeat, spreadDurations };
+module.exports = { renderFrames, tooltipFor, specForBeat, specsForBeat, schoolShotFor, spreadDurations };

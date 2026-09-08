@@ -6,7 +6,8 @@ const path = require("path");
 const { launch, closeBrowser } = require("./browser");
 const { captureListing, CAPTURE_BUDGET_MS } = require("./capture");
 const { captureExplorerTabs, WALK_BUDGET_MS } = require("./explorer");
-const { locateAddress } = require("./geocode");
+const { captureSchoolExplorer, SE_BUDGET_MS } = require("./school-explorer");
+const { locateAddress, expectationsFrom } = require("./geocode");
 const { prepareListingImage } = require("./listing-image");
 const { renderFrames, spreadDurations } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
@@ -24,6 +25,7 @@ const store = require("./store");
 /** Which part of making the video gave up, so the log can be read at a glance. */
 function stageOf(error) {
   const code = String((error && error.code) || "");
+  if (code.startsWith("SCHOOL_EXPLORER_")) return "school-explorer";
   if (code.startsWith("EXPLORER_")) return "explorer-walk";
   if (code.startsWith("LISTING_IMAGE_")) return "uploaded-picture";
   if (code.startsWith("GEOCODE_") || code === "ADDRESS_NOT_FOUND") return "geocode";
@@ -153,31 +155,79 @@ async function renderSilent(job, { budgetMs } = {}) {
     filmed = { screenshot: capture.screenshot, pageUrl: capture.pageUrl };
 
     /*
-     * Film the Neighborhood Explorer, if this script walks its tabs.
+     * Film the Explorers, at this listing's own address.
+     *
+     * Both cards in the video are photographs of the live product - the School
+     * Explorer's schools list and each of the Neighborhood Explorer's tabs -
+     * so both need the same one lookup of where the listing is.
      *
      * The listing browser is shut first. It is deliberately starved to survive a
-     * small dyno and the Explorer's map needs a GPU, so the walk gets its own
+     * small dyno and the Explorer's map needs a GPU, so the walks get their own
      * browser - and only one is ever alive at a time.
      */
     let explorerShots = {};
+    let schoolExplorerShots = [];
+    /*
+     * Where each Explorer actually landed, said on the record screen.
+     *
+     * On the video Bill reported, the School Explorer was showing another state
+     * and nothing anywhere said so. Now the place the product reported is written
+     * down beside the video, so the review can see it before it is sent.
+     */
+    const explorerNotes = [];
     const tabsWanted = [...new Set(job.beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName))];
-    if (tabsWanted.length) {
+    const seBeats = job.beats.filter((beat) => beat.scene === "se").length;
+
+    if (tabsWanted.length || seBeats) {
+      const filming = [seBeats ? "the School Explorer" : "", tabsWanted.length ? `${tabsWanted.length} Neighborhood Explorer tabs` : ""]
+        .filter(Boolean)
+        .join(" and ");
       if (browser) {
-        log(`Closing the listing browser, then filming ${tabsWanted.length} Neighborhood Explorer tabs`);
+        log(`Closing the listing browser, then filming ${filming}`);
         await closeBrowser(browser);
         browser = null;
       } else {
-        log(`Filming ${tabsWanted.length} Neighborhood Explorer tabs`);
+        log(`Filming ${filming}`);
       }
 
       const where = await locateAddress(capture.address, { log });
-      const walk = await withDeadline(
-        captureExplorerTabs({ lat: where.lat, lng: where.lng, tabs: tabsWanted, outDir: workDir, log }),
-        WALK_BUDGET_MS + 20000,
-        () => log("The Explorer took too long - stopping it")
-      );
-      explorerShots = walk.shots;
-      job.explorer = { place: walk.place, lat: where.lat, lng: where.lng, precision: where.precision };
+      job.explorer = { place: "", lat: where.lat, lng: where.lng, precision: where.precision, matched: where.matched || "" };
+
+      if (seBeats) {
+        const schools = await withDeadline(
+          captureSchoolExplorer({
+            lat: where.lat,
+            lng: where.lng,
+            address: capture.address,
+            shots: seBeats,
+            outDir: workDir,
+            log,
+            expect: expectationsFrom(capture.address),
+          }),
+          SE_BUDGET_MS + 20000,
+          () => log("The School Explorer took too long - stopping it")
+        );
+        schoolExplorerShots = schools.shots;
+        job.schoolExplorer = { place: schools.place, nearby: schools.nearby, url: schools.url };
+        explorerNotes.push(
+          `The School Explorer in this video is the live product at ${schools.place || "this listing's address"}${
+            schools.nearby ? `, showing ${schools.nearby} schools nearby` : ""
+          }.`
+        );
+      }
+
+      if (tabsWanted.length) {
+        const walk = await withDeadline(
+          captureExplorerTabs({ lat: where.lat, lng: where.lng, tabs: tabsWanted, outDir: workDir, log }),
+          WALK_BUDGET_MS + 20000,
+          () => log("The Explorer took too long - stopping it")
+        );
+        explorerShots = walk.shots;
+        job.explorer.place = walk.place;
+        explorerNotes.push(
+          `The Neighborhood Explorer tabs are the live product at ${walk.place || "this listing's address"}.`
+        );
+      }
     }
 
     // An uploaded picture opens no browser for the capture, and the Explorer walk
@@ -192,6 +242,7 @@ async function renderSilent(job, { budgetMs } = {}) {
       address: capture.address,
       company: job.input.company,
       explorerShots,
+      schoolExplorerShots,
       outDir: workDir,
       log,
     });
@@ -223,7 +274,7 @@ async function renderSilent(job, { budgetMs } = {}) {
       capturedPageUrl: capture.pageUrl,
       capturedAddress: capture.address || null,
       checkedPages: capture.checked,
-      notes: capture.notes || [],
+      notes: [...(capture.notes || []), ...explorerNotes],
       // So the record and review steps can say the picture was uploaded rather
       // than filmed, instead of it having to be inferred from an empty page URL.
       uploadedPicture: Boolean(job.input.uploadedListing),
