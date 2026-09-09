@@ -6,7 +6,10 @@ window.DNLV = (function () {
 
   var state = {
     session: null,
+    /* The merged list: shipped scripts plus whatever this browser has saved. */
     templates: [],
+    /* The shipped ones on their own, so an edit can be put back. */
+    shipped: [],
     view: "make",
   };
 
@@ -147,17 +150,96 @@ window.DNLV = (function () {
     if (onEnter[name]) onEnter[name]();
   }
 
-  /* Every screen needs the template list, so it is loaded once and shared. */
+  /* ------------------------------------------------------------ */
+  /* the scripts                                                   */
+  /* ------------------------------------------------------------ */
+
+  /*
+   * Custom scripts live in this browser. See public/js/script-store.js for why.
+   *
+   * The store is created once here so the Scripts page and the make-a-video
+   * picker are looking at the same thing - an edit saved on one tab shows up in
+   * the other's list as soon as it is reloaded.
+   */
+  var scripts = window.DNScriptStore.create({
+    storage: (function () {
+      try {
+        return window.localStorage;
+      } catch (_) {
+        // A locked-down profile can make localStorage itself unreadable. The
+        // store falls back to memory, so the page works and forgets.
+        return null;
+      }
+    })(),
+  });
+
+  /**
+   * Everything a picker needs about a script, without the whole script.
+   *
+   * The same shape the server's own summary() builds, off the same labels,
+   * because a shipped script and one out of this browser sit side by side in
+   * the same list and must not read differently.
+   */
+  function summarise(template) {
+    var session = state.session || {};
+    var label = function (modes, id) {
+      var found = (modes || []).filter(function (mode) {
+        return mode.id === id;
+      })[0];
+      return found ? found.label : "";
+    };
+    var beats = template.beats || [];
+    return {
+      id: template.id,
+      name: template.name,
+      explorers: template.explorers,
+      explorersLabel: label(session.explorerModes, template.explorers),
+      listingExplorer: template.listingExplorer || "absent",
+      listingExplorerLabel: label(session.listingExplorerModes, template.listingExplorer || "absent"),
+      notes: template.notes || "",
+      builtIn: Boolean(template.builtIn),
+      savedHere: Boolean(template.savedHere),
+      editedFrom: template.editedFrom || null,
+      beatCount: beats.length,
+      totalSeconds:
+        Math.round(
+          beats.reduce(function (sum, beat) {
+            return sum + (Number(beat.seconds) || 0);
+          }, 0) * 10
+        ) / 10,
+      updatedAt: template.updatedAt || null,
+      template: template,
+    };
+  }
+
+  /*
+   * Every screen needs the script list, so it is loaded once and shared.
+   *
+   * The shipped scripts come off the server; the customs come out of this
+   * browser; the two are merged here. A server that will not answer is not the
+   * end of it - what is in this browser is still shown, because that is the
+   * half a deploy cannot break and the half that is somebody's own work.
+   */
   function loadTemplates() {
-    return json(API + "/templates").then(function (result) {
-      state.templates = (result.body && result.body.templates) || [];
-      return state.templates;
-    });
+    return json(API + "/templates").then(
+      function (result) {
+        state.shipped = (result.body && result.body.templates) || [];
+        state.templates = scripts.merged(state.shipped).map(summarise);
+        return state.templates;
+      },
+      function () {
+        state.shipped = [];
+        state.templates = scripts.merged([]).map(summarise);
+        return state.templates;
+      }
+    );
   }
 
   return {
     API: API,
     state: state,
+    scripts: scripts,
+    summarise: summarise,
     el: el,
     show: show,
     setText: setText,

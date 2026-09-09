@@ -92,6 +92,21 @@
       }
       #stage.hide-popup #popup { display: none; }
 
+      /*
+       * A bare listing beat is JUST their page.
+       *
+       * Everything of ours goes away here - the house button and its label, any
+       * popup card, and the dim behind one - and it is written as its own rule
+       * rather than left to the spec being right, because the spec being right
+       * is exactly what kept failing. Bill saw the School Explorer button on the
+       * beats that say "there's nothing here about schools" three times over.
+       *
+       * The caption bar stays: it is the script's own words, not our product.
+       */
+      #stage.bare-listing #popup,
+      #stage.bare-listing #card,
+      #stage.bare-listing #scrim { display: none !important; }
+
       /* ---------- explorer card ---------- */
       #card {
         position: absolute; left: 290px; top: 208px; width: 1340px; height: 764px;
@@ -312,17 +327,28 @@
         document.querySelector("#caption p").textContent = caption.subline || "";
         stage.classList.toggle("no-caption", !caption.headline && !caption.subline);
 
-        document.getElementById("tooltip").textContent = spec.tooltip || "";
-        document.getElementById("tooltip").style.display = spec.tooltip ? "" : "none";
-        document.getElementById("house").innerHTML = ICONS.house;
-        document.getElementById("popup").className = spec.tapping ? "is-tapping" : "";
+        /*
+         * A bare listing beat overrules the rest of the spec.
+         *
+         * Nothing of ours is drawn AND nothing of ours is left in the markup, so
+         * a frame that is meant to be their page alone cannot carry our wording
+         * even in a node the CSS is hiding.
+         */
+        const bare = Boolean(spec.bare);
+        stage.classList.toggle("bare-listing", bare);
+
+        document.getElementById("tooltip").textContent = bare ? "" : spec.tooltip || "";
+        document.getElementById("tooltip").style.display = !bare && spec.tooltip ? "" : "none";
+        document.getElementById("house").innerHTML = bare ? "" : ICONS.house;
+        document.getElementById("popup").className = !bare && spec.tapping ? "is-tapping" : "";
 
         const card = document.getElementById("card");
-        stage.classList.toggle("has-card", Boolean(spec.card));
-        stage.classList.toggle("hide-popup", Boolean(spec.hidePopup));
-        card.className = spec.card ? `card--${spec.card}` : "";
-        if (spec.card === "se") card.innerHTML = seCard(spec);
-        else if (spec.card === "ne") card.innerHTML = neCard(spec);
+        const wantsCard = !bare && Boolean(spec.card);
+        stage.classList.toggle("has-card", wantsCard);
+        stage.classList.toggle("hide-popup", bare || Boolean(spec.hidePopup));
+        card.className = wantsCard ? `card--${spec.card}` : "";
+        if (wantsCard && spec.card === "se") card.innerHTML = seCard(spec);
+        else if (wantsCard && spec.card === "ne") card.innerHTML = neCard(spec);
         else card.innerHTML = "";
 
         /*

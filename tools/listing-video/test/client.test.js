@@ -281,7 +281,8 @@ test("the suggested seconds follow the words as a beat is written", options, asy
 
     const empty = await tool.page.evaluate(firstBeat);
     assert.equal(empty.seconds, "2.5", "a beat with nothing in it still holds its picture");
-    assert.match(empty.hint, /following the words/i);
+    assert.match(empty.hint, /~2\.5s from 0 characters/, empty.hint);
+    assert.match(empty.hint, /clears if you type a number/, empty.hint);
 
     // 64 characters: 1.5s of lead-in plus 4s of reading at 16 a second.
     const line = "Here is the listing, exactly as a buyer sees it on the site.....";
@@ -292,6 +293,7 @@ test("the suggested seconds follow the words as a beat is written", options, asy
     const written = await tool.page.evaluate(firstBeat);
     assert.equal(written.seconds, "5.5", "the box should have kept up with the words");
     assert.match(written.total, /5\.5s/, "and the running total with it");
+    assert.match(written.hint, /~5\.5s from 64 characters/, written.hint);
 
     // Deleting words takes it back down; the number is not a high-water mark.
     await tool.page.evaluate(() => {
@@ -299,7 +301,50 @@ test("the suggested seconds follow the words as a beat is written", options, asy
       box.value = "Short line.";
       box.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "2.5");
+    const shortened = await tool.page.evaluate(firstBeat);
+    assert.equal(shortened.seconds, "2.5");
+    assert.match(shortened.hint, /~2\.5s from 11 characters/, shortened.hint);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * Bill: "the suggested seconds don't update in real time."
+ *
+ * The number did move. What it did not do was move on every keystroke - a
+ * character or two only shifts the suggestion by a hundredth, so the rounded
+ * figure sits still for a few letters at a time and the field reads as stuck.
+ *
+ * So this watches the hint as well as the number, one character at a time. The
+ * hint carries the character count, so it has to change on every single one.
+ */
+test("the hint under the box moves on every single keystroke", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+    await tool.page.focus('[data-role="text"]');
+
+    // No spaces in it, so every keystroke really is one more character - the
+    // suggestion ignores the whitespace at either end of a line.
+    const seen = [];
+    for (const character of "nothing-about-schools".split("")) {
+      await tool.page.type('[data-role="text"]', character, { delay: 1 });
+      seen.push(await tool.page.evaluate(firstBeat));
+    }
+
+    seen.forEach((state, at) => {
+      assert.match(
+        state.hint,
+        new RegExp(`from ${at + 1} character`),
+        `after ${at + 1} characters the hint said "${state.hint}"`
+      );
+    });
+    assert.equal(new Set(seen.map((state) => state.hint)).size, seen.length, "every keystroke changed the hint");
+
+    // Nothing waits for the field to lose focus: the box is still being typed in.
+    const focused = await tool.page.evaluate(() => document.activeElement.getAttribute("data-role"));
+    assert.equal(focused, "text", "and all of that happened without leaving the box");
   } finally {
     await tool.close();
   }
@@ -322,7 +367,12 @@ test("a duration typed by hand is left alone, and clearing it starts it followin
     // The words change underneath it and the number stays where it was put.
     await tool.page.focus('[data-role="text"]');
     await tool.page.type('[data-role="text"]', "A line of words that would suggest something else entirely.", { delay: 1 });
-    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "9", "somebody chose 9, so it stays 9");
+    const stillHeld = await tool.page.evaluate(firstBeat);
+    assert.equal(stillHeld.seconds, "9", "somebody chose 9, so it stays 9");
+    // The suggestion is still shown while it is being overruled, so the way
+    // back is a number you can see rather than one you have to work out.
+    assert.match(stillHeld.hint, /~5\.2s from 59 characters/, stillHeld.hint);
+    assert.match(stillHeld.hint, /Empty the box to follow the words again/, stillHeld.hint);
 
     // Emptying the box is the way back.
     await tool.page.evaluate(() => {
@@ -332,7 +382,77 @@ test("a duration typed by hand is left alone, and clearing it starts it followin
     });
     const following = await tool.page.evaluate(firstBeat);
     assert.equal(following.seconds, "5.2", "59 characters: 1.5 + 59/16");
-    assert.match(following.hint, /following the words/i);
+    assert.match(following.hint, /~5\.2s from 59 characters/, following.hint);
+    assert.match(following.hint, /clears if you type a number/, following.hint);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The bug behind "it only updates sometimes".
+ *
+ * Whether a beat followed its words was worked out by asking whether the saved
+ * number happened to equal the suggestion. Every shipped beat was hand-timed
+ * against the reference video, so none of them match - and opening one of those
+ * scripts gave a box that never moved again however much the words changed.
+ *
+ * It is saved with the beat now, so re-opening a script remembers which beats
+ * were following and which were held.
+ */
+test("re-opening a saved script remembers which beats were following the words", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    // Beat one follows its words. Beat two is held at a number of its own.
+    await tool.page.type('[data-role="text"]', "The first line.", { delay: 1 });
+    await tool.page.evaluate(() => {
+      document.getElementById("tplName").value = "Two beats";
+      document.getElementById("addBeatBtn").click();
+    });
+    await tool.page.evaluate(() => {
+      const rows = document.querySelectorAll(".beatrow");
+      const text = rows[1].querySelector('[data-role="text"]');
+      text.value = "The second line.";
+      text.dispatchEvent(new Event("input", { bubbles: true }));
+      const seconds = rows[1].querySelector('[data-role="seconds"]');
+      seconds.value = "11";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await tool.page.evaluate(() => document.getElementById("saveTemplateBtn").click());
+    await tool.page.waitForFunction(() => !document.getElementById("editorOk").hidden, { timeout: 5000 });
+
+    // Back out to the list and open it again, the way anybody would.
+    await tool.page.evaluate(() => document.getElementById("cancelTemplateBtn").click());
+    await tool.page.waitForFunction(() => !document.getElementById("scriptsList").hidden, { timeout: 5000 });
+    await tool.page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll("#templateList .card"));
+      const mine = cards.find((card) => card.textContent.includes("Two beats"));
+      Array.from(mine.querySelectorAll("button")).find((button) => button.textContent === "Edit").click();
+    });
+    await tool.page.waitForFunction(() => document.querySelectorAll(".beatrow").length === 2, { timeout: 5000 });
+
+    const reopened = await tool.page.evaluate(() =>
+      Array.from(document.querySelectorAll(".beatrow")).map((row) => ({
+        seconds: row.querySelector('[data-role="seconds"]').value,
+        hint: row.querySelector('[data-role="secondsHint"]').textContent.trim(),
+      }))
+    );
+
+    assert.match(reopened[0].hint, /clears if you type a number/, reopened[0].hint);
+    assert.match(reopened[1].hint, /Held at 11s/, reopened[1].hint);
+
+    // And the one that follows still follows: typing into it moves the number.
+    await tool.page.evaluate(() => {
+      const box = document.querySelector('.beatrow [data-role="text"]');
+      box.value = "The first line, made considerably longer than it was before.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const after = await tool.page.evaluate(firstBeat);
+    assert.notEqual(after.seconds, reopened[0].seconds, "it is still following the words");
+    assert.match(after.hint, /from 60 characters/, after.hint);
   } finally {
     await tool.close();
   }
@@ -514,8 +634,7 @@ const { run } = require("../src/exec");
 
 /** A job sitting on the final review with a real finished video behind it. */
 async function jobOnFinalReview(durations, voiceSeconds) {
-  await templates.ensureSeeded();
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
     firstName: "Bill",
@@ -822,6 +941,185 @@ test("a trim covers the step and blocks sending until the new file is back", opt
     assert.equal(after.err, "", "no error on a trim that worked");
     assert.match(after.ok, /watch it again/i);
     assert.equal(after.sendDisabled, true, "send stays off until the shorter cut is reviewed");
+  } finally {
+    await tool.close();
+  }
+});
+
+/* ---------------------------------------------------------------- */
+/* the way back off the record step                                  */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill, on the silent video: when it is done, or failed, or just looks wrong,
+ * there was no way back. The record step offered one thing - record - and the
+ * only button that returned to the form was on the FINISHED step, two takes and
+ * a mux later. So changing a script meant recording something he did not want,
+ * waiting for it to be muxed, and starting again from an empty page.
+ */
+
+/** Fill the form in the way somebody would, without submitting it. */
+async function fillTheForm(page) {
+  await page.evaluate(() => {
+    document.getElementById("firstName").value = "Vanessa";
+    document.getElementById("company").value = "DOMO Realty";
+    document.getElementById("websiteUrl").value = "https://domorealty.example";
+    document.getElementById("customerEmail").value = "vanessa@domorealty.example";
+    ["firstName", "company", "websiteUrl", "customerEmail"].forEach((id) => {
+      document.getElementById(id).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const script = document.querySelector('input[name="templateId"]');
+    script.checked = true;
+    script.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+test("the record step has a way back to the form, and it keeps the answers", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    await fillTheForm(tool.page);
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+
+    // The way out is on the page, before anything has been recorded.
+    const offered = await tool.page.evaluate(() => ({
+      edit: document.getElementById("editInputsBtn").textContent.trim(),
+      remake: document.getElementById("remakeSilentBtn").textContent.trim(),
+      editShown: Boolean(document.getElementById("editInputsBtn").offsetParent),
+    }));
+    assert.match(offered.edit, /change the script, customer or listing/i);
+    assert.match(offered.remake, /film it again/i);
+    assert.equal(offered.editShown, true, "it is visible without opening anything");
+
+    await tool.page.click("#editInputsBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-form").hidden, { timeout: 10000 });
+
+    const back = await tool.page.evaluate(() => ({
+      recordShown: !document.getElementById("step-record").hidden,
+      firstName: document.getElementById("firstName").value,
+      company: document.getElementById("company").value,
+      website: document.getElementById("websiteUrl").value,
+      email: document.getElementById("customerEmail").value,
+      script: (document.querySelector('input[name="templateId"]:checked') || {}).value || "",
+      why: document.getElementById("rememberedNote2").textContent.trim(),
+      whyShown: !document.getElementById("rememberedNote2").hidden,
+      playing: !document.getElementById("silentPlayer").paused,
+      makeEnabled: !document.getElementById("makeBtn").disabled,
+    }));
+
+    assert.equal(back.recordShown, false, "it really left the record step");
+    // Every answer is still there. This is a step backwards, not a fresh start.
+    assert.equal(back.firstName, "Vanessa");
+    assert.equal(back.company, "DOMO Realty");
+    assert.equal(back.website, "https://domorealty.example");
+    assert.equal(back.email, "vanessa@domorealty.example");
+    assert.ok(back.script, "and the script is still picked");
+    assert.equal(back.makeEnabled, true, "so it can be made again straight away");
+
+    assert.equal(back.whyShown, true);
+    assert.match(back.why, /still here/i, back.why);
+    assert.match(back.why, /Library/i, "and it says the video that was made is not lost");
+    assert.equal(back.playing, false, "the silent video is not left playing to itself");
+
+    // The job that was already made is untouched and still in the Library.
+    const untouched = await store.getJob(job.id);
+    assert.equal(untouched.status, "silent-ready");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the finished video has the same way back, and sends nothing on the way", options, async () => {
+  const { job } = await jobOnFinalReview([4, 4, 4], 12);
+  const tool = await openTool();
+  try {
+    await fillTheForm(tool.page);
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 15000 });
+
+    await tool.page.click("#reviewEditInputsBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-form").hidden, { timeout: 10000 });
+
+    const back = await tool.page.evaluate(() => ({
+      firstName: document.getElementById("firstName").value,
+      why: document.getElementById("rememberedNote2").textContent.trim(),
+      playing: !document.getElementById("reviewPlayer").paused,
+    }));
+    assert.equal(back.firstName, "Vanessa", "the answers came back with it");
+    assert.match(back.why, /nothing has been sent/i, back.why);
+    assert.equal(back.playing, false);
+
+    const untouched = await store.getJob(job.id);
+    assert.equal(untouched.status, "ready");
+    assert.ok(!untouched.email || !untouched.email.sent, "and nothing was emailed");
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * "Film it again, same answers" is for the case where nothing needs changing
+ * and the capture simply came out wrong - it found a listing that was not their
+ * best one, or the page had not settled.
+ */
+test("filming it again reuses the same job rather than starting from nothing", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    /*
+     * The recapture is the only thing under test here; the Chrome walk behind
+     * it is covered elsewhere. Once it has been asked for, the job answers as
+     * one being worked on - which is what the server really does, since it
+     * claims the job before it replies.
+     */
+    await tool.page.evaluate(() => {
+      window.__recaptured = [];
+      const real = window.fetch;
+      window.fetch = function (url, init) {
+        if (typeof url === "string" && /\/recapture$/.test(url)) {
+          window.__recaptured.push({ url: url, body: init && init.body });
+          return Promise.resolve(new Response('{"id":"x"}', { status: 202 }));
+        }
+        if (window.__recaptured.length && typeof url === "string" && /\/api\/jobs\/[a-z0-9]+(\?|$)/i.test(url)) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "again",
+                status: "capturing",
+                progress: ["Trying the capture again"],
+                template: { name: "School only (v11)" },
+                beats: [],
+                review: { reviewed: false },
+                input: {},
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+        return real(url, init);
+      };
+    });
+
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+    await tool.page.click("#remakeSilentBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-progress").hidden, { timeout: 10000 });
+
+    const asked = await tool.page.evaluate(() => ({
+      calls: window.__recaptured,
+      steps: Array.from(document.querySelectorAll("#steps li")).map((item) => item.textContent.trim()),
+      recordShown: !document.getElementById("step-record").hidden,
+      formShown: !document.getElementById("step-form").hidden,
+    }));
+
+    assert.equal(asked.calls.length, 1, "one recapture, on the job that already exists");
+    assert.ok(asked.calls[0].url.includes(job.id), asked.calls[0].url);
+    // No listing URL: the point of this button is that the answers do not change.
+    assert.deepEqual(JSON.parse(asked.calls[0].body), {});
+    assert.equal(asked.recordShown, false, "it left the record step");
+    assert.equal(asked.formShown, false, "and it did not send him back to the form to type it all in");
+    assert.ok(asked.steps.some((line) => /again/i.test(line)), asked.steps.join(" | "));
   } finally {
     await tool.close();
   }

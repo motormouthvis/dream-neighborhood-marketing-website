@@ -18,7 +18,7 @@ const mail = require("../src/mail");
 const { normalizeUrl } = require("../src/capture");
 
 async function makeJob(overrides = {}) {
-  const template = await templates.getTemplate(overrides.templateId || "vanessa-se-only-v11");
+  const template = await templates.getDefault(overrides.templateId || "vanessa-se-only-v11");
   const input = {
     firstName: "Vanessa",
     company: "DOMO Realty",

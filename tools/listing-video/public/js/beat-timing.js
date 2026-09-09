@@ -85,18 +85,59 @@
   /**
    * Whether a duration is the one this would have suggested for that text.
    *
-   * The editor uses it to tell "nobody has touched this" from "somebody typed a
-   * number", so that typing in the box stops the suggestion overwriting it and
-   * clearing the box hands it back. Compared loosely, because the value has been
-   * through an input box and back.
+   * Used for scripts saved before a beat recorded whether it was following the
+   * words: a beat sitting at exactly the suggested length was never held at
+   * anything, so it can be assumed to be following. Newer beats say outright.
+   * Compared loosely, because the value has been through an input box and back.
    */
   function isSuggested(seconds, text) {
     return Math.abs(Number(seconds) - suggestSeconds(text)) < 0.05;
   }
 
+  /** How many characters the suggestion is counting. */
+  function countCharacters(text) {
+    return String(text == null ? "" : text).trim().length;
+  }
+
+  /**
+   * The suggestion in words, for the line under the box.
+   *
+   * Bill's complaint was not that the number was wrong, it was that nothing on
+   * screen connected it to what he was typing - so a field that did change
+   * looked like a field that did not. This says where the number comes from and
+   * what makes it stop, and it is rewritten on every keystroke, so the character
+   * count ticking up is the proof that it is live.
+   */
+  function describeSuggestion(text) {
+    var count = countCharacters(text);
+    return (
+      "~" +
+      suggestSeconds(text).toFixed(1) +
+      "s from " +
+      count +
+      (count === 1 ? " character" : " characters") +
+      " (clears if you type a number)"
+    );
+  }
+
+  /** The same line for a beat somebody is holding at a number of their own. */
+  function describeHeld(seconds, text) {
+    var held = Number(seconds);
+    return (
+      "Held at " +
+      (Number.isFinite(held) ? Math.round(held * 10) / 10 : seconds) +
+      "s. Empty the box to follow the words again: " +
+      describeSuggestion(text).replace(/ \(clears if you type a number\)$/, "") +
+      "."
+    );
+  }
+
   return {
     suggestSeconds: suggestSeconds,
     isSuggested: isSuggested,
+    countCharacters: countCharacters,
+    describeSuggestion: describeSuggestion,
+    describeHeld: describeHeld,
     CHARACTERS_PER_SECOND: CHARACTERS_PER_SECOND,
     LEAD_IN_SECONDS: LEAD_IN_SECONDS,
     LEAST_SECONDS: LEAST_SECONDS,

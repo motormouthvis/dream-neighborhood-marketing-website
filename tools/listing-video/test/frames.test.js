@@ -37,7 +37,7 @@ const context = {
 };
 
 test("every Neighborhood Explorer beat draws the real screenshot of its own tab", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   const beats = templates.renderBeats(template, { firstName: "Patty", company: "Patty Realty" });
   const specs = beats.map((beat) => ({ scene: beat.scene, tab: beat.neTabName, ...specForBeat(beat, context) }));
 
@@ -160,14 +160,14 @@ test("the label beside the house button says schools, and names the house it is 
  * screen, and the popup arrived from nowhere.
  */
 test("the house button is in frame right before the first Neighborhood Explorer popup", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO Realty" });
 
   const firstPopup = beats.findIndex((beat) => beat.scene === "ne");
   assert.ok(firstPopup > 0, "there is a popup to lead into");
 
   const before = beats[firstPopup - 1];
-  assert.equal(before.scene, "listing-tap", "the beat before the popup shows the button being pressed");
+  assert.equal(before.scene, "listing-button", "the beat before the popup shows the button being pressed");
 
   // The words are the ones that were approved; only the scene changed.
   assert.match(before.text, /the same button upgrades to Neighborhood Explorer/i);
@@ -212,7 +212,7 @@ test("a beat with no shot for its tab is still refused", () => {
 });
 
 test("every other scene is still one still", () => {
-  for (const scene of ["listing", "listing-tap", "se"]) {
+  for (const scene of ["listing", "listing-button", "se"]) {
     assert.equal(specsForBeat({ scene, seconds: 4 }, context).length, 1, scene);
   }
 });

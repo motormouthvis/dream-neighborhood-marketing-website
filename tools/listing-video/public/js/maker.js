@@ -86,6 +86,10 @@
         (template.listingExplorer === "prefer-present"
           ? '<br /><strong>For customers who already have School Explorer.</strong>'
           : "") +
+        // Which of these are yours, in the place you pick one. A script saved
+        // in this browser reads differently from one that ships with the tool,
+        // and the picker is where that matters.
+        (template.savedHere ? '<br /><span class="choice__note">Saved in this browser only</span>' : "") +
         (template.notes ? "<br />" + D.escapeHtml(template.notes) : "") +
         "</span></span></span>";
       wrap.appendChild(label);
@@ -389,8 +393,25 @@
       return;
     }
 
+    /*
+     * The script goes with the job when it is one of this browser's own.
+     *
+     * The server has the shipped scripts and nothing else - custom and edited
+     * ones live in localStorage - so an id it could not look up is no use. The
+     * whole script is posted instead and validated on arrival, exactly as a
+     * shipped one is.
+     */
+    var picked = D.state.templates.filter(function (entry) {
+      return entry.id === templateId;
+    })[0];
+    if (!picked) {
+      D.showMessage(el("form-error"), "That script is not in the list any more. Pick another one.");
+      return;
+    }
+
     var payload = {
       templateId: templateId,
+      template: picked.savedHere ? picked.template : null,
       firstName: el("firstName").value.trim(),
       company: el("company").value.trim(),
       websiteUrl: el("websiteUrl").value.trim(),
@@ -431,6 +452,9 @@
       ? postForm(
           API + "/jobs",
           Object.assign({}, payload, addressPicker.value(), {
+            // Every field on a multipart post is a string, so the script goes
+            // over as JSON text and the server parses it back.
+            template: payload.template ? JSON.stringify(payload.template) : null,
             listingHasNoExplorer: el("listingHasNoExplorer").checked ? "yes" : "",
           }),
           file,
@@ -653,6 +677,20 @@
           (named ? named.name + " (" + (named.sex === "male" ? "male" : "female") + ")" : ai.label) +
           ", as picked on the form. It still has to be reviewed before it can be sent."
         : "The AI voice is not connected on this server, so record your own or upload a file."
+    );
+
+    /*
+     * "Film it again" only means something when there was filming.
+     *
+     * A job built from an uploaded screenshot would redraw the same scenes off
+     * the same picture, so the button would look like it had done nothing.
+     * Changing the answers is the way back for those.
+     */
+    var fromAPicture = Boolean(job.silent && job.silent.uploadedPicture);
+    D.show(el("remakeSilentBtn"), !fromAPicture);
+    D.setText(
+      el("waybackState"),
+      fromAPicture ? "This one was drawn from the screenshot you uploaded, so filming it again would draw the same thing." : ""
     );
 
     resetTake();
@@ -1330,6 +1368,95 @@
   }
 
   el("retryBtn").addEventListener("click", backToForm);
+
+  /* ------------------------------------------------------------ */
+  /* the way back, once the silent video is on screen              */
+  /* ------------------------------------------------------------ */
+
+  /*
+   * The silent step used to be a one-way door.
+   *
+   * The video arrives, and the only thing to do with it is record over it. If
+   * the script was the wrong one, or the capture found the wrong listing, or it
+   * simply looked wrong, there was no way to change any of that from here -
+   * only "Make another video" on the FINISHED step, which is two takes and a
+   * mux away. So the answer was to record something, sit through the mux, and
+   * then start again. Bill described being stranded on the record step, and he
+   * was.
+   *
+   * Two doors out, and neither loses anything:
+   *
+   *   Change the script, customer or listing
+   *     back to step 1 with every answer still in it. The form was never
+   *     cleared - it is the same page - and remember.js has the answers besides,
+   *     so this is a step backwards rather than a fresh start. The job that was
+   *     already made is left alone and stays in the Library.
+   *
+   *   Film it again, same answers
+   *     the same job, captured again, for when nothing needs changing and the
+   *     picture just came out wrong. This is the recapture route the failure
+   *     panel already used.
+   */
+  function backToTheForm(why) {
+    stopPolling();
+    resetTake();
+    mine.jobId = null;
+    // Nothing was typed over, so the boxes still hold what this job was made
+    // from. Repainting the choices puts the script and voice radios back, and
+    // the remembered answers cover a browser that reloaded in between.
+    paintTemplateChoices();
+    paintFromChoices();
+    paintVoiceChoices();
+    onPictureSourcePicked();
+    paintRememberedAnswers();
+    step("form");
+    D.showMessage(el("form-error"), "");
+    D.setText(el("rememberedNote2"), why || "");
+    D.show(el("rememberedNote2"), Boolean(why));
+    el("firstName").scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  el("editInputsBtn").addEventListener("click", function () {
+    el("silentPlayer").pause();
+    backToTheForm(
+      "Your answers are still here. Change what needs changing and make the silent video again - the one you just watched stays in the Library."
+    );
+  });
+
+  el("reviewEditInputsBtn").addEventListener("click", function () {
+    if (mine.trimming) return;
+    el("reviewPlayer").pause();
+    backToTheForm(
+      "Your answers are still here. The finished video you were watching stays in the Library, and nothing has been sent."
+    );
+  });
+
+  el("remakeSilentBtn").addEventListener("click", function () {
+    var button = el("remakeSilentBtn");
+    button.disabled = true;
+    D.setText(el("waybackState"), "Starting again...");
+    el("silentPlayer").pause();
+
+    // No listing URL: this is deliberately the same answers as last time.
+    D.send("POST", API + "/jobs/" + mine.jobId + "/recapture", {}).then(
+      function (result) {
+        button.disabled = false;
+        D.setText(el("waybackState"), "");
+        if (!result.ok) {
+          D.showMessage(el("recError"), D.errorFrom(result, "That did not start again."));
+          return;
+        }
+        D.setText(el("progressTitle"), "Filming it again");
+        step("progress", "silent");
+        startPolling();
+      },
+      function () {
+        button.disabled = false;
+        D.setText(el("waybackState"), "");
+        D.showMessage(el("recError"), "The server did not answer. Try again.");
+      }
+    );
+  });
 
   /*
    * Another video, which is nearly always another take on the same site.

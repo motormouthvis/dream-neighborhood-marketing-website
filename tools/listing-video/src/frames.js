@@ -5,8 +5,26 @@ const { pathToFileURL } = require("url");
 const config = require("./config");
 const { NE_TABS } = require("./ne-tabs");
 
-/** The scenes that are the customer's own listing page rather than a popup. */
-const LISTING_SCENES = new Set(["listing", "listing-tap"]);
+/**
+ * The scenes that are the customer's own listing page rather than a popup.
+ *
+ * "listing-tap" is what listing-button used to be called and is still here so a
+ * job saved before the rename draws the same picture it always did.
+ */
+const LISTING_SCENES = new Set(["listing", "listing-button", "listing-tap"]);
+
+/**
+ * The scene that is JUST their page.
+ *
+ * Nothing of ours goes on it: no house button, no label beside it, no popup, no
+ * scrim. This is the "before" shot, and it is the one Bill kept finding our
+ * School Explorer button on - the beats that say "there's nothing here about
+ * schools" were drawing the button that puts schools there.
+ */
+const BARE_LISTING_SCENES = new Set(["listing"]);
+
+/** The scenes that put the School Explorer house button in the corner. */
+const BUTTON_LISTING_SCENES = new Set(["listing-button", "listing-tap"]);
 
 /*
  * What the Neighborhood Explorer looks like in words.
@@ -16,6 +34,14 @@ const LISTING_SCENES = new Set(["listing", "listing-tap"]);
  * label beside the house button. It is what the guard below reads the stage for.
  */
 const NEIGHBORHOOD_EXPLORER_ON_SCREEN = /neighborhood explorer|explore (the|this) neighborhood/i;
+
+/**
+ * The label we draw beside the house button, in the words we draw it in.
+ *
+ * Only our own button says this, so finding it on a bare listing frame means
+ * the button is there whatever the spec asked for.
+ */
+const EXPLORER_BUTTON_LABEL = /click here to explore the (schools|neighborhood)/i;
 
 /**
  * The label beside the house button on a listing frame.
@@ -77,6 +103,35 @@ function wrongExplorerOnScreen({ scene, explorers, card, onScreen }) {
 }
 
 /**
+ * Why a bare listing frame is not bare, or "" if it is.
+ *
+ * This is Bill's bug caught at the shutter rather than trusted to the spec. A
+ * "listing" beat is meant to be a photograph of the customer's page and nothing
+ * else, and the three ways that stops being true are all read back off the
+ * stage: the house button being displayed, a popup card being displayed, and
+ * any words at all inside the chrome we draw over their page. The caption bar
+ * is not chrome in this sense - it is the script's own words and belongs on
+ * every beat - so it is deliberately not part of what is read.
+ *
+ * @param {object} args
+ * @param {string} args.scene which beat this frame belongs to
+ * @param {object} args.chrome what was read back off the stage
+ */
+function bareListingChromeOnScreen({ scene, chrome }) {
+  if (!BARE_LISTING_SCENES.has(scene)) return "";
+  const drawn = chrome && typeof chrome === "object" ? chrome : {};
+
+  if (drawn.buttonShown) return "the School Explorer house button is drawn on it";
+  if (drawn.cardShown) return "an Explorer popup is drawn over it";
+  if (drawn.dimmed) return "it is dimmed behind a popup that should not be on it";
+
+  const words = String(drawn.text || "").replace(/\s+/g, " ").trim();
+  if (EXPLORER_BUTTON_LABEL.test(words)) return `it says "${words.match(EXPLORER_BUTTON_LABEL)[0]}"`;
+  if (words) return `our own chrome is on it, reading "${words.slice(0, 90)}"`;
+  return "";
+}
+
+/**
  * The School Explorer picture for this beat.
  *
  * A script has more than one School Explorer beat, and the walk photographs the
@@ -91,22 +146,41 @@ function schoolShotFor(context, position) {
   return files[Math.min(Math.max(Number(position) || 0, 0), files.length - 1)];
 }
 
-function specForBeat(beat, context, { sePosition = 0 } = {}) {
-  const base = {
+/**
+ * The parts of a frame every beat has: their page, and the script's caption.
+ *
+ * Everything of ours is off by default and switched on by the scene, so a new
+ * scene that forgets to say draws the customer's page and nothing else. That is
+ * the safe way round: the bug this replaces was the button being on unless a
+ * beat remembered to turn it off.
+ */
+function baseSpec(beat, context) {
+  return {
     bg: context.bgUrl,
     caption: beat.caption || { headline: "", subline: "" },
-    tooltip: tooltipFor(context.address),
+    tooltip: "",
     // The header of each Explorer card names the house it is about.
     address: context.address || null,
     tapping: false,
-    hidePopup: false,
+    hidePopup: true,
+    // Their page and nothing else. The frame template refuses to draw the
+    // button, a card or the scrim while this is set, whatever else is asked for.
+    bare: false,
     card: null,
     tabImage: "",
     company: context.company,
     year: new Date().getFullYear(),
   };
+}
 
-  if (beat.scene === "listing-tap") return { ...base, tapping: true };
+function specForBeat(beat, context, { sePosition = 0 } = {}) {
+  const base = baseSpec(beat, context);
+
+  if (BARE_LISTING_SCENES.has(beat.scene)) return { ...base, bare: true };
+  if (BUTTON_LISTING_SCENES.has(beat.scene)) {
+    // The house button, with its label, being pressed. Nothing is open over it.
+    return { ...base, tooltip: tooltipFor(context.address), hidePopup: false, tapping: true };
+  }
   if (beat.scene === "se") {
     /*
      * The School Explorer card is a photograph of the real product at this
@@ -162,7 +236,7 @@ function specsForBeat(beat, context, options = {}) {
     );
   }
 
-  const base = specForBeat({ ...beat, scene: "listing" }, context);
+  const base = baseSpec(beat, context);
   return files.map((file) => ({
     ...base,
     card: "ne",
@@ -218,6 +292,12 @@ async function renderFrames({
    * words that were really photographed.
    */
   const frameText = [];
+  /*
+   * What of OURS each still had drawn over their page: the house button, a
+   * popup card, the dim behind one, and the words in them. This is what the
+   * bare-listing gate judges, and what its tests read.
+   */
+  const frameChrome = [];
   // Which School Explorer beat this is, so each gets its own picture of the list.
   let sePosition = 0;
   try {
@@ -228,15 +308,55 @@ async function renderFrames({
         await page.evaluate((value) => window.renderFrame(value), specs[part]);
 
         /*
-         * Everything the frame will show, in the words it will show them in.
+         * What the frame will show, read off the stage rather than inferred.
          *
-         * innerText is what a person watching would read, so the caption, the
-         * popup's header and the label beside the house button are all in here -
-         * and so is anything a later change starts drawing.
+         * `text` is everything a person watching would read: the caption, the
+         * popup's header, the label beside the house button, and anything a
+         * later change starts drawing.
+         *
+         * `chrome` is the narrower question of what OF OURS is drawn over their
+         * page - the house button and the popup card - so a bare listing beat
+         * can be judged on our own furniture without the script's caption, which
+         * belongs on every beat, counting against it.
          */
-        const onScreen = await page.evaluate(() =>
-          (document.getElementById("stage").innerText || "").replace(/\s+/g, " ").trim()
-        );
+        const read = await page.evaluate(() => {
+          const words = (node) => (node && node.innerText ? node.innerText.replace(/\s+/g, " ").trim() : "");
+          const shown = (node) => Boolean(node) && node.getClientRects().length > 0;
+          const button = document.getElementById("popup");
+          const card = document.getElementById("card");
+          const scrim = document.getElementById("scrim");
+          return {
+            text: words(document.getElementById("stage")),
+            chrome: {
+              buttonShown: shown(button),
+              cardShown: shown(card),
+              dimmed: Boolean(scrim) && Number(window.getComputedStyle(scrim).opacity) > 0.01,
+              text: [shown(button) ? words(button) : "", shown(card) ? words(card) : ""].join(" ").trim(),
+            },
+          };
+        });
+        const onScreen = read.text;
+
+        /*
+         * A bare listing frame is refused before it is photographed.
+         *
+         * Bill reported the house button and the "Click here to explore..."
+         * label on the "before" beats three times, and each fix was to the spec
+         * that asks for the frame rather than to the frame itself. This reads
+         * the drawn page back, so it catches the button however it got there.
+         */
+        const notBare = bareListingChromeOnScreen({ scene: beats[index].scene, chrome: read.chrome });
+        if (notBare) {
+          const error = new Error(
+            `Scene ${index + 1} of this script is a "${beats[index].scene}" beat - just their listing page, with nothing of ours on it - but ${notBare}, so this video was not made. ` +
+              `Pick "${
+                "Their listing page with the School Explorer button on it"
+              }" for that beat if the button is meant to be in frame.`
+          );
+          error.code = "CHROME_ON_BARE_LISTING";
+          throw error;
+        }
+
         const wrong = wrongExplorerOnScreen({
           scene: beats[index].scene,
           explorers,
@@ -269,6 +389,7 @@ async function renderFrames({
         frames.push(filePath);
         frameBeats.push(index);
         frameText.push(onScreen);
+        frameChrome.push(read.chrome);
       }
       if ((index + 1) % 4 === 0 || index === beats.length - 1) {
         log(`Drew ${index + 1} of ${beats.length} scenes`);
@@ -278,7 +399,7 @@ async function renderFrames({
     await page.close().catch(() => {});
   }
 
-  return { frames, frameBeats, frameText };
+  return { frames, frameBeats, frameText, frameChrome };
 }
 
 /**
@@ -303,11 +424,16 @@ function spreadDurations(beatSeconds, frameBeats) {
 module.exports = {
   renderFrames,
   tooltipFor,
+  baseSpec,
   specForBeat,
   specsForBeat,
   schoolShotFor,
   spreadDurations,
   wrongExplorerOnScreen,
+  bareListingChromeOnScreen,
   LISTING_SCENES,
+  BARE_LISTING_SCENES,
+  BUTTON_LISTING_SCENES,
   NEIGHBORHOOD_EXPLORER_ON_SCREEN,
+  EXPLORER_BUTTON_LABEL,
 };

@@ -69,6 +69,8 @@
             Filled in from your last video. Click any box and it selects itself, so you can type straight over it.
             <button type="button" class="linkbtn linkbtn--ink" id="forgetFormBtn">Clear the form</button>
           </p>
+          <!-- Said when you came back here from a video rather than starting one. -->
+          <p class="notice" id="rememberedNote2" hidden></p>
 
           <form id="form" class="stack" autocomplete="off">
             <fieldset class="field" id="templateField">
@@ -241,6 +243,29 @@
           <p class="lede" id="silentSummary"></p>
           <p class="notice" id="silentNotes" hidden></p>
 
+          <!--
+            The way back, before anything is recorded.
+
+            This step used to be a one-way door: the silent video arrives and
+            the only thing on the page is a record button. If the script was
+            wrong, or the wrong listing got filmed, or it just looked off, the
+            only way to change any of it was to start again from an empty form.
+            Both of these keep the job's answers - the form is never cleared,
+            and remember.js puts them back if it were.
+          -->
+          <div class="wayback">
+            <span class="label">Not right?</span>
+            <p class="hint">
+              Nothing has been recorded yet, so there is nothing to lose by going back. Your answers are still on the
+              form.
+            </p>
+            <div class="recorder__row recorder__row--wrap">
+              <button type="button" class="btn btn--ghost" id="editInputsBtn">Change the script, customer or listing</button>
+              <button type="button" class="btn btn--ghost" id="remakeSilentBtn">Film it again, same answers</button>
+              <span class="recorder__state" id="waybackState"></span>
+            </div>
+          </div>
+
           <!-- Two columns on a desktop: the pictures on the left, the words on the
                right, so whoever is recording can watch both at once. -->
           <div class="record-split">
@@ -373,6 +398,9 @@
 
           <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
             <button type="button" class="btn btn--ghost" id="redoAudioBtn">Back to recording</button>
+            <!-- The same way back as on the record step. A finished video that
+                 is wrong is usually wrong in the script, not the take. -->
+            <button type="button" class="btn btn--ghost" id="reviewEditInputsBtn">Change the script, customer or listing</button>
           </div>
 
           <div class="share">
@@ -502,13 +530,48 @@
         <div id="scriptsList">
           <h1 class="h1">Scripts</h1>
           <p class="lede">
-            Every script is a file on this box that you can edit here. A script is a list of beats: the words you say,
-            an optional caption for the top bar, how long that picture should be, and which scene it is.
+            A script is a list of beats: the words you say, an optional caption for the top bar, how long that picture
+            should be, and what is on screen while you say it.
           </p>
+
+          <!--
+            Where these scripts live, said before anything else on the page.
+
+            Scripts used to be files on the Heroku dyno, and Heroku throws that
+            disk away on every deploy - so Bill's edits were wiped, repeatedly,
+            with nothing anywhere warning him. Anything written or edited here
+            is now kept in this browser instead. That is per person, which is
+            what he and Myles wanted, and out of reach of a deploy, which is
+            what the bug was.
+          -->
+          <p class="notice">
+            <strong>Scripts you write or edit are saved in this browser only.</strong>
+            They survive every deploy, and they are yours - Myles has his own, and so does this same person on another
+            machine. The shipped scripts come from the server and update when the tool does, unless you have edited
+            them here. <span id="scriptsStorageNote"></span>
+          </p>
+
           <div class="recorder__row recorder__row--wrap" style="margin-top: 22px">
             <button type="button" class="btn btn--primary" id="newTemplateBtn">New script</button>
-            <button type="button" class="btn btn--ghost" id="restoreDefaultsBtn">Put the shipped scripts back</button>
+            <button type="button" class="btn btn--ghost" id="exportScriptsBtn" hidden>Export my scripts</button>
+            <label class="btn btn--ghost">
+              Import scripts from a file
+              <input type="file" id="importScriptsFile" accept="application/json,.json" hidden />
+            </label>
           </div>
+          <p class="hint">
+            Export is how a script gets onto another machine or to Myles, and it is the only backup there is: clearing
+            this browser's site data clears the scripts with it.
+          </p>
+
+          <!-- Scripts from before they moved into the browser, offered once. -->
+          <div class="notice" id="legacyImport" hidden>
+            <p id="legacyImportWhat"></p>
+            <button type="button" class="btn btn--dark btn--small" id="legacyImportBtn" style="margin-top: 12px">
+              Bring them into this browser
+            </button>
+          </div>
+
           <p class="error" id="scriptsError" hidden></p>
           <p class="ok" id="scriptsOk" hidden></p>
           <div id="templateList" class="cards"></div>
@@ -572,6 +635,8 @@
       </section>
     </main>
 
+    <!-- The script store comes before core.js, which creates one on load. -->
+    <script src="/tools/listing-video/static/js/script-store.js"></script>
     <script src="/tools/listing-video/static/js/core.js"></script>
     <script src="/tools/listing-video/static/js/beat-timing.js"></script>
     <script src="/tools/listing-video/static/js/remember.js"></script>
