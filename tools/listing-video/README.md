@@ -104,6 +104,46 @@ What it does about an Explorer already being on the page depends on the script:
 Both of those used to look through several listings to find the right one. They
 cannot any more — see [the account wall](#the-account-wall).
 
+#### The last look, one line before the shutter
+
+That check is made **twice**, and the second one is the one that counts: on the
+page as it stands at the moment it is photographed.
+
+It used to be made once, while capture was looking the site over, and that turned
+out to be the wrong page. A capture loads the listing **twice** — cheaply for the
+crawl, with images, fonts and every analytics host blocked, and then again at full
+size with nothing blocked for the photograph. Everything in that gap is a way for
+the Explorer to be in the picture having been absent from the check. The clearest
+is a **tag manager**: our snippet is often installed through Google Tag Manager,
+`googletagmanager.com` is on the blocked list, so the crawl sees a clean listing —
+and then the shot loads the tag manager, the tag manager injects the Explorer, and
+the "before" video opens on a listing that already has one.
+
+Which is what Bill got. He picked *a listing with no Explorer on it yet* and the
+Neighborhood Explorer was sitting on the listing in the finished video.
+
+So the page is asked once more, after everything has loaded and the overlays have
+been cleared, one line before the shutter. What is in **this** picture is the only
+thing "the before shot" can mean.
+
+- Under **absent**, an Explorer found there is a refusal, and the message says it
+  appeared once the page had fully loaded — otherwise the refusal reads as
+  nonsense to somebody who watched that page load clean.
+- Under **prefer-present**, it drops the note promising School Explorer would be
+  drawn onto the opening shot, which by then would tell whoever reviews the video
+  the opposite of what they are looking at.
+
+**Only a real embed refuses.** The words "School Explorer" in a page's own copy
+stay a hint worth recording, not grounds for throwing away a listing that is
+otherwise ready to photograph. Open **shadow roots** are searched as well as the
+page itself, since a floating widget that renders into one is invisible both to
+`querySelectorAll` and to `innerText`.
+
+**Nothing can check an uploaded screenshot.** There is no live page on that path
+and reading one off the pixels would be guessing, so an upload on a before-shot
+script says so plainly in the notes beside the video, for the person who can see
+the picture and settle it in a second.
+
 The walk is up to three clicks, and ends at the first listing it opens: their
 site, then a listings or homes page, then the house. Links are ranked, so a concrete listing URL like
 `/listings/123-main-st` on a card showing a price, beds and baths and a photo is
@@ -1148,13 +1188,56 @@ A script is a list of **beats**. Each beat has:
 | --- | --- |
 | Words you say | The teleprompter line. `{firstName}` and `{company}` are filled in. |
 | Scene | `listing`, `listing-tap`, `se` or `ne`. These four are the only scenes. |
-| Suggested seconds | How long that picture is held. Editable per beat. |
+| Suggested seconds | How long that picture is held. Follows the words as you write them, and can be held at a number of your own — see below. |
 | Top caption | Two optional lines for the top bar. |
 | Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
 
 Plus a name, a notes field, whether the script is *School Explorer only* or
 *School Explorer, then Neighborhood Explorer*, and what their listing should
 already have on it.
+
+### The suggested seconds follow the words
+
+The duration used to be typed in by hand with nothing connecting it to the line
+beside it, so rewriting a beat left the old number sitting there. Now the box
+fills itself in as you type, and the running total at the bottom keeps up.
+
+```
+seconds = 1.5 + characters ÷ 16
+```
+
+**16 characters a second** is about 160 words a minute at the usual six
+characters per word including the space — an ordinary voiceover pace, and what
+the hosted voices actually read at. **1.5 seconds** is the part that is not
+reading speed: the breath before the first word, the beat after the last one, and
+the moment a viewer needs to take in a new picture. Under all of it is a floor of
+**2.5 seconds**, so a beat is never too short to see and writing the first word
+never makes it shorter than an empty one.
+
+Neither number was taken from a table. Both are fitted to the listing beats of
+the three shipped scripts, which were timed by hand against the approved
+reference video, and land within half a second of them. A 69-character line was
+timed at 5.7s and this suggests 5.8; a 162-character one was timed at 11 and 12
+across two scripts and this suggests 11.6.
+
+It reads a couple of seconds **long** against the shipped Explorer beats, and
+that is the formula being right rather than wrong. Those were written as floors
+and left deliberately short, because an Explorer beat is a still and the voice is
+what should decide how long it stays up.
+
+**Typing a number holds it.** That beat stops following and the hint under the
+box says so. **Emptying the box hands it back** and it starts following again.
+Opening a saved script only lets a beat follow if it is already sitting at exactly
+the suggested length — a duration somebody chose is left alone, so editing an old
+script never silently retimes it.
+
+Getting it close matters in both directions but is not fatal either way: too short
+and `src/audio.js` stretches the beat to fit the recorded line, too long and the
+voice finishes while the picture hangs.
+
+The arithmetic is in `public/js/beat-timing.js`, which the browser loads and Node
+requires, so there is one copy of it and the test is checking the one the editor
+runs.
 
 **The tab field** is how a script guarantees the Demographics tab is on screen
 while the voice is saying "Demographics". Name the tab and it is pinned; leave it
@@ -1244,6 +1327,32 @@ Two women and two men, by name — **Jessica is the default**, because she is th
 voice that has been heard and approved. The choice only matters if the AI voice is
 used at all; recording over the silent video is still the normal way.
 
+Three of those four are **named choices, pinned by id**:
+
+| | Voice | Id |
+| --- | --- | --- |
+| Female, default | Jessica | `cgSgspJ2msm6clMCkdW9` |
+| Male | Dan | `PGqDc9SLzJTxDTy8SjYb` |
+| Male | Adam | `wBXNqKUATyqu0RtYt25i` |
+
+The men used to be whichever two the account listed first, and it lists them
+alphabetically — so the picker offered **Adam and Bill**, which nobody had chosen
+and Bill did not like. These two were asked for by id, so being first is no longer
+what decides it. The fourth slot, the second woman, is still filled by whoever the
+account offers next.
+
+> **Worth knowing:** the second man is called Adam as well, and is *not* the Adam
+> that was there before. That one was `pNInz6obpgDQGcFmaJgB`; this is a different
+> recording of a different person. Worth checking the id before "fixing" the name
+> back.
+
+A pinned voice is offered **whether or not the account's list happens to carry
+it**. Dropping a voice somebody chose by name because a list came back a little
+different is the failure worth avoiding, and there is already a better check: a
+401 at render time says a plan cannot speak with a voice, and that drops it from
+the picker for good. The name still comes from the account wherever it has one, so
+a rename upstream reaches the radio button without a deploy.
+
 **The list is asked of the account, not written down here.** `GET /v1/voices` is
 called with the existing key (header only — it is never logged, never put in a URL,
 and never handed to the browser), the answer is filtered to the voices this plan
@@ -1256,7 +1365,7 @@ would mean offering a voice that fails at render time — after the silent video
 already been made. If a voice ever answers 401, 402 or 403, it is dropped from the
 picker and another takes its place; the ones that work carry on.
 
-A short hardcoded list (Jessica, Sarah, George, Brian) is used only when the
+A short hardcoded list (the three pinned voices plus Sarah) is used only when the
 account cannot be asked at all, so the picker still offers something sensible.
 
 > **Worth knowing:** ElevenLabs' Default voices expire on **31 December 2026**, and
@@ -1460,12 +1569,14 @@ src/places.js                the Explorer's own address suggestions and geocoder
 src/geocode.js               the listing's address as coordinates, checked against its town
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
 public/js/place-picker.js    the address box: the Explorer's suggestions as you type
+public/js/beat-timing.js     how long a beat should be, from the words in it
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
 test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
 test/persona.test.js         the persona's rules, with no browser needed to check them
+test/beat-timing.test.js     the suggested seconds, against the hand-timed scripts
 test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
 test/places.test.js          the address is a place the Explorer named, not free text
 test/site-account.test.js    the QUAL account, and what it must not be used for
