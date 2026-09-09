@@ -251,7 +251,11 @@ app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
         ? { available: true, label: engines[0].label, voices: choices, defaultVoiceId: choices.length ? choices[0].id : "" }
         : { available: false, voices: [] },
     fromAddresses: config.fromAddresses,
-    scenes: templates.SCENES.map((id) => ({ id, label: templates.SCENE_LABELS[id] })),
+    scenes: templates.SCENES.map((id) => ({
+      id,
+      label: templates.SCENE_LABELS[id],
+      hint: templates.SCENE_HINTS[id] || "",
+    })),
     explorerModes: templates.EXPLORER_MODES.map((id) => ({ id, label: templates.EXPLORER_MODE_LABELS[id] })),
     listingExplorerModes: templates.LISTING_EXPLORER_MODES.map((id) => ({
       id,

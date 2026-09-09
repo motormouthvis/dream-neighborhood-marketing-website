@@ -31,14 +31,61 @@ const path = require("path");
 const config = require("./config");
 const { NE_TABS, canonicalTabName } = require("./ne-tabs");
 const { DEFAULT_TEMPLATES, DEFAULT_TEMPLATE_IDS } = require("./default-templates");
+// The same arithmetic the editor puts in the box, so a beat that follows its
+// words is the same length here as it looked there. See public/js/beat-timing.js.
+const { suggestSeconds, isSuggested } = require("../public/js/beat-timing");
 
-const SCENES = ["listing", "listing-tap", "se", "ne"];
+/*
+ * The four looks a beat can have, and what each one draws.
+ *
+ * There are THREE listing looks, not one, because "their listing page" was
+ * doing three different jobs and getting two of them wrong. Bill kept seeing
+ * the School Explorer house button - and its "Click here to explore..." label -
+ * on the beats whose whole point is a listing with nothing of ours on it yet.
+ * The before-and-after scripts open by saying "there's nothing here about
+ * schools" over a page that was drawing our button in the corner.
+ *
+ *   listing         JUST their page. No house button, no label, no popup, no
+ *                   scrim. This is the "before" shot and the only scene that is
+ *                   purely the customer's own website.
+ *   listing-button  Their page with the School Explorer house button on it, and
+ *                   nothing else of ours. This is the "the icon is there" beat -
+ *                   the button is in frame and being pressed, but the card has
+ *                   not opened yet.
+ *   se              Their page with the School Explorer popup open over it.
+ *   ne              Their page with the Neighborhood Explorer popup open over it.
+ *
+ * See src/frames.js for what each one hands the frame template, and
+ * views/frame.html for the drawing itself.
+ */
+const SCENES = ["listing", "listing-button", "se", "ne"];
 const SCENE_LABELS = {
-  listing: "Their listing page",
-  "listing-tap": "Their listing page, tapping the house",
-  se: "School Explorer card",
-  ne: "Neighborhood Explorer card",
+  listing: "Just their listing page \u2014 nothing of ours on it",
+  "listing-button": "Their listing page with the School Explorer button on it",
+  se: "Their listing page with the School Explorer popup open",
+  ne: "Their listing page with the Neighborhood Explorer popup open",
 };
+const SCENE_HINTS = {
+  listing: "The before shot. No house button, no label, no popup.",
+  "listing-button": "The house button is in the bottom right corner and being tapped. The popup has not opened yet.",
+  se: "The School Explorer card, photographed at this listing's address.",
+  ne: "The Neighborhood Explorer card, photographed at this listing's address.",
+};
+
+/*
+ * What a scene used to be called.
+ *
+ * "listing-tap" was the only way to get the house button on screen, so every
+ * script that wanted it says that. It is the same look as listing-button now,
+ * and a saved script keeps working without anybody re-picking a dropdown.
+ */
+const SCENE_WAS_CALLED = { "listing-tap": "listing-button" };
+
+/** The scene a saved beat means, whatever it called it. */
+function canonicalScene(name) {
+  const wanted = String(name == null ? "" : name).trim();
+  return SCENE_WAS_CALLED[wanted] || wanted;
+}
 const EXPLORER_MODES = ["se", "se-ne"];
 const EXPLORER_MODE_LABELS = {
   se: "School Explorer only",
@@ -144,12 +191,32 @@ function cleanBeat(raw, position) {
   if (!text) throw badRequest(`${where} needs some spoken words.`);
   if (text.length > 900) throw badRequest(`${where} is too long. Split it into two beats.`);
 
-  const scene = String(raw.scene || "").trim();
+  const scene = canonicalScene(raw.scene);
   if (!SCENES.includes(scene)) {
     throw badRequest(`${where} has an unknown scene. Use one of: ${SCENES.join(", ")}.`);
   }
 
-  const seconds = Number(raw.seconds);
+  /*
+   * Whether this beat's length follows the words in it.
+   *
+   * The editor used to work this out by asking "is the saved number the one we
+   * would have suggested?" and nothing else, so a beat that had drifted a tenth
+   * of a second - or one somebody edited before this existed - came back as
+   * held, and then sat there while the words underneath it changed. That is the
+   * "it only updates sometimes" Bill was seeing.
+   *
+   * So the answer is saved with the beat instead of guessed at. Scripts written
+   * before it existed still get the old guess, once, and record the answer the
+   * next time they are saved.
+   */
+  const followsText =
+    raw.autoSeconds === undefined || raw.autoSeconds === null
+      ? isSuggested(raw.seconds, text)
+      : Boolean(raw.autoSeconds);
+
+  // A beat that follows the words IS the suggestion, so there is nothing to
+  // disagree with: the number cannot go stale behind an edit made anywhere else.
+  const seconds = followsText ? suggestSeconds(text) : Number(raw.seconds);
   if (!Number.isFinite(seconds) || seconds < MIN_BEAT_SECONDS || seconds > MAX_BEAT_SECONDS) {
     throw badRequest(`${where} needs a suggested duration between ${MIN_BEAT_SECONDS} and ${MAX_BEAT_SECONDS} seconds.`);
   }
@@ -157,6 +224,7 @@ function cleanBeat(raw, position) {
   return {
     scene,
     seconds: Math.round(seconds * 10) / 10,
+    autoSeconds: followsText,
     text,
     caption: cleanCaption(raw.caption),
     tab: cleanTab(raw.tab, scene, where),
@@ -517,6 +585,9 @@ function summary(template) {
 module.exports = {
   SCENES,
   SCENE_LABELS,
+  SCENE_HINTS,
+  canonicalScene,
+  cleanTemplate,
   EXPLORER_MODES,
   EXPLORER_MODE_LABELS,
   LISTING_EXPLORER_MODES,

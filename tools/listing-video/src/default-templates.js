@@ -15,10 +15,16 @@
  * editing can see how much slack they are working with.
  *
  * scene:
- *   "listing"     - the customer's own listing page with the popup house button
- *   "listing-tap" - the same page with the house button highlighted
- *   "se"          - School Explorer card
- *   "ne"          - Neighborhood Explorer card (se-ne templates only)
+ *   "listing"        - JUST the customer's listing page. Nothing of ours on it:
+ *                      no house button, no label, no popup. The "before" shot.
+ *   "listing-button" - the same page with the School Explorer house button in
+ *                      the corner, being tapped. The popup is not open yet.
+ *   "se"             - the School Explorer popup open over their page
+ *   "ne"             - the Neighborhood Explorer popup (se-ne templates only)
+ *
+ * Which of the first two a beat uses is the whole before-and-after: the lines
+ * about a mom finding nothing about schools play over a page with nothing on
+ * it, and the button only appears once the script starts talking about it.
  *
  * A "ne" beat can name the tab it shows. Left unnamed, tabs are handed out in
  * the order the beats appear.
@@ -57,20 +63,22 @@ const SCHOOL_ONLY = {
       caption: { headline: "So she bounces.", subline: "Zillow. Realtor.com. And you lose her." },
     },
     {
-      scene: "listing",
+      // The button arrives with the line that introduces it, and not a beat
+      // earlier: the three beats above are the page with nothing on it.
+      scene: "listing-button",
       seconds: 12.0,
       text:
         "Here's the same page, with the Dream Neighborhood School Explorer. Zero website redesign! The popup icon hovers in the bottom right corner. It's one line of code.",
       caption: { headline: "The same page, with School Explorer.", subline: "Zero website redesign. One line of code." },
     },
     {
-      scene: "listing",
+      scene: "listing-button",
       seconds: 6.6,
       text: "We auto-detect the listing address on every page. And we'll install it for you, for free.",
       caption: { headline: "We auto-detect the listing address.", subline: "And we install it for you, free." },
     },
     {
-      scene: "listing-tap",
+      scene: "listing-button",
       seconds: 2.8,
       text: "She taps the little house in the corner,",
       caption: { headline: "She taps the little house.", subline: "Bottom right corner." },
@@ -130,20 +138,20 @@ const SCHOOL_AND_NEIGHBORHOOD = {
       caption: { headline: "So she bounces.", subline: "Zillow. Realtor.com. And you lose her." },
     },
     {
-      scene: "listing",
+      scene: "listing-button",
       seconds: 11.0,
       text:
         "Here's the same page, with the Dream Neighborhood School Explorer. Zero website redesign! The popup icon hovers in the bottom right corner. It's one line of code.",
       caption: { headline: "The same page, with School Explorer.", subline: "Zero website redesign. One line of code." },
     },
     {
-      scene: "listing",
+      scene: "listing-button",
       seconds: 6.1,
       text: "We auto-detect the listing address on every page. And we'll install it for you, for free.",
       caption: { headline: "We auto-detect the listing address.", subline: "And we install it for you, free." },
     },
     {
-      scene: "listing-tap",
+      scene: "listing-button",
       seconds: 2.5,
       text: "She taps the little house in the corner,",
       caption: { headline: "She taps the little house.", subline: "Bottom right corner." },
@@ -226,14 +234,19 @@ const SE_TO_NE_UPGRADE = {
     "For customers who already have the free School Explorer. Films a listing that already has it where possible, then walks every Neighborhood Explorer tab in order.",
   beats: [
     {
-      scene: "listing",
+      /*
+       * The button is on screen from the first word, because the line is that
+       * they already have it. This is the one script whose opening shot is NOT
+       * a bare listing.
+       */
+      scene: "listing-button",
       seconds: 8,
       text:
         "Hey {firstName}, Claire from Dream Neighborhood. I was looking at {company}. You already have School Explorer on your listings. It looks really good.",
       caption: { headline: "You already have School Explorer.", subline: "It looks really good." },
     },
     {
-      scene: "listing-tap",
+      scene: "listing-button",
       seconds: 2.5,
       text: "A mom taps the house,",
       caption: { headline: "She taps the little house.", subline: "The same button you have today." },
@@ -253,7 +266,7 @@ const SE_TO_NE_UPGRADE = {
        * Neighborhood Explorer popup arrived from nowhere. Now the viewer sees
        * the button being pressed, then the popup it opens.
        */
-      scene: "listing-tap",
+      scene: "listing-button",
       seconds: 7,
       text:
         "When you are ready, the same button upgrades to Neighborhood Explorer. No new install. Same house icon. It just does more.",

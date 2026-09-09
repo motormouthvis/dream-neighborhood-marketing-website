@@ -40,7 +40,10 @@ const {
   specForBeat,
   specsForBeat,
   wrongExplorerOnScreen,
+  bareListingChromeOnScreen,
   LISTING_SCENES,
+  BARE_LISTING_SCENES,
+  BUTTON_LISTING_SCENES,
   NEIGHBORHOOD_EXPLORER_ON_SCREEN,
 } = require("../src/frames");
 const { NE_TABS } = require("../src/ne-tabs");
@@ -227,8 +230,10 @@ test("a listing beat that says Neighborhood Explorer is refused, not filmed", ne
 /* the rule itself                                                  */
 /* ---------------------------------------------------------------- */
 
-test("the listing scenes are the customer's own page, and there are two of them", () => {
-  assert.deepEqual([...LISTING_SCENES].sort(), ["listing", "listing-tap"]);
+test("the listing scenes are the customer's own page, with and without our button", () => {
+  // listing-tap is what listing-button was called; old jobs still draw with it.
+  assert.deepEqual([...LISTING_SCENES].sort(), ["listing", "listing-button", "listing-tap"]);
+  assert.deepEqual([...BARE_LISTING_SCENES], ["listing"]);
   // Every scene a template can hold is either a listing scene or a popup.
   for (const scene of templates.SCENES) {
     assert.ok(LISTING_SCENES.has(scene) || scene === "se" || scene === "ne", scene);
@@ -250,13 +255,13 @@ test("what counts as the Neighborhood Explorer being on screen", () => {
   // A listing beat is never the Neighborhood Explorer's popup either, whatever
   // the words on it happen to say.
   assert.match(
-    wrongExplorerOnScreen({ scene: "listing-tap", explorers: "se-ne", card: "ne", onScreen: "" }),
+    wrongExplorerOnScreen({ scene: "listing-button", explorers: "se-ne", card: "ne", onScreen: "" }),
     /drawn over a listing beat/
   );
 });
 
 test("a School-Explorer-only script may not name the Neighborhood Explorer on any scene", () => {
-  for (const scene of ["listing", "listing-tap", "se"]) {
+  for (const scene of ["listing", "listing-button", "se"]) {
     assert.match(
       wrongExplorerOnScreen({ scene, explorers: "se", card: null, onScreen: "Upgrade to Neighborhood Explorer" }),
       /School-Explorer-only|listing frame/,
@@ -316,7 +321,7 @@ test("the house button on a listing beat is the School Explorer's", async () => 
   for (const id of ["vanessa-se-only-v11", "vanessa-se-ne-v11", "se-to-ne-upgrade"]) {
     const template = await templates.getTemplate(id);
     const beats = templates.renderBeats(template, { firstName: "Bill", company: "Scott Rodgers Real Estate" });
-    for (const beat of beats.filter((entry) => LISTING_SCENES.has(entry.scene))) {
+    for (const beat of beats.filter((entry) => BUTTON_LISTING_SCENES.has(entry.scene))) {
       const spec = specForBeat(beat, {
         bgUrl: "file:///site.png",
         address: ADDRESS,

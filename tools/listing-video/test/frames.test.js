@@ -167,7 +167,7 @@ test("the house button is in frame right before the first Neighborhood Explorer 
   assert.ok(firstPopup > 0, "there is a popup to lead into");
 
   const before = beats[firstPopup - 1];
-  assert.equal(before.scene, "listing-tap", "the beat before the popup shows the button being pressed");
+  assert.equal(before.scene, "listing-button", "the beat before the popup shows the button being pressed");
 
   // The words are the ones that were approved; only the scene changed.
   assert.match(before.text, /the same button upgrades to Neighborhood Explorer/i);
@@ -212,7 +212,7 @@ test("a beat with no shot for its tab is still refused", () => {
 });
 
 test("every other scene is still one still", () => {
-  for (const scene of ["listing", "listing-tap", "se"]) {
+  for (const scene of ["listing", "listing-button", "se"]) {
     assert.equal(specsForBeat({ scene, seconds: 4 }, context).length, 1, scene);
   }
 });
