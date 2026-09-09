@@ -542,6 +542,12 @@ audio track at all**:
   address — the School Explorer's schools list, and each Neighborhood Explorer
   tab. See [Filming the Explorers](#filming-the-explorers).
 
+The holds here are the **script's** durations, and they are the right ones for
+this cut: it is what somebody records over, reading along. Once an AI voice is
+laid on, the holds are re-measured off the lines it actually spoke, so an AI video
+comes out shorter than this one — see [How long the finished video
+is](#how-long-the-finished-video-is).
+
 #### Nothing about the Neighborhood Explorer goes on a listing frame
 
 A `listing` or `listing-button` beat is the **customer's own page**. Our popups
@@ -837,35 +843,62 @@ so re-recording is free and does not cost a render.
 
 #### How long the finished video is
 
-**The same length as the silent cut.** That is the picture that was approved, so
-that is the video:
+**It depends which voice you used, and the two rules are different on purpose.**
 
-| Silent cut | Voice | Finished video |
+##### A take you recorded: the same length as the silent cut
+
+You recorded it while watching the silent video, reading along. The picture you
+were timing against is the picture that goes under your voice, so the script's
+seconds are left exactly alone:
+
+| Silent cut | Your take | Finished video |
 | --- | --- | --- |
 | 60s | 30s | **60s** — the picture holds, the audio stops |
 | 12s | 12s | **12s** |
 
-Nothing is padded on after the last word, and the picture is **never cut back to
-the voice**. If a video should end sooner than the script does, that is a
-person's call, made with [the trim](#trimming-the-end-off).
+Nothing is padded on after the last word, and the picture is **never quietly cut
+back to your voice**. If a video should end sooner than the script does, that is
+a person's call, made with [the trim](#trimming-the-end-off).
 
-The one exception is a voice that runs *past* the script, and it exists so nobody
-is clipped mid-word: the last scene is held to cover it.
+##### The AI voice: the length of the lines it spoke
 
-Dead air is still cut off the end of the voice *track*, for a recorded take and
-for the AI voice. That is about the audio, not the picture: a take stopped ten
-seconds late would otherwise be ten seconds longer than the script and drag the
-picture out with it.
+The AI is not reading along with anything, so there is nothing to keep in step
+with. Each scene is **as long as the line spoken over it, plus one breath of
+0.32s**, and the script's own seconds decide nothing.
 
-One thing can make it shorter, and it is a person: [trimming on the final
-review](#trimming-the-end-off).
+This is Bill's *"the pauses between the sections are too long."* The video he
+watched was 64 seconds of a script whose speech came to about forty. Every line
+had been laid into the window its beat asked for and the leftover of that window
+was silence — three seconds of nothing after the first line, two and a half after
+the fourth, four and a half sitting on the last frame at the end. Nothing had
+failed; the windows were being honoured exactly.
 
-Dead air is still cut off the end of the voice *track*, both for a recorded take
-and for the AI voice. That is about the audio, not the picture — an AI line is
-padded out to whatever the script allowed for, and a take is usually stopped a
-moment after the last word, so a track can carry seconds of nothing. Left there,
-that silence would push the video past the length of the script. It cannot make
-the video shorter.
+A hand-written duration is a **guess at how long a line takes to say**. Once the
+line has actually been said there is nothing left to guess at: the file is on
+disk and it can be measured. So it is.
+
+Three things go with that:
+
+- **The silence a hosted voice sends around its own words is cut off each line**
+  before it is measured, so a gap between two lines is the breath the track puts
+  there on purpose and not that breath plus whatever the voice happened to send.
+- **The breath after the last line comes off entirely.** There is nothing
+  following it, so it is not a breath, it is the video ending on a held still.
+- **An AI video is usually a good deal shorter than the silent cut** you just
+  watched. That is the fix working, and the review step says so out loud so it
+  does not read as a fault: *"the picture follows the voice on an AI take, so this
+  is 0m 45s rather than the script's 1m 4s."*
+
+The script's seconds still matter to the AI path in one way: they size the
+**silent** cut, which is what you watch before deciding whether the pictures are
+right. They just no longer decide how long anything is held once there is a voice.
+
+##### Both paths
+
+A voice that runs *past* the scenes it was given is not clipped mid-word — the
+last scene is held to cover it. Dead air is cut off the end of the voice *track*
+either way. One thing makes a finished video shorter than it was built, and it is
+a person: [trimming on the final review](#trimming-the-end-off).
 
 ### 7. Final review, then send
 
@@ -1390,7 +1423,9 @@ across two scripts and this suggests 11.6.
 It reads a couple of seconds **long** against the shipped Explorer beats, and
 that is the formula being right rather than wrong. Those were written as floors
 and left deliberately short, because an Explorer beat is a still and the voice is
-what should decide how long it stays up.
+what should decide how long it stays up. On an AI take the voice now does decide,
+outright — see [How long the finished video
+is](#how-long-the-finished-video-is).
 
 **It updates on every keystroke, and says so.** The line under the box reads
 `~5.8s from 69 characters (clears if you type a number)` and is rewritten as you
@@ -1413,9 +1448,22 @@ opening one of those scripts gave a box that never moved again. Scripts written
 before `autoSeconds` existed get the old guess once and record the answer the
 next time they are saved.
 
-Getting it close matters in both directions but is not fatal either way: too short
-and `src/audio.js` stretches the beat to fit the recorded line, too long and the
-voice finishes while the picture hangs.
+**What this number does and does not decide.** It sizes the silent cut, and it is
+what an overdub is held to — somebody reading along needs the picture to wait for
+them. It does **not** decide how long anything is held on an AI take any more:
+there the scene is measured off the line the voice actually spoke. See [How long
+the finished video is](#how-long-the-finished-video-is).
+
+That is also why the 1.5s lead-in has been left where it is rather than shaved
+down. Bill's complaint was AI-voice dead air, and the AI path no longer reads this
+number at all; the path that still does is the one where a human is reading off
+the screen, and a lead-in that is generous for a reader is the point of it. Making
+it stingy would fix nothing he reported and would make overdubs harder to record.
+
+Getting it close still matters, in both directions, and is not fatal either way:
+too short and the silent cut hurries a picture somebody is reading over, too long
+and the silent cut sits on a still. On an AI take neither shows up in the file
+that gets sent.
 
 The arithmetic is in `public/js/beat-timing.js`, which the browser loads and Node
 requires, so there is one copy of it and the test is checking the one the editor
@@ -1534,6 +1582,15 @@ always reports which one it used:
 3. The built-in offline voice (Piper), if it is installed
 
 If none are available the AI button is switched off and says so.
+
+### An AI take is cut to the voice, not to the script
+
+Each scene is as long as the line spoken over it plus a breath, and the silence a
+hosted voice sends around its own words is cut off first. So an AI video is
+usually shorter than the silent cut, and the gaps between the sections are a
+third of a second rather than two or three. This is [how long the finished video
+is](#how-long-the-finished-video-is), and it is the one place where the AI path
+and the recorded path deliberately behave differently.
 
 ### The shared lines are only spoken once
 
@@ -1816,7 +1873,7 @@ src/listing-image.js         an uploaded screenshot, checked and fitted to the f
 src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
-src/audio.js                 recorded takes, the optional AI voice, 0.6s lead silence
+src/audio.js                 recorded takes, the AI voice, and the AI scene lengths
 src/render.js                phase one (silent picture) and phase two (attach audio)
 src/store.js                 jobs on disk, the library list, delete
 src/mail.js                  the two from-addresses, honest "not connected" state

@@ -510,10 +510,10 @@ async function cleanTempAudio(workDir) {
 /**
  * Phase three, and only if a person asks for it: cut the end off.
  *
- * The finished video is as long as the silent cut, because that is the picture
- * that was approved. If Bill decides on the final review that it should stop
- * earlier, he pauses the player and trims - and that is the only thing that
- * makes it shorter.
+ * The finished video is however long it was built - the silent cut's length on
+ * an overdub, the length of the spoken lines on an AI take. If Bill decides on
+ * the final review that it should stop earlier than that, he pauses the player
+ * and trims, and that is the only thing that makes it shorter.
  *
  * The trim is applied to the finished cut in place, so the watch link keeps
  * working, and the review flag is cleared because what he approved has changed.
