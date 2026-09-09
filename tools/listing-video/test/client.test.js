@@ -254,6 +254,90 @@ test("the address box offers the Explorer's suggestions, and picking one is what
   }
 });
 
+/*
+ * The suggested seconds on a beat, in the editor somebody actually types into.
+ *
+ * test/beat-timing.test.js covers the arithmetic; this is the wiring - that the
+ * number follows the words, that typing over it stops that, and that emptying
+ * the box hands it back.
+ */
+async function openTheScriptEditor(page) {
+  await page.evaluate(() => document.querySelector('.tab[data-view="scripts"]').click());
+  await page.waitForFunction(() => !document.getElementById("view-scripts").hidden, { timeout: 5000 });
+  await page.evaluate(() => document.getElementById("newTemplateBtn").click());
+  await page.waitForFunction(() => document.querySelector('[data-role="seconds"]'), { timeout: 5000 });
+}
+
+const firstBeat = () => ({
+  seconds: document.querySelector('[data-role="seconds"]').value,
+  hint: document.querySelector('[data-role="secondsHint"]').textContent.trim(),
+  total: document.getElementById("beatTotal").textContent.trim(),
+});
+
+test("the suggested seconds follow the words as a beat is written", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    const empty = await tool.page.evaluate(firstBeat);
+    assert.equal(empty.seconds, "2.5", "a beat with nothing in it still holds its picture");
+    assert.match(empty.hint, /following the words/i);
+
+    // 64 characters: 1.5s of lead-in plus 4s of reading at 16 a second.
+    const line = "Here is the listing, exactly as a buyer sees it on the site.....";
+    assert.equal(line.length, 64);
+    await tool.page.focus('[data-role="text"]');
+    await tool.page.type('[data-role="text"]', line, { delay: 1 });
+
+    const written = await tool.page.evaluate(firstBeat);
+    assert.equal(written.seconds, "5.5", "the box should have kept up with the words");
+    assert.match(written.total, /5\.5s/, "and the running total with it");
+
+    // Deleting words takes it back down; the number is not a high-water mark.
+    await tool.page.evaluate(() => {
+      const box = document.querySelector('[data-role="text"]');
+      box.value = "Short line.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "2.5");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a duration typed by hand is left alone, and clearing it starts it following again", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    await tool.page.evaluate(() => {
+      const seconds = document.querySelector('[data-role="seconds"]');
+      seconds.value = "9";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const held = await tool.page.evaluate(firstBeat);
+    assert.equal(held.seconds, "9");
+    assert.match(held.hint, /held at 9s/i, held.hint);
+
+    // The words change underneath it and the number stays where it was put.
+    await tool.page.focus('[data-role="text"]');
+    await tool.page.type('[data-role="text"]', "A line of words that would suggest something else entirely.", { delay: 1 });
+    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "9", "somebody chose 9, so it stays 9");
+
+    // Emptying the box is the way back.
+    await tool.page.evaluate(() => {
+      const seconds = document.querySelector('[data-role="seconds"]');
+      seconds.value = "";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const following = await tool.page.evaluate(firstBeat);
+    assert.equal(following.seconds, "5.2", "59 characters: 1.5 + 59/16");
+    assert.match(following.hint, /following the words/i);
+  } finally {
+    await tool.close();
+  }
+});
+
 test("another kind of failure offers the upload too, but closed", options, async () => {
   const tool = await openTool();
   try {
