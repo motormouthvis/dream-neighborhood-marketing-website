@@ -131,8 +131,38 @@ async function addressFromUploadForm(body) {
   );
 }
 
+/**
+ * A before-shot screenshot has to be a clean listing, and only a person can say
+ * so.
+ *
+ * The live path checks the page itself, right up to the moment of the shot, and
+ * refuses a listing that already has one of our Explorers on it. There is no
+ * page on this path - it is an image - and nothing here reads the pixels, for
+ * the same reason nothing reads the address off them: a wrong answer would look
+ * completely correct. Bill's screenshot is the only witness, and he is looking
+ * at it.
+ *
+ * So the upload is refused until he says it is a clean listing, and the answer
+ * is kept with the job. Saying no is not a dead end: it names the script that
+ * wants a listing which already has School Explorer on it.
+ */
+const BEFORE_SHOT_NEEDS_A_CLEAN_SHOT =
+  "This script is the \u201cbefore\u201d shot, so the listing in the screenshot must not already have School Explorer or Neighborhood Explorer on it \u2013 and nothing here can check a picture for one, the way it can check a live page. " +
+  "Tick \u201cthis listing has no Explorer on it yet\u201d to confirm you can see that it does not. " +
+  "If it does already have School Explorer on it, that customer is the upgrade pitch: pick the \u201cSE to NE upgrade\u201d script instead.";
+
+function isBeforeShotTemplate(template) {
+  return ((template && template.listingExplorer) || "absent") === "absent";
+}
+
+/** Did the form confirm the photographed listing is a clean one? */
+function confirmedNoExplorer(body) {
+  const said = String((body && body.listingHasNoExplorer) || "").toLowerCase();
+  return said === "yes" || said === "true" || said === "on" || said === "1";
+}
+
 /** Move an accepted screenshot into the job's own folder, with its address. */
-async function keepUploadedListing(jobId, file, address) {
+async function keepUploadedListing(jobId, file, address, { noExplorerConfirmed = false } = {}) {
   const kept = path.join(store.jobDir(jobId), `listing-upload${path.extname(file.filename) || ".png"}`);
   await fsp.mkdir(path.dirname(kept), { recursive: true });
   await fsp.rename(file.path, kept);
@@ -143,6 +173,9 @@ async function keepUploadedListing(jobId, file, address) {
     uploadedAt: new Date().toISOString(),
     bytes: file.size || 0,
     address,
+    // Whether a person looked at this picture and said the listing in it has no
+    // Explorer on it yet. Only asked for, and only meaningful, on a before shot.
+    noExplorerConfirmed: Boolean(noExplorerConfirmed),
   };
 }
 
@@ -400,6 +433,11 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
    */
   let uploadedAddress = null;
   if (req.file) {
+    // A before shot has to be a clean listing, and this is the only path where
+    // nothing but a person can say whether it is.
+    if (isBeforeShotTemplate(template) && !confirmedNoExplorer(body)) {
+      return refuse(400, BEFORE_SHOT_NEEDS_A_CLEAN_SHOT);
+    }
     try {
       uploadedAddress = await addressFromUploadForm(body);
     } catch (error) {
@@ -417,7 +455,9 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
 
   if (req.file) {
     try {
-      job.input.uploadedListing = await keepUploadedListing(job.id, req.file, uploadedAddress);
+      job.input.uploadedListing = await keepUploadedListing(job.id, req.file, uploadedAddress, {
+        noExplorerConfirmed: confirmedNoExplorer(body),
+      });
       await store.persist(job);
     } catch (error) {
       await discardUpload(req.file);
@@ -497,10 +537,18 @@ app.post(
     if (!req.file) {
       return res.status(400).json({ error: "No screenshot came through. Pick a PNG or JPG and try again." });
     }
+    // The same clean-listing question the form asks, because this is the same
+    // upload arriving by a different door.
+    if (isBeforeShotTemplate(job.template) && !confirmedNoExplorer(req.body)) {
+      await discardUpload(req.file);
+      return res.status(400).json({ error: BEFORE_SHOT_NEEDS_A_CLEAN_SHOT });
+    }
 
     let kept;
     try {
-      kept = await keepUploadedListing(job.id, req.file, await addressFromUploadForm(req.body || {}));
+      kept = await keepUploadedListing(job.id, req.file, await addressFromUploadForm(req.body || {}), {
+        noExplorerConfirmed: confirmedNoExplorer(req.body),
+      });
     } catch (error) {
       await discardUpload(req.file);
       return fail(res, error);

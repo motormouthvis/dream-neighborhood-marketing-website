@@ -5,10 +5,75 @@ const { pathToFileURL } = require("url");
 const config = require("./config");
 const { NE_TABS } = require("./ne-tabs");
 
+/** The scenes that are the customer's own listing page rather than a popup. */
+const LISTING_SCENES = new Set(["listing", "listing-tap"]);
+
+/*
+ * What the Neighborhood Explorer looks like in words.
+ *
+ * Everything in a frame is either a photograph of the real product or something
+ * we draw, and this matches the second kind: the popup's own header, and the
+ * label beside the house button. It is what the guard below reads the stage for.
+ */
+const NEIGHBORHOOD_EXPLORER_ON_SCREEN = /neighborhood explorer|explore (the|this) neighborhood/i;
+
+/**
+ * The label beside the house button on a listing frame.
+ *
+ * It says schools, not neighborhood.
+ *
+ * This is the bug Bill reported three times. The button we draw in the corner of
+ * their listing is the School Explorer's - templates.js guarantees School
+ * Explorer is the first Explorer any script shows, and by the time a
+ * Neighborhood Explorer beat runs the popup is open and this label is hidden
+ * with the rest of the button. But the label said "Click here to explore the
+ * neighborhood around 6031 N Rosemead Dr", so every listing frame of every
+ * script carried Neighborhood Explorer wording - including the school-only
+ * script, which is documented never to mention it, and including the "before"
+ * shot, whose whole point is a listing with no Explorer on it yet.
+ *
+ * It was drawn the same way whether the listing behind it was photographed off
+ * their site or uploaded by hand, which is why re-checking the live page for an
+ * Explorer did nothing for the upload.
+ */
 function tooltipFor(address) {
   const street = address && address.street ? address.street : "";
-  if (street) return `Click here to explore the neighborhood around ${street}`;
-  return "Click here to explore this neighborhood";
+  if (street) return `Click here to explore the schools around ${street}`;
+  return "Click here to explore the schools near this home";
+}
+
+/**
+ * Why this frame must not be photographed, or "" if it is fine.
+ *
+ * Read from the stage itself, after the beat has been drawn and before the
+ * shutter, so it judges what is actually on screen rather than what was asked
+ * for. A caption, a tooltip, a popup header - anything we draw - is caught the
+ * same way, on the uploaded-screenshot path exactly as on the live one.
+ *
+ *   A listing beat is the customer's own page. Our School Explorer popup opens
+ *   on an "se" beat and the Neighborhood Explorer's on an "ne" beat; neither
+ *   belongs on the page underneath, and a script that is a "before" shot has a
+ *   listing with no Explorer on it at all.
+ *
+ *   A School-Explorer-only script must not mention the Neighborhood Explorer
+ *   anywhere. That is the promise the shipped script's own notes make.
+ */
+function wrongExplorerOnScreen({ scene, explorers, card, onScreen }) {
+  const words = String(onScreen == null ? "" : onScreen);
+  const schoolOnly = explorers === "se";
+  const onTheListing = LISTING_SCENES.has(scene);
+
+  if (card === "ne" && (onTheListing || schoolOnly)) {
+    return onTheListing
+      ? "a Neighborhood Explorer popup is drawn over a listing beat"
+      : "a Neighborhood Explorer popup is drawn in a School-Explorer-only script";
+  }
+
+  const said = words.match(NEIGHBORHOOD_EXPLORER_ON_SCREEN);
+  if (!said) return "";
+  if (onTheListing) return `the listing frame says "${said[0]}"`;
+  if (schoolOnly) return `a School-Explorer-only script says "${said[0]}"`;
+  return "";
 }
 
 /**
@@ -119,6 +184,8 @@ async function renderFrames({
   company,
   explorerShots,
   schoolExplorerShots,
+  // Which Explorers this script is allowed to show at all, off the template.
+  explorers = "se-ne",
   outDir,
   log,
 }) {
@@ -144,6 +211,13 @@ async function renderFrames({
    * stills later, whatever the voice turns out to be - see spreadDurations.
    */
   const frameBeats = [];
+  /*
+   * What each still had on it, read off the stage rather than inferred.
+   *
+   * Kept so the guard below and the tests that police it can both look at the
+   * words that were really photographed.
+   */
+  const frameText = [];
   // Which School Explorer beat this is, so each gets its own picture of the list.
   let sePosition = 0;
   try {
@@ -152,6 +226,35 @@ async function renderFrames({
       if (beats[index].scene === "se") sePosition += 1;
       for (let part = 0; part < specs.length; part += 1) {
         await page.evaluate((value) => window.renderFrame(value), specs[part]);
+
+        /*
+         * Everything the frame will show, in the words it will show them in.
+         *
+         * innerText is what a person watching would read, so the caption, the
+         * popup's header and the label beside the house button are all in here -
+         * and so is anything a later change starts drawing.
+         */
+        const onScreen = await page.evaluate(() =>
+          (document.getElementById("stage").innerText || "").replace(/\s+/g, " ").trim()
+        );
+        const wrong = wrongExplorerOnScreen({
+          scene: beats[index].scene,
+          explorers,
+          card: specs[part].card,
+          onScreen,
+        });
+        if (wrong) {
+          const error = new Error(
+            `Scene ${index + 1} of this script is a "${beats[index].scene}" beat and ${wrong}, so this video was not made. ${
+              LISTING_SCENES.has(beats[index].scene)
+                ? "A listing beat is the customer's own page: our Explorer popups open on their own beats and nothing about them belongs on the page underneath"
+                : "This script is School Explorer only, so the Neighborhood Explorer cannot appear anywhere in it"
+            }. Fix the wording on that beat on the Scripts tab, or pick the "SE to NE upgrade" script.`
+          );
+          error.code = "NE_ON_LISTING_SCENE";
+          throw error;
+        }
+
         const filePath = path.join(
           outDir,
           `frame-${String(index).padStart(3, "0")}-${String(part).padStart(2, "0")}.jpg`
@@ -165,6 +268,7 @@ async function renderFrames({
         });
         frames.push(filePath);
         frameBeats.push(index);
+        frameText.push(onScreen);
       }
       if ((index + 1) % 4 === 0 || index === beats.length - 1) {
         log(`Drew ${index + 1} of ${beats.length} scenes`);
@@ -174,7 +278,7 @@ async function renderFrames({
     await page.close().catch(() => {});
   }
 
-  return { frames, frameBeats };
+  return { frames, frameBeats, frameText };
 }
 
 /**
@@ -196,4 +300,14 @@ function spreadDurations(beatSeconds, frameBeats) {
   });
 }
 
-module.exports = { renderFrames, tooltipFor, specForBeat, specsForBeat, schoolShotFor, spreadDurations };
+module.exports = {
+  renderFrames,
+  tooltipFor,
+  specForBeat,
+  specsForBeat,
+  schoolShotFor,
+  spreadDurations,
+  wrongExplorerOnScreen,
+  LISTING_SCENES,
+  NEIGHBORHOOD_EXPLORER_ON_SCREEN,
+};

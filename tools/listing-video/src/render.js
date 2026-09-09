@@ -60,6 +60,16 @@ async function withDeadline(work, ms, onTimeout) {
 }
 
 /**
+ * Is this script the "before" shot - a listing with no Explorer on it yet?
+ *
+ * Scripts saved before the setting existed were all before-shots, so a template
+ * that does not say counts as one.
+ */
+function isBeforeShot(job) {
+  return ((job.template && job.template.listingExplorer) || "absent") === "absent";
+}
+
+/**
  * The listing picture, from an upload rather than off the site.
  *
  * Answers with the same shape captureListing does, so everything after this
@@ -74,16 +84,25 @@ async function useUploadedListing(job, workDir, log) {
   const picture = await prepareListingImage({ sourcePath: uploaded.file, outDir: workDir, log });
 
   /*
-   * Nothing here can check the picture for an Explorer.
+   * Nothing here can check the picture for an Explorer, so a person did.
    *
    * On the live path capture refuses a listing that already has one when the
    * script is a before-and-after, right up to the moment of the shot. There is
    * no page to ask on this path - it is an image - and reading one off the
-   * pixels would be guessing. So it is said plainly instead, next to the video,
-   * to whoever can see the screenshot and settle it in a second.
+   * pixels would be guessing, the same guessing this file refuses to do with the
+   * address. So the upload form asks instead, and will not take a before-shot
+   * screenshot until whoever can see it says it is a clean listing. That answer
+   * is written down here beside the video, with their name on it.
    */
-  const beforeShot = ((job.template && job.template.listingExplorer) || "absent") === "absent";
-  if (beforeShot) log("Nothing can check an uploaded picture for an Explorer - worth a look in the review");
+  const beforeShot = isBeforeShot(job);
+  const confirmed = Boolean(uploaded.noExplorerConfirmed);
+  if (beforeShot) {
+    log(
+      confirmed
+        ? "You confirmed the listing you photographed has no Explorer on it yet"
+        : "Nothing can check an uploaded picture for an Explorer - worth a look in the review"
+    );
+  }
 
   return {
     screenshot: picture.file,
@@ -103,7 +122,9 @@ async function useUploadedListing(job, workDir, log) {
       }. Check the map in the review.`,
       ...(beforeShot
         ? [
-            "This script is the before shot, and nothing checked your screenshot for an Explorer - that check needs a live page, and there is not one here. If the listing you photographed already has School Explorer or Neighborhood Explorer on it, this is the wrong picture for this script and the \u201cSE to NE upgrade\u201d one is the right script.",
+            confirmed
+              ? "This script is the before shot. No live page could be checked for an Explorer, so you confirmed on the upload that the listing you photographed does not have School Explorer or Neighborhood Explorer on it yet. Nothing we draw on the listing frames mentions the Neighborhood Explorer."
+              : "This script is the before shot, and nothing checked your screenshot for an Explorer - that check needs a live page, and there is not one here. If the listing you photographed already has School Explorer or Neighborhood Explorer on it, this is the wrong picture for this script and the \u201cSE to NE upgrade\u201d one is the right script.",
           ]
         : []),
     ],
@@ -260,9 +281,40 @@ async function renderSilent(job, { budgetMs } = {}) {
       company: job.input.company,
       explorerShots,
       schoolExplorerShots,
+      /*
+       * Which Explorers this script may show, so no frame can be photographed
+       * with the wrong one on it.
+       *
+       * The Neighborhood Explorer never belongs on a listing beat, and never
+       * belongs anywhere in a School-Explorer-only script - see
+       * wrongExplorerOnScreen. Passed from the template rather than assumed,
+       * because it is the template that decides.
+       */
+      explorers: (job.template && job.template.explorers) || "se-ne",
       outDir: workDir,
       log,
     });
+
+    /*
+     * What the listing frames ended up with on them, said out loud.
+     *
+     * Bill has reported the Neighborhood Explorer appearing on the listing
+     * frames of a School-Explorer-only script three times, so the review no
+     * longer leaves it to be spotted. renderFrames refuses to photograph a
+     * listing frame with the Neighborhood Explorer on it at all, and this is the
+     * receipt for that on the screen where the video is watched.
+     */
+    if (isBeforeShot(job)) {
+      explorerNotes.push(
+        `The listing frames are their page as it was ${
+          job.input.uploadedListing ? "in the screenshot you uploaded" : "when it was filmed"
+        }, with the School Explorer's house button drawn in the corner. ${
+          job.template.explorers === "se"
+            ? "This script is School Explorer only, so nothing anywhere in it mentions the Neighborhood Explorer."
+            : "The Neighborhood Explorer is only on its own beats, never on the listing."
+        }`
+      );
+    }
 
     // A tab beat is several stills, so each beat's seconds are shared out across
     // its own stills. The scene lengths the script asked for do not change.

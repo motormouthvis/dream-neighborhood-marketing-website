@@ -227,6 +227,12 @@ const CUSTOMER = {
   websiteUrl: "https://www.scottrodgersrealestate.com/",
   customerEmail: "fixture@example.test",
   fromId: "marketing",
+  /*
+   * The school-only script is the "before" shot, and no live page is loaded on
+   * this path, so the form asks whether the listing in the screenshot is a clean
+   * one. Every upload here says yes; the test below is the one that says nothing.
+   */
+  listingHasNoExplorer: "yes",
 };
 
 /* ---------------------------------------------------------------- */
@@ -446,7 +452,7 @@ test(
       const uploaded = await postForm(
         tool,
         `${TOOL}/api/jobs/${id}/listing-image`,
-        ROSEMEAD,
+        { ...ROSEMEAD, listingHasNoExplorer: "yes" },
         await makeImage({ width: 1440, height: 810, colour: "0x2f6fae" })
       );
       assert.equal(uploaded.status, 202, JSON.stringify(uploaded.body));
@@ -595,6 +601,113 @@ test("a screenshot with no street address is sent back, and no job is started", 
     // And the rejected upload is not left sitting in the uploads directory.
     const uploads = await fsp.readdir(path.join(dataDir, "uploads")).catch(() => []);
     assert.deepEqual(uploads.filter((name) => name.startsWith("listing-")), []);
+  } finally {
+    await tool.close();
+  }
+});
+
+/* ---------------------------------------------------------------- */
+/* the before shot has to be a clean listing                        */
+/* ---------------------------------------------------------------- */
+
+/*
+ * The live path checks the page itself and refuses a listing that already has
+ * one of our Explorers on it when the script is a before-and-after. There is no
+ * page behind a screenshot, and nothing here reads the pixels - for the same
+ * reason nothing reads the address off them. So the person looking at the
+ * picture is asked, and the upload does not go through until they answer.
+ */
+test("a before-shot upload is refused until somebody says the listing is a clean one", async () => {
+  const tool = await startServer();
+  try {
+    const before = (await store.listJobs()).length;
+    const refused = await postForm(
+      tool,
+      `${TOOL}/api/jobs`,
+      { ...CUSTOMER, ...ROSEMEAD, listingHasNoExplorer: "" },
+      await makeImage()
+    );
+
+    assert.equal(refused.status, 400);
+    assert.match(refused.body.error, /before/i);
+    assert.match(refused.body.error, /no Explorer on it yet/i);
+    // Saying no is not a dead end: it names the script that wants a listing
+    // which already has School Explorer on it.
+    assert.match(refused.body.error, /SE to NE upgrade/i);
+
+    assert.equal((await store.listJobs()).length, before, "a refused form must not leave a job behind");
+    const uploads = await fsp.readdir(path.join(dataDir, "uploads")).catch(() => []);
+    assert.deepEqual(uploads.filter((name) => name.startsWith("listing-")), []);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the same question is asked of an upload that arrives from the failure panel", options, async () => {
+  const tool = await startServer();
+  const site = await fixture.listen(fixture.DETAIL_URL_SITE_FORBIDDEN);
+  try {
+    const started = await fetch(`${tool.origin}${TOOL}/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: tool.cookie },
+      body: JSON.stringify({ ...CUSTOMER, websiteUrl: site.origin }),
+    });
+    const { id } = await started.json();
+    const failed = await settle(tool, id);
+    assert.equal(failed.status, "failed");
+
+    const refused = await postForm(tool, `${TOOL}/api/jobs/${id}/listing-image`, ROSEMEAD, await makeImage());
+    assert.equal(refused.status, 400);
+    assert.match(refused.body.error, /no Explorer on it yet/i);
+
+    // And the refused picture is not left sitting in the uploads directory.
+    const uploads = await fsp.readdir(path.join(dataDir, "uploads")).catch(() => []);
+    assert.deepEqual(uploads.filter((name) => name.startsWith("listing-")), []);
+  } finally {
+    await new Promise((resolve) => site.server.close(resolve));
+    await tool.close();
+  }
+});
+
+/*
+ * The upgrade script is not a before shot - that listing is meant to have School
+ * Explorer on it already - so there is nothing to confirm and nothing is asked.
+ */
+test("the upgrade script's upload is not asked the before-shot question", async () => {
+  const tool = await startServer();
+  try {
+    const started = await postForm(
+      tool,
+      `${TOOL}/api/jobs`,
+      { ...CUSTOMER, templateId: "se-to-ne-upgrade", ...ROSEMEAD, listingHasNoExplorer: "" },
+      await makeImage()
+    );
+    assert.equal(started.status, 202, JSON.stringify(started.body));
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The answer is kept with the job and said beside the video, so the review reads
+ * what was confirmed rather than "nothing could check this".
+ */
+test("the confirmation is written down beside the video", options, async () => {
+  const tool = await startServer();
+  try {
+    const started = await postForm(tool, `${TOOL}/api/jobs`, { ...CUSTOMER, ...ROSEMEAD }, await makeImage());
+    const job = await settle(tool, started.body.id);
+    assert.equal(job.status, "silent-ready", job.error || "");
+
+    const stored = await store.getJob(started.body.id);
+    assert.equal(stored.input.uploadedListing.noExplorerConfirmed, true);
+
+    const notes = job.silent.notes.join(" ");
+    assert.match(notes, /you confirmed on the upload/i, notes);
+    // And what we drew on the listing frames, which is the thing Bill kept
+    // finding the Neighborhood Explorer on.
+    assert.match(notes, /School Explorer's house button drawn in the corner/i, notes);
+    assert.match(notes, /nothing anywhere in it mentions the Neighborhood Explorer/i, notes);
   } finally {
     await tool.close();
   }

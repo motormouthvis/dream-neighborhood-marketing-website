@@ -119,6 +119,30 @@
       el("makeBtn"),
       uploading ? "Make the silent video from that screenshot" : "Make the silent video"
     );
+    paintCleanShotAsk();
+  }
+
+  /** Is the chosen script a "before" shot - a listing with no Explorer on it yet? */
+  function beforeShotPicked() {
+    var picked = D.selectedValue("templateId");
+    var template = D.state.templates.filter(function (entry) {
+      return entry.id === picked;
+    })[0];
+    return Boolean(template) && (template.listingExplorer || "absent") === "absent";
+  }
+
+  /*
+   * The clean-listing question, asked only where it means something.
+   *
+   * It is the only check there is on this path: the live capture looks at the
+   * page and refuses a listing that already has one of our Explorers, and there
+   * is no page behind a screenshot. Shown for a before-shot script with an
+   * upload, and nowhere else.
+   */
+  function paintCleanShotAsk() {
+    var needed = D.selectedValue("pictureSource") === "upload" && beforeShotPicked();
+    D.show(el("cleanShotField"), needed);
+    if (!needed) el("listingHasNoExplorer").checked = false;
   }
 
   function onTemplatePicked() {
@@ -134,6 +158,7 @@
     })[0];
     var key = template ? template.listingExplorer || "absent" : "none";
     D.setText(el("websiteHint"), WEBSITE_HINTS[key] || WEBSITE_HINTS.none);
+    paintCleanShotAsk();
   }
 
   function paintFromChoices() {
@@ -324,12 +349,26 @@
       );
       return;
     }
+    if (uploading && beforeShotPicked() && !el("listingHasNoExplorer").checked) {
+      D.showMessage(
+        el("form-error"),
+        "This script is the \u201cbefore\u201d shot, so tick the box to confirm the listing you screenshotted has no Explorer on it yet. Nothing here can check a picture for one. If it already has School Explorer on it, pick the \u201cSE to NE upgrade\u201d script."
+      );
+      return;
+    }
 
     el("makeBtn").disabled = true;
     D.setText(el("makeBtn"), "Starting...");
 
     var started = uploading
-      ? postForm(API + "/jobs", Object.assign({}, payload, addressPicker.value()), file, "listingImage")
+      ? postForm(
+          API + "/jobs",
+          Object.assign({}, payload, addressPicker.value(), {
+            listingHasNoExplorer: el("listingHasNoExplorer").checked ? "yes" : "",
+          }),
+          file,
+          "listingImage"
+        )
       : D.send("POST", API + "/jobs", payload);
 
     started.then(function (result) {
@@ -419,6 +458,9 @@
     D.setText(el("failedWhy"), message);
     D.show(el("retryListing"), retryable);
     D.showMessage(el("uploadError"), "");
+    // The job carries the script it was started with, so the clean-listing
+    // question follows the job rather than whatever the form says now.
+    D.show(el("retryCleanShotField"), Boolean(settings.beforeShot));
 
     // Nothing to upload against on a job that is no longer on the server.
     D.show(el("uploadEscape"), retryable);
@@ -489,6 +531,7 @@
       paintFailure(job.error || "Something went wrong.", {
         retryable: Boolean(job.retryable),
         refused: wasRefused(job),
+        beforeShot: ((job.template && job.template.listingExplorer) || "absent") === "absent",
       });
       return;
     }
@@ -1176,6 +1219,13 @@
       );
       return;
     }
+    if (!el("retryCleanShotField").hidden && !el("retryListingHasNoExplorer").checked) {
+      D.showMessage(
+        el("uploadError"),
+        "This script is the \u201cbefore\u201d shot, so tick the box to confirm the listing you screenshotted has no Explorer on it yet. Nothing here can check a picture for one."
+      );
+      return;
+    }
 
     var button = el("uploadListingBtn");
     var done = function (message) {
@@ -1189,7 +1239,9 @@
 
     postForm(
       API + "/jobs/" + mine.jobId + "/listing-image",
-      retryAddressPicker.value(),
+      Object.assign({}, retryAddressPicker.value(), {
+        listingHasNoExplorer: el("retryListingHasNoExplorer").checked ? "yes" : "",
+      }),
       file,
       "listingImage"
     ).then(function (result) {

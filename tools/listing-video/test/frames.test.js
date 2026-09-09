@@ -124,10 +124,28 @@ test("a tab beat with no screenshot is refused rather than drawn from stand-in d
   );
 });
 
-test("the popup tooltip uses the address that was filmed, or says nothing about one", () => {
-  assert.equal(tooltipFor({ street: "815 Larkspur Lane" }), "Click here to explore the neighborhood around 815 Larkspur Lane");
-  assert.equal(tooltipFor({ street: "" }), "Click here to explore this neighborhood");
-  assert.equal(tooltipFor(null), "Click here to explore this neighborhood");
+/*
+ * The label beside the house button on a listing frame says schools.
+ *
+ * It used to say "Click here to explore the neighborhood around 815 Larkspur
+ * Lane", on every listing frame of every script - the school-only one included,
+ * which is documented never to mention the Neighborhood Explorer. That is the
+ * Neighborhood Explorer Bill saw on the listing frames three times over, and it
+ * was drawn the same way whether the listing behind it was filmed or uploaded.
+ *
+ * The button is the School Explorer's: templates.js guarantees School Explorer
+ * is the first Explorer any script shows, and by the time a Neighborhood
+ * Explorer beat runs the popup is open and this label is hidden with the rest of
+ * the button.
+ */
+test("the label beside the house button says schools, and names the house it is about", () => {
+  assert.equal(tooltipFor({ street: "815 Larkspur Lane" }), "Click here to explore the schools around 815 Larkspur Lane");
+  assert.equal(tooltipFor({ street: "" }), "Click here to explore the schools near this home");
+  assert.equal(tooltipFor(null), "Click here to explore the schools near this home");
+
+  for (const address of [{ street: "815 Larkspur Lane" }, { street: "" }, null]) {
+    assert.doesNotMatch(tooltipFor(address), /neighborhood/i, "nothing on a listing frame says neighborhood");
+  }
 });
 
 /* ---------------------------------------------------------------- */

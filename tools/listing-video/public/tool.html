@@ -155,6 +155,31 @@
                 <div class="suggest__list" id="addressSuggestions" hidden></div>
               </div>
               <p class="hint" id="addressNote" hidden></p>
+
+              <!--
+                The before shot has to be a clean listing, and on this path only
+                the person who took the screenshot can say whether it is.
+
+                The live capture checks the page itself and refuses a listing
+                that already has one of our Explorers on it. There is no page
+                here, and nothing reads the pixels - for the same reason nothing
+                reads the address off them. So it is asked, and shown only for
+                the scripts it matters to.
+              -->
+              <div id="cleanShotField" hidden>
+                <label class="check">
+                  <input type="checkbox" id="listingHasNoExplorer" />
+                  <span id="cleanShotLabel">
+                    This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
+                    Explorer on the page I screenshotted.
+                  </span>
+                </label>
+                <span class="hint">
+                  This script is the "before" shot. Nothing can check a picture for an Explorer, so this is the only
+                  check there is. If the listing already has School Explorer on it, use the
+                  <strong>SE to NE upgrade</strong> script instead.
+                </span>
+              </div>
             </div>
 
             <label class="field">
@@ -422,6 +447,22 @@
                 Start typing and pick it from the list. These are the Explorer's own suggestions, so a picked address is
                 one it can place - nothing is read off the picture, and the School Explorer and Neighborhood Explorer
                 popups in the video are both filmed at whatever you choose.
+              </span>
+            </div>
+
+            <!-- The same clean-listing question the form asks, because this is
+                 the same upload arriving by a different door. -->
+            <div id="retryCleanShotField" hidden>
+              <label class="check">
+                <input type="checkbox" id="retryListingHasNoExplorer" />
+                <span>
+                  This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
+                  Explorer on the page I screenshotted.
+                </span>
+              </label>
+              <span class="hint">
+                This script is the "before" shot, and nothing can check a picture for an Explorer. If the listing
+                already has School Explorer on it, that customer wants the <strong>SE to NE upgrade</strong> script.
               </span>
             </div>
 
