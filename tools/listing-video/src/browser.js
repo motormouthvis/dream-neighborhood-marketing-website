@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const puppeteer = require("puppeteer-core");
 const config = require("./config");
+const persona = require("./persona");
 
 /**
  * Chrome, kept as small as it can be.
@@ -32,7 +33,14 @@ const LOW_MEMORY_ARGS = [
   "--aggressive-cache-discard",
   // Fewer renderer processes. --single-process saves more but crashes on real
   // sites, so this is the version that survives.
-  "--disable-features=IsolateOrigins,site-per-process,Translate,MediaRouter,BackForwardCache,AcceptCHFrame",
+  /*
+   * AcceptCHFrame used to be disabled here along with the rest. It is not a
+   * memory feature: it is how Chrome answers a site that asks for client hints
+   * at connection setup, over HTTP/2. Turning it off meant a site could ask us
+   * for hints in the way real Chrome supports and get silence back, which is a
+   * difference from an ordinary browser bought for nothing.
+   */
+  "--disable-features=IsolateOrigins,site-per-process,Translate,MediaRouter,BackForwardCache",
   "--disable-site-isolation-trials",
   "--process-per-site",
   "--renderer-process-limit=1",
@@ -63,6 +71,13 @@ const LOW_MEMORY_ARGS = [
   "--use-fake-device-for-media-stream",
   "--deny-permission-prompts",
   "--disable-notifications",
+];
+
+/**
+ * The switches that are about looking like somebody's browser rather than about
+ * surviving a 512MB dyno. See src/persona.js for the rest of the story.
+ */
+const ORDINARY_SESSION_ARGS = [
   /*
    * Do not advertise the automation.
    *
@@ -70,8 +85,15 @@ const LOW_MEMORY_ARGS = [
    * the flag behind navigator.webdriver and the easiest bot check on the web. It
    * costs nothing and it is not a bypass - a site that fingerprints properly
    * still knows, which is why the uploaded-screenshot path exists.
+   *
+   * Worth knowing: with this on, Chrome already answers `navigator.webdriver`
+   * with `false`, which is what an ordinary Chrome answers. Nothing else needs
+   * to touch it, and src/persona.js deliberately does not.
    */
   "--disable-blink-features=AutomationControlled",
+  // --lang and --accept-lang, so Accept-Language leaves in Chrome's own place in
+  // the header order instead of being appended by the automation layer.
+  ...persona.launchArgs(),
 ];
 
 /*
@@ -115,7 +137,7 @@ async function launch() {
     executablePath: config.chromePath,
     headless: true,
     userDataDir,
-    args: [...LOW_MEMORY_ARGS, "--incognito"],
+    args: [...LOW_MEMORY_ARGS, ...ORDINARY_SESSION_ARGS, "--incognito"],
     ignoreDefaultArgs: AUTOMATION_ARGS,
     // Small while crawling. The page that actually gets photographed is resized
     // to 1920x1080 for the shot.
@@ -124,6 +146,14 @@ async function launch() {
   });
   // Remembered so closeBrowser can take the profile with it.
   browser.__lvmUserDataDir = userDataDir;
+  /*
+   * Worked out once, here, rather than per page: the persona is built around
+   * what this Chrome actually is - its version and its own brand list - so the
+   * story the headers tell cannot drift away from the browser telling it when
+   * the box is upgraded. Read through the blank startup page, which Chrome has
+   * already opened and closeStartupPage is about to close.
+   */
+  browser.__lvmPersona = await persona.personaFor(browser, { desktop: config.capturePersona });
   return browser;
 }
 
@@ -162,11 +192,16 @@ async function launchExplorerBrowser() {
     executablePath: config.chromePath,
     headless: true,
     userDataDir,
-    args: [...LOW_MEMORY_ARGS.filter((arg) => !keepsTheMapWorking.has(arg)), "--incognito"],
+    args: [
+      ...LOW_MEMORY_ARGS.filter((arg) => !keepsTheMapWorking.has(arg)),
+      ...ORDINARY_SESSION_ARGS,
+      "--incognito",
+    ],
     defaultViewport: { width: 1340, height: 764 },
     protocolTimeout: 60000,
   });
   browser.__lvmUserDataDir = userDataDir;
+  browser.__lvmPersona = await persona.personaFor(browser, { desktop: config.capturePersona });
   return browser;
 }
 
@@ -232,5 +267,6 @@ module.exports = {
   closeBrowser,
   closeStartupPage,
   LOW_MEMORY_ARGS,
+  ORDINARY_SESSION_ARGS,
   AUTOMATION_ARGS,
 };

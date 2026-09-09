@@ -848,8 +848,16 @@ function createServer(routes = ROUTES, hits = {}, requests = []) {
     const url = new URL(req.url, "http://localhost");
     hits[url.pathname] = (hits[url.pathname] || 0) + 1;
     // Kept so a test can check what a realtor's site is actually sent, rather
-    // than what we believe we are sending it.
-    requests.push({ path: url.pathname, method: req.method, headers: { ...req.headers } });
+    // than what we believe we are sending it. The order matters as much as the
+    // values - a browser whose headers arrive in an order no Chrome produces has
+    // told the site something - so the names are kept in the order they came in
+    // as well as folded into an object.
+    requests.push({
+      path: url.pathname,
+      method: req.method,
+      headers: { ...req.headers },
+      headerOrder: req.rawHeaders.filter((_, index) => index % 2 === 0).map((name) => name.toLowerCase()),
+    });
 
     const route = routes[url.pathname];
 

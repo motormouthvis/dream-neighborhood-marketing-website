@@ -422,36 +422,161 @@ test("a site refusing every listing is dropped after two, not four", options, as
 /*
  * What their site is actually sent.
  *
- * The user agent said Chrome 131 on a Mac, and Chrome's own Sec-CH-UA headers
- * said HeadlessChrome - so the request disagreed with itself, and to bot
- * protection the disagreement is worth more than either header alone. This
- * checks the headers that leave the machine rather than the intention.
+ * Everything below reads the request as it arrived at the fixture's socket,
+ * because the failure this guards against is never "we meant to send the wrong
+ * thing". The user agent said Chrome 131 on a Mac while Chrome's own Sec-CH-UA
+ * headers said HeadlessChrome, and later while the browser itself was Chrome
+ * 148 - each time the request disagreed with itself, and to bot protection the
+ * disagreement is worth more than any one header alone.
  *
  * It is not a claim that a site cannot tell. A site that fingerprints properly
  * still can, which is why the uploaded screenshot exists.
  */
-test("their site is not told in one header that we are a headless browser", options, async () => {
+
+/** The listing request, as the realtor's server saw it. */
+async function headersSentToTheirSite() {
   const shot = await capture(fixture.DETAIL_URL_SITE, { listingUrl: fixture.ROSEMEAD_PATH });
   assert.equal(shot.error, null, shot.error ? shot.error.message : "");
-
   const asked = shot.requests.find((entry) => entry.path === fixture.ROSEMEAD_PATH);
   assert.ok(asked, "the listing was fetched");
+  return asked;
+}
 
-  const headers = asked.headers;
+test("their site is not told in one header that we are a headless browser", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
   assert.doesNotMatch(headers["user-agent"], /headless/i);
-  assert.match(headers["user-agent"], /Chrome\/131/);
+  assert.match(headers["user-agent"], /Chrome\/\d+\.0\.0\.0 Safari\/537\.36$/);
 
   // The client hints have to tell the same story as the user agent.
-  if (headers["sec-ch-ua"]) {
-    assert.doesNotMatch(headers["sec-ch-ua"], /headless/i, `sec-ch-ua: ${headers["sec-ch-ua"]}`);
-    assert.match(headers["sec-ch-ua"], /Chrome/i);
-  }
-  if (headers["sec-ch-ua-platform"]) {
-    assert.match(headers["sec-ch-ua-platform"], /macOS/i);
-  }
+  assert.ok(headers["sec-ch-ua"], "Chrome sends Sec-CH-UA and so must we");
+  assert.doesNotMatch(headers["sec-ch-ua"], /headless/i, `sec-ch-ua: ${headers["sec-ch-ua"]}`);
+  assert.match(headers["sec-ch-ua"], /"Google Chrome";v="\d+"/, `sec-ch-ua: ${headers["sec-ch-ua"]}`);
+
+  // A desktop browser, said in the header a site is actually allowed to trust.
+  assert.equal(headers["sec-ch-ua-mobile"], "?0");
 
   // A browser with no language preference is unusual enough to be a signal.
-  assert.match(headers["accept-language"] || "", /^en-US/);
+  assert.equal(headers["accept-language"], "en-US,en;q=0.9");
+});
+
+/*
+ * The version in the user agent has to be the version of the Chrome making the
+ * request. Claiming 131 from a Chrome 148 build is a disagreement a site can
+ * check for free - the TLS handshake, the HTTP/2 settings and half of what
+ * JavaScript can see are all the real build's - and a user agent a year behind
+ * stable is itself worth a second look.
+ */
+test("the version we claim is the version of the Chrome making the request", options, async () => {
+  const browser = await launch();
+  let real;
+  try {
+    real = await browser.version();
+  } finally {
+    await closeBrowser(browser);
+  }
+  const realMajor = /(\d+)\./.exec(real)[1];
+
+  const { headers } = await headersSentToTheirSite();
+  assert.equal(
+    /Chrome\/(\d+)\./.exec(headers["user-agent"])[1],
+    realMajor,
+    `the user agent claims a different Chrome from the one running: ${headers["user-agent"]} vs ${real}`
+  );
+  assert.equal(
+    /"Google Chrome";v="(\d+)"/.exec(headers["sec-ch-ua"])[1],
+    realMajor,
+    `sec-ch-ua claims a different Chrome from the one running: ${headers["sec-ch-ua"]} vs ${real}`
+  );
+});
+
+/*
+ * The operating system is named three times - in the user agent string, in
+ * Sec-CH-UA-Platform, and in navigator.platform - and one line of JavaScript
+ * reads all three. They said macOS, macOS and "Linux x86_64".
+ */
+test("the operating system we claim is the same one in every place a site can read it", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
+  const claimed = { Windows: /Windows NT/, macOS: /Macintosh/, Linux: /X11; Linux/ };
+  const platform = (headers["sec-ch-ua-platform"] || "").replace(/"/g, "");
+  assert.ok(claimed[platform], `sec-ch-ua-platform is not a desktop we know: ${headers["sec-ch-ua-platform"]}`);
+  assert.match(
+    headers["user-agent"],
+    claimed[platform],
+    `the user agent and sec-ch-ua-platform name different systems: ${headers["user-agent"]} vs ${platform}`
+  );
+
+  // On a real page rather than about:blank, because Chrome only exposes
+  // navigator.userAgentData in a secure context and 127.0.0.1 counts as one.
+  const { server, origin } = await fixture.listen();
+  const browser = await launch();
+  let inThePage;
+  try {
+    const page = await preparePage(browser, { heavy: true });
+    await page.goto(origin);
+    inThePage = await page.evaluate(() => ({
+      platform: navigator.platform,
+      hints: navigator.userAgentData ? navigator.userAgentData.platform : null,
+      userAgent: navigator.userAgent,
+    }));
+    await page.close();
+  } finally {
+    await closeBrowser(browser);
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  const expected = { Windows: "Win32", macOS: "MacIntel", Linux: "Linux x86_64" }[platform];
+  assert.equal(inThePage.platform, expected, `navigator.platform gives the header away: ${inThePage.platform}`);
+  assert.equal(inThePage.hints, platform, "the client hints a page reads must match the ones on the wire");
+  assert.match(inThePage.userAgent, claimed[platform]);
+});
+
+/*
+ * Header order is a fingerprint in its own right, and it is the one that gets
+ * broken by trying to help. Accept-Language set with setExtraHTTPHeaders is
+ * appended by the automation layer and lands ahead of Accept; Chrome puts it
+ * last, after Accept-Encoding. Set at launch with --accept-lang it goes out in
+ * Chrome's own place, which is what this pins.
+ */
+test("the headers arrive in the order Chrome sends them, not in an order we invented", options, async () => {
+  const { headerOrder } = await headersSentToTheirSite();
+  const at = (name) => headerOrder.indexOf(name);
+
+  for (const name of ["sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "user-agent", "accept", "accept-language"]) {
+    assert.ok(at(name) >= 0, `${name} was not sent at all: ${headerOrder.join(", ")}`);
+  }
+
+  const order = headerOrder.join(", ");
+  assert.ok(at("sec-ch-ua") < at("user-agent"), `Chrome puts the client hints before the user agent: ${order}`);
+  assert.ok(at("user-agent") < at("accept"), `Chrome puts the user agent before Accept: ${order}`);
+  assert.ok(at("accept") < at("sec-fetch-site"), `Chrome puts Accept before the Sec-Fetch headers: ${order}`);
+  assert.ok(
+    at("accept-language") > at("accept-encoding"),
+    `Chrome sends Accept-Language last; ours was injected earlier: ${order}`
+  );
+});
+
+/*
+ * The headers Chrome writes itself, left alone on purpose.
+ *
+ * Overriding these is the tempting mistake: one fixed Accept or one fixed
+ * Sec-Fetch-Dest would go out on the document, the stylesheets and the images
+ * alike, and a stylesheet requested with Sec-Fetch-Dest: document is a louder
+ * tell than anything it would fix.
+ */
+test("Chrome's own Accept and Sec-Fetch headers go out untouched", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
+  assert.match(headers.accept, /^text\/html,application\/xhtml\+xml/, `Accept: ${headers.accept}`);
+  assert.match(headers.accept, /image\/avif/, "a modern Chrome offers to take AVIF");
+  assert.match(headers["accept-encoding"], /\bbr\b/, `Accept-Encoding: ${headers["accept-encoding"]}`);
+
+  // What a person typing an address into the bar produces.
+  assert.equal(headers["sec-fetch-mode"], "navigate");
+  assert.equal(headers["sec-fetch-dest"], "document");
+  assert.equal(headers["sec-fetch-user"], "?1");
+  assert.equal(headers["upgrade-insecure-requests"], "1");
 });
 
 test("a page set up for capture does not announce that it is being driven", options, async () => {
@@ -471,8 +596,16 @@ test("a page set up for capture does not announce that it is being driven", opti
 
     const page = await preparePage(browser, { heavy: true });
     await page.goto("about:blank");
-    assert.equal(await page.evaluate(() => navigator.webdriver), undefined);
-    assert.ok((await page.evaluate(() => navigator.languages)).includes("en-US"));
+
+    /*
+     * `false`, and not `undefined`. An ordinary Chrome has this property and
+     * answers false; a navigator with no webdriver on it at all is not a browser
+     * anybody ships, so deleting it swaps one tell for a stranger one.
+     */
+    assert.equal(await page.evaluate(() => navigator.webdriver), false);
+    assert.ok(await page.evaluate(() => "webdriver" in navigator), "real Chrome has the property");
+
+    assert.deepEqual(await page.evaluate(() => navigator.languages), ["en-US", "en"]);
     await page.close();
   } finally {
     await closeBrowser(browser);

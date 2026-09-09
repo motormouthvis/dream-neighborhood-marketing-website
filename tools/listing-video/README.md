@@ -949,22 +949,117 @@ URL looked ignored.
 
 ### Best-effort 403 hardening, and what it is not
 
-Three things changed, none of which is a bypass:
+Two things changed in how the site is *asked*, and one in **who is asking**.
+None of them is a bypass.
 
-- The user agent said Chrome 131 on a Mac while Chrome's own `Sec-CH-UA` headers
-  said `HeadlessChrome`, so the request **disagreed with itself** — and to bot
-  protection the disagreement is worth more than either header alone. Those now
-  match, `Accept-Language` is sent, and `navigator.webdriver` is not left on for
-  the one-line bot check.
 - **A refusal is not retried.** Loading the same URL again seconds after being
   refused is the worst thing to do with one: the site has just decided about us,
   and a repeat hit is what rate limiters count. A timeout still gets a second go.
 - **The crawl stops after two refusals** instead of collecting four. Bill's run
   walked four pages and was refused four times; pages three and four told us
   nothing the second had not, and left two more hits in their logs.
+- **The request stopped contradicting itself**, which is the rest of this
+  section.
 
-**A site that fingerprints properly still knows.** Scott Rodgers is expected to
-carry on refusing, and the upload is what actually gets that video made there.
+#### One persona, and everything agreeing with it
+
+`src/persona.js` holds the user agent, the client hints, the language and the
+platform in one place, because the thing bot protection actually reads is not
+any single header being wrong — it is **two of them disagreeing**. A browser
+that answers the same question two different ways has said something no ordinary
+visitor says, and the disagreement is worth more to a scoring engine than either
+answer on its own.
+
+Four disagreements have been live at different points, and all four are gone:
+
+| It said | And it also said | Caught by |
+| --- | --- | --- |
+| `Chrome/131` in the user agent | `HeadlessChrome` in `Sec-CH-UA` | reading one header |
+| `Chrome/131` in the user agent | Chrome **148** actually making the request | comparing to the TLS handshake, or just noticing a user agent a year behind stable |
+| `macOS` in the user agent and hints | `Linux x86_64` in `navigator.platform` | one line of JavaScript |
+| `navigator.webdriver === undefined` | every real Chrome answers `false` | one line of JavaScript |
+
+The persona is now **built from the browser at launch** rather than typed into a
+constant, so it cannot go stale when the dyno's Chrome is upgraded:
+
+- The version comes from the running Chrome. The user agent carries the major
+  with the minor parts zeroed, exactly as Chrome writes it, and the real full
+  version goes out in `Sec-CH-UA-Full-Version-List`.
+- The `Sec-CH-UA` brand list is **Chrome's own**, read from the live browser —
+  including the deliberately silly GREASE entry, which is a different string in
+  every Chrome version and is therefore the giveaway in any hand-written list.
+  The one thing never taken from Chrome is a brand containing `Headless`.
+- The operating system is named consistently in all three places a page can ask:
+  the user agent string, `Sec-CH-UA-Platform`, and `navigator.platform`. Windows
+  by default, because it is the least remarkable thing to be; see
+  `LISTING_VIDEO_PERSONA`.
+- `navigator.webdriver` answers `false`, which is what an ordinary Chrome
+  answers. It used to be forced to `undefined`, and that is worse: a navigator
+  with no `webdriver` property at all is not a browser anybody ships, so it swaps
+  a known tell for a stranger one. Chrome launched with
+  `--disable-blink-features=AutomationControlled` already answers `false` on its
+  own, so the page script only steps in if it finds the bit still set.
+
+#### The headers Chrome writes are left alone, on purpose
+
+`Accept`, `Accept-Encoding` and the `Sec-Fetch-*` family are **not** set by this
+tool, and that is a decision rather than an omission. Chrome already writes all
+of them correctly, and differently for a navigation, a stylesheet and an image.
+Pinning one value would put `Sec-Fetch-Dest: document` on every image on the
+page, which is a louder tell than anything it would fix.
+
+`Accept-Language` is set at **launch**, with `--accept-lang`, not with
+`setExtraHTTPHeaders`. Two reasons, both found by reading the bytes that reached
+a server rather than the code that sent them:
+
+- **Order.** Chrome sends `Accept-Language` last, after `Accept-Encoding`. An
+  extra header is appended by the automation layer and lands in the middle,
+  ahead of `Accept`. Header order is a fingerprint in its own right, and an order
+  no Chrome produces is a signal created by trying to help.
+- **Value.** Chrome writes the q-values itself. Given `--accept-lang=en-US,en` it
+  sends `en-US,en;q=0.9`; handed the q-values it applies them twice and sends
+  `en-US,en;q=0.9,en;q=0.9;q=0.8`, which is stranger than sending nothing.
+
+`AcceptCHFrame` was also removed from the disabled-features list. It is not a
+memory feature — it is how Chrome answers a site that asks for client hints at
+connection setup over HTTP/2 — and having it off meant staying silent where a
+real Chrome would answer.
+
+The whole navigation now leaves in Chrome's own order, with Chrome's own values:
+
+```
+sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, upgrade-insecure-requests,
+user-agent, accept, sec-fetch-site, sec-fetch-mode, sec-fetch-user,
+sec-fetch-dest, accept-encoding, accept-language
+```
+
+`test/capture.test.js` asserts that against a real socket — the values, the
+agreement between them, and the order — and `test/persona.test.js` covers the
+rules behind them on a machine with no Chrome.
+
+#### What headers cannot fix
+
+**A site that fingerprints properly still knows**, and this is the honest list of
+why. None of it is reachable from a header:
+
+- **The IP.** The request comes from a Heroku dyno in a datacentre range. Bot
+  protection buys that list, and for many products it alone is enough. This is by
+  far the biggest one.
+- **TLS and HTTP/2.** The handshake, the cipher order and the HTTP/2 SETTINGS
+  frame are the real Chrome build's, and are what a JA3/JA4 check reads. They
+  agree with the persona now that the version is honest, but they cannot be
+  edited into agreement with something else.
+- **The machine.** No GPU worth the name, no real fonts, a headless canvas and a
+  clock in UTC. A US persona in a container's font list does not survive a
+  serious fingerprint.
+- **Behaviour.** No mouse ever moves, nothing hovers, pages are asked for faster
+  than a person reads them, and the visit arrives with no history and no referer.
+- **Being an unknown visitor every time**, which is deliberate: the throwaway
+  profile that stops IDX view counters also means we never look like a returning
+  human.
+
+Scott Rodgers is expected to carry on refusing, and the upload is what actually
+gets that video made there.
 
 ### A pasted detail URL is one house, not a search page
 
@@ -1249,6 +1344,7 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `PIPER_BIN`, `PIPER_VOICE` | Point at a Piper install if `setup-voice.sh` put it somewhere unusual. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
+| `LISTING_VIDEO_PERSONA` | Which desktop capture says it is on: `windows` (default), `macos` or `linux`. The user agent, the client hints and `navigator.platform` all follow it together. Anything else falls back to `windows`. See [One persona](#one-persona-and-everything-agreeing-with-it). |
 | `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. The address picker follows this URL, so pointing it at staging points the suggestions at staging too. |
 | `LISTING_VIDEO_PLACE_SUGGEST`, `LISTING_VIDEO_PLACE_RESOLVE` | The Explorer's `autocomplete/` and `geocode/` endpoints, if they ever move away from beside the widget URL. |
 | `LISTING_VIDEO_SCHOOL_EXPLORER_URL`, `LISTING_VIDEO_SCHOOL_EXPLORER_ACCENT` | Which School Explorer embed the school beats are filmed from, and its accent colour. Defaults to the embed the popup snippet loads on a realtor's page. |
@@ -1346,6 +1442,7 @@ server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
 src/default-templates.js     the three shipped scripts
 src/browser.js               Chrome, kept small, and killed for certain
+src/persona.js               the user agent, client hints and language, all agreeing
 src/capture.js               opens their site, accepts cookies, walks to a listing
 src/site-account.js          signs in with the QUAL account at an account wall
 src/listing-image.js         an uploaded screenshot, checked and fitted to the frame
@@ -1368,6 +1465,7 @@ test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
 test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
+test/persona.test.js         the persona's rules, with no browser needed to check them
 test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
 test/places.test.js          the address is a place the Explorer named, not free text
 test/site-account.test.js    the QUAL account, and what it must not be used for

@@ -61,6 +61,16 @@ const config = {
       "/usr/bin/chromium-browser",
     ]),
 
+  /*
+   * Which desktop capture says it is on: windows, macos or linux. See
+   * src/persona.js, which holds the user agent, the client hints and the
+   * language that go with each and keeps them agreeing with each other.
+   *
+   * Windows because it is the least remarkable thing to be. Anything unknown
+   * falls back to it rather than failing.
+   */
+  capturePersona: (process.env.LISTING_VIDEO_PERSONA || "").trim().toLowerCase(),
+
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
   ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
 

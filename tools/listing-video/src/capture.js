@@ -25,6 +25,8 @@ const {
   REGISTRATION_GATE_RE,
 } = require("./page-analysis");
 const { closeStartupPage } = require("./browser");
+const config = require("./config");
+const persona = require("./persona");
 const siteAccount = require("./site-account");
 
 const LISTING_HREF_HINTS =
@@ -1486,73 +1488,27 @@ async function settle(page, { forShot = false } = {}) {
   await sleep(forShot ? 500 : 200);
 }
 
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
-/*
- * The client hints that go with that user agent.
+/**
+ * Who this page says it is.
  *
- * Setting the user agent string on its own is not enough, and this is the part
- * that was missing. Chrome also sends Sec-CH-UA headers, and headless Chrome
- * fills them in with a brand of "HeadlessChrome" - so a page could be told it
- * was talking to Chrome 131 on a Mac in one header and to a headless browser in
- * the next. Bot protection reads the disagreement, and the disagreement is worth
- * more to it than either header alone.
- *
- * Set together, the two at least tell the same story. This is a real improvement
- * and it is NOT a bypass: a site that fingerprints properly still knows, and
- * Scott Rodgers is expected to carry on refusing. The uploaded-screenshot path is
- * what actually gets the video made there.
+ * Built in src/browser.js at launch, out of what that Chrome actually is, and
+ * left on the browser. A browser made some other way still gets a persona
+ * rather than nothing, because a page with no user agent set is a page sending
+ * "HeadlessChrome" to a realtor.
  */
-const USER_AGENT_METADATA = {
-  architecture: "arm",
-  bitness: "64",
-  model: "",
-  platform: "macOS",
-  platformVersion: "15.1.0",
-  mobile: false,
-  brands: [
-    { brand: "Google Chrome", version: "131" },
-    { brand: "Chromium", version: "131" },
-    { brand: "Not_A Brand", version: "24" },
-  ],
-  fullVersionList: [
-    { brand: "Google Chrome", version: "131.0.6778.86" },
-    { brand: "Chromium", version: "131.0.6778.86" },
-    { brand: "Not_A Brand", version: "24.0.0.0" },
-  ],
-};
-
-/*
- * A browser with no language preference is unusual enough to be a signal in
- * itself, and Chrome always sends one.
- */
-const ACCEPT_LANGUAGE = "en-US,en;q=0.9";
+function personaOf(browser) {
+  return browser.__lvmPersona || (browser.__lvmPersona = persona.buildPersona({ desktop: config.capturePersona }));
+}
 
 /**
- * Stop the page being told outright that it is being driven.
+ * Stop the page contradicting the persona in JavaScript.
  *
- * `navigator.webdriver` is true under automation and is the cheapest bot check
- * there is - one line of JavaScript, no fingerprinting needed. It is removed
- * along with the empty plugin and language lists that go with a headless
- * profile.
- *
- * Again: this makes an honest browser look ordinary. It does not defeat a real
- * anti-bot product, and nothing here pretends otherwise.
+ * See src/persona.js: `navigator.platform` is the one the headers cannot reach,
+ * and `navigator.webdriver` is left alone unless Chrome really did leave it on.
  */
-async function looksLikeAnOrdinaryBrowser(page) {
-  await page.evaluateOnNewDocument((languages) => {
-    try {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined, configurable: true });
-    } catch (_) {
-      /* some builds will not let us, and that is survivable */
-    }
-    try {
-      Object.defineProperty(navigator, "languages", { get: () => languages, configurable: true });
-    } catch (_) {
-      /* ignore */
-    }
-  }, ACCEPT_LANGUAGE.split(",").map((part) => part.split(";")[0]));
+async function looksLikeAnOrdinaryBrowser(page, who) {
+  const { fn, arg } = persona.pageScript(who);
+  await page.evaluateOnNewDocument(fn, arg);
 }
 
 /**
@@ -1563,15 +1519,24 @@ async function looksLikeAnOrdinaryBrowser(page) {
  * capture and being killed for using a gigabyte.
  */
 async function preparePage(browser, { heavy = false } = {}) {
+  const who = personaOf(browser);
   const page = await browser.newPage();
   await silenceMediaFeatures(page);
-  await looksLikeAnOrdinaryBrowser(page);
+  await looksLikeAnOrdinaryBrowser(page, who);
   /*
-   * Puppeteer takes the metadata as a second argument. An older build that does
-   * not is not a reason to fail a capture, so the string alone is the fallback.
+   * Puppeteer takes the client hints as a second argument. An older build that
+   * does not is not a reason to fail a capture, so the string alone is the
+   * fallback - though on that build the hints and the user agent would once
+   * again be telling a site two different stories.
+   *
+   * Accept, Accept-Encoding and the Sec-Fetch-* headers are deliberately NOT set
+   * here. Chrome already writes all of them, correctly and differently for a
+   * navigation, an image and a fetch - forcing one value would put
+   * `Sec-Fetch-Dest: document` on every stylesheet on the page, which is a
+   * louder tell than anything it would fix. The only header worth taking off
+   * Chrome is one Chrome gets wrong, and there is not one.
    */
-  await page.setUserAgent(USER_AGENT, USER_AGENT_METADATA).catch(() => page.setUserAgent(USER_AGENT));
-  await page.setExtraHTTPHeaders({ "Accept-Language": ACCEPT_LANGUAGE }).catch(() => {});
+  await page.setUserAgent(who.userAgent, who.metadata).catch(() => page.setUserAgent(who.userAgent));
   await page.setViewport({ ...(heavy ? VIEWPORT : CRAWL_VIEWPORT), deviceScaleFactor: 1 });
   page.setDefaultNavigationTimeout(GOTO_TIMEOUT_MS);
   page.setDefaultTimeout(GOTO_TIMEOUT_MS);
@@ -2551,8 +2516,7 @@ module.exports = {
   MAX_NAV_VISITS,
   MAX_BLOCKED_PAGES,
   isRefusalStatus,
-  USER_AGENT,
-  USER_AGENT_METADATA,
+  personaOf,
   JUNK_HOSTS,
   HEAVY_RESOURCE_TYPES,
   DISMISS_LABELS,
