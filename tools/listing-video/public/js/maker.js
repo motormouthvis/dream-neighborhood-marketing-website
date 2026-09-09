@@ -308,11 +308,75 @@
     input: "addressSearch",
     list: "addressSuggestions",
     note: "addressNote",
+    onPick: function () {
+      memory.save();
+    },
   });
   var retryAddressPicker = D.placePicker.attach({
     input: "retryAddressSearch",
     list: "retryAddressSuggestions",
     note: "retryAddressNote",
+  });
+
+  /*
+   * What this form remembers between takes.
+   *
+   * The same site is usually done several times over - another script, another
+   * voice, a screenshot instead of the live capture - and all of this used to be
+   * typed in again from nothing every time. See public/js/remember.js for what
+   * is deliberately not kept.
+   */
+  var memory = D.remember.attach({
+    texts: ["firstName", "company", "websiteUrl", "listingUrl", "customerEmail"],
+    choices: ["templateId", "pictureSource", "fromId", "voiceId"],
+    extras: {
+      // Not just letters: what this box holds is the place the Explorer named.
+      address: {
+        input: "addressSearch",
+        get: function () {
+          return addressPicker.state();
+        },
+        set: function (saved) {
+          return addressPicker.restore(saved);
+        },
+      },
+    },
+  });
+
+  /*
+   * Put last time's answers back, once the choices they refer to are on screen.
+   *
+   * The scripts, the from-addresses and the voices are all painted from the
+   * server after the page loads, so a saved script id has nothing to select
+   * until they are there.
+   */
+  function paintRememberedAnswers() {
+    var saved = memory.restore();
+    onTemplatePicked();
+    onPictureSourcePicked();
+    // Only say so when something really was put back, or the note is just noise
+    // on a form nobody has used yet.
+    D.show(el("rememberedNote"), Boolean(saved && saved.at));
+  }
+
+  /*
+   * A way out of the memory.
+   *
+   * Whatever is remembered is right until it is not - a company name kept from
+   * the customer before, a listing URL that belongs to another site - and
+   * hunting through five boxes to empty them is worse than the typing this saves.
+   */
+  el("forgetFormBtn").addEventListener("click", function () {
+    memory.forget();
+    el("form").reset();
+    addressPicker.reset();
+    paintTemplateChoices();
+    paintFromChoices();
+    paintVoiceChoices();
+    onPictureSourcePicked();
+    D.show(el("rememberedNote"), false);
+    D.showMessage(el("form-error"), "");
+    el("firstName").focus();
   });
 
   el("form").addEventListener("submit", function (event) {
@@ -356,6 +420,9 @@
       );
       return;
     }
+
+    // What was actually used, kept for the next take on this same site.
+    memory.save();
 
     el("makeBtn").disabled = true;
     D.setText(el("makeBtn"), "Starting...");
@@ -1264,6 +1331,15 @@
 
   el("retryBtn").addEventListener("click", backToForm);
 
+  /*
+   * Another video, which is nearly always another take on the same site.
+   *
+   * The form is reset and then filled back in from what was last used, because
+   * this button is pressed to change one answer - the script, the voice, the
+   * listing URL - and not to start again from an empty page. The remembered
+   * fields select all of their text on the first click, so changing one is a
+   * matter of typing over it.
+   */
   el("againBtn").addEventListener("click", function () {
     el("form").reset();
     // form.reset() does not know about the picked place behind the address box.
@@ -1274,6 +1350,7 @@
     paintVoiceChoices();
     paintVoiceUsage();
     onPictureSourcePicked();
+    paintRememberedAnswers();
     backToForm();
   });
 
@@ -1308,9 +1385,15 @@
       paintVoiceChoices();
       paintVoiceUsage();
       onPictureSourcePicked();
+      paintRememberedAnswers();
       step("form");
     }
   });
 
-  D.maker = { openJob: openJob, paintTemplateChoices: paintTemplateChoices, paintFromChoices: paintFromChoices };
+  D.maker = {
+    openJob: openJob,
+    paintTemplateChoices: paintTemplateChoices,
+    paintFromChoices: paintFromChoices,
+    memory: memory,
+  };
 })();

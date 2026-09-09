@@ -175,6 +175,32 @@
         clearList();
         say("");
       },
+      /*
+       * What this box is holding, and how to hand it back later.
+       *
+       * The form remembers its answers between takes (see public/js/remember.js)
+       * and this box is the one that is not just letters: what it holds is the
+       * place the Explorer named. Saving the description alone would put the
+       * words back as something typed, and the tool would go and resolve them
+       * again - so the chosen suggestion is kept whole and restored whole,
+       * exactly as picked.
+       */
+      state: function () {
+        return { typed: input.value, picked: picked };
+      },
+      restore: function (saved) {
+        if (!saved || typeof saved !== "object") return false;
+        if (saved.picked && saved.picked.description) {
+          picked = saved.picked;
+          input.value = saved.picked.description;
+        } else {
+          picked = null;
+          input.value = String(saved.typed || "");
+        }
+        clearList();
+        say("");
+        return Boolean(input.value);
+      },
     };
   }
 

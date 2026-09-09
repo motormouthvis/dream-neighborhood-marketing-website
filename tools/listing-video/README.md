@@ -60,6 +60,39 @@ that is the whole flow below. The other choice — *a screenshot I upload* — i
 a site that refuses an automated browser outright, and is described in
 [When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
 
+#### The form comes back filled in
+
+One site is several takes. The same realtor gets done three or four times over — a
+different script, a different voice, a screenshot instead of the live capture,
+another go after a listing came out wrong — and all of it used to be typed in
+again from nothing each time. **Make another video** reset the form and threw the
+lot away as well.
+
+So the answers are kept in the browser's `localStorage` and put back next time:
+first name, company, website, listing URL, customer email, the address box, and
+the picked script, picture source, send-from and AI voice. Nothing goes to the
+server — this is one person's browser filling in their own form again.
+
+A remembered box **selects all of its text the first time it is focused**, so the
+one answer that changed between takes is replaced by typing over it. Once
+something has been typed into a box it is that person's own work, and focusing it
+again leaves the caret where they put it.
+
+**Clear the form** empties it and stops it coming back, for when what is
+remembered is a customer ago.
+
+Three things are deliberately never kept:
+
+| | Why |
+| --- | --- |
+| the password | that is a session cookie's job, and it is not going anywhere that outlives the tab |
+| the screenshot | a file input cannot be filled in by script, and last week's picture quietly standing in for this listing is exactly what this tool exists to stop |
+| the before-shot confirmation | it is a statement about **one** particular screenshot, so it has to be made again for the next one |
+
+A browser that will not store anything — Safari in private browsing throws on
+`setItem` — is no problem. The form works as it always did; it just forgets
+between page loads. See `public/js/remember.js`.
+
 ### 3. The tool finds a listing detail page
 
 It has to be a listing **detail** page: one property, with its street address,
@@ -119,8 +152,11 @@ is a **tag manager**: our snippet is often installed through Google Tag Manager,
 and then the shot loads the tag manager, the tag manager injects the Explorer, and
 the "before" video opens on a listing that already has one.
 
-Which is what Bill got. He picked *a listing with no Explorer on it yet* and the
-Neighborhood Explorer was sitting on the listing in the finished video.
+That is one way the Neighborhood Explorer got onto a "before" listing, and it was
+not the way Bill kept hitting. He reported it again on a job that never opened
+their site at all — a screenshot he uploaded — and this check has no page to make
+on that path. The label we draw beside the house button was the real culprit; see
+[Nothing about the Neighborhood Explorer goes on a listing frame](#nothing-about-the-neighborhood-explorer-goes-on-a-listing-frame).
 
 So the page is asked once more, after everything has loaded and the overlays have
 been cleared, one line before the shutter. What is in **this** picture is the only
@@ -488,7 +524,8 @@ One 1920x1080 still per beat, held for that beat's suggested duration, with **no
 audio track at all**:
 
 - Captions sit in a **top** bar only. A bottom bar would cover the house button.
-- The house button hovers in the bottom right of their own page.
+- The house button hovers in the bottom right of their own page, labelled *"Click
+  here to explore the schools around 6031 N Rosemead Dr"*.
 - The School Explorer and Neighborhood Explorer cards are about 70% of the frame,
   in the same place and at the same size as each other.
 - School Explorer is always the first explorer on screen. Neighborhood Explorer
@@ -496,6 +533,43 @@ audio track at all**:
 - **Both** cards are photographs of the live product at this listing's own
   address — the School Explorer's schools list, and each Neighborhood Explorer
   tab. See [Filming the Explorers](#filming-the-explorers).
+
+#### Nothing about the Neighborhood Explorer goes on a listing frame
+
+A `listing` or `listing-tap` beat is the **customer's own page**. Our popups open
+on their own beats — School Explorer on an `se` beat, Neighborhood Explorer on an
+`ne` beat — and nothing about either belongs on the page underneath. On a
+before-shot script the listing has no Explorer on it at all; that is the point of
+the shot.
+
+Bill reported the Neighborhood Explorer on the listing frames of a School-Explorer
+-only, before-shot video **three times**. It was the label beside the house button:
+
+> Click here to explore the neighborhood around 6031 N Rosemead Dr
+
+on every listing frame of every script, the school-only one included — which is
+documented never to mention the Neighborhood Explorer at all. The button is the
+School Explorer's, so the label now says **schools**.
+
+It was drawn the same way whether the listing behind it was photographed off their
+site or uploaded by hand, which is why the fix before this one — re-checking the
+live page for an Explorer at the moment of the shot — did nothing at all for the
+screenshot path. There is no page there to re-check.
+
+Rather than trust the label, **every frame is read off the stage after the beat is
+drawn and before the shutter**, and refused if:
+
+| What is on screen | Where |
+| --- | --- |
+| "Neighborhood Explorer", "explore the neighborhood" | a `listing` or `listing-tap` frame |
+| a Neighborhood Explorer popup | a `listing` or `listing-tap` frame |
+| anything naming the Neighborhood Explorer | any frame of a `se` script |
+
+So a caption, a label, a popup header, or something a later change starts drawing
+is caught the same way, on the upload path exactly as on the live one, and the job
+fails loudly with the scene number rather than quietly shipping the video. See
+`wrongExplorerOnScreen` in `src/frames.js` and
+`test/before-shot-frames.test.js`.
 
 #### Filming the Explorers
 
@@ -922,6 +996,34 @@ The Explorers are pointed at **coordinates**. A house number misread off a
 screenshot would film another street's schools, commutes and walk scores while
 looking completely convincing — a wrong video that reviews as a right one. So the
 address is typed by the person who can see the listing, or there is no video.
+
+### A before-shot upload has to be a clean listing, and only a person can say so
+
+On the live path the capture looks at the page itself and refuses a listing that
+**already** has one of our Explorers on it when the script is a before-and-after —
+right up to the moment of the shot, because a tag manager can put one there after
+the page looks clean. See [The last look, one line before the shutter](#the-last-look-one-line-before-the-shutter).
+
+There is no page behind a screenshot. And nothing here reads the pixels, for the
+same reason nothing reads the address off them: a wrong answer would look
+completely correct.
+
+This used to be a note beside the finished video — *"nothing checked your
+screenshot for an Explorer"* — which is a thing to notice after the fact rather
+than a check. Now the upload is **refused** until whoever took the screenshot
+confirms the listing in it has no Explorer on it yet:
+
+> This listing has no Explorer on it yet — I can see there is no School Explorer or
+> Neighborhood Explorer on the page I screenshotted.
+
+Asked only for a script whose *listing* setting is **absent**, and asked at both
+doors the upload can come in by: the form and the failure panel. Saying no is not
+a dead end — the refusal names the **SE to NE upgrade** script, which is the one
+that wants a listing that already has School Explorer on it.
+
+The answer is kept with the job and said beside the video, with what was drawn on
+the listing frames, so the review reads what was confirmed rather than what could
+not be checked.
 
 ### The address is picked from the Explorer's own suggestions
 
