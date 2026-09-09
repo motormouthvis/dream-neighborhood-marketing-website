@@ -400,6 +400,39 @@ test("a URL for a single property is recognised by its shape", () => {
   }
 });
 
+/*
+ * The other half of Bill's Scott Rodgers failure, and the part that was not the
+ * 403 at all.
+ *
+ * He pasted a URL naming one house and got a message about four pages being
+ * blocked. Four, for one house: "property-search" matches the search pattern,
+ * "/detail/362/PA1269955/<slug>" matched no listing pattern, so his URL was read
+ * as the site's search page - and being taken for a search page is what sent
+ * capture off crawling for a listing of its own choosing. Those crawl hops are
+ * what got refused.
+ */
+test("a /detail/ URL under the property section is one house", () => {
+  for (const url of [
+    "https://www.scottrodgersrealestate.com/property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614/?src=4",
+    "https://kv.test/property-search/detail/362/PA1269955/6031-n-rosemead-dr",
+    "https://rew.test/properties/detail/8891",
+    "https://placester.test/listing-detail/PA1269955",
+    "https://vendor.test/homes/details/PW24118845",
+  ]) {
+    assert.equal(looksLikeSingleListingUrl(url), true, url);
+  }
+});
+
+test("their property search itself is still their property search", () => {
+  for (const url of [
+    "https://www.scottrodgersrealestate.com/property-search/",
+    "https://www.scottrodgersrealestate.com/property-search/results?beds=3",
+    "https://kv.test/property-search/detail",
+  ]) {
+    assert.equal(looksLikeSingleListingUrl(url), false, url);
+  }
+});
+
 test("a search, an index and a homepage are not mistaken for one property", () => {
   for (const url of [
     "https://homes.dukecitysunrise.com/idx/search",

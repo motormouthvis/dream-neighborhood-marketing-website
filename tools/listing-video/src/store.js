@@ -226,6 +226,7 @@ function publicView(job) {
           capturedAddress: job.silent.capturedAddress ? job.silent.capturedAddress.street : "",
           notes: job.silent.notes || [],
           pagesChecked: (job.silent.checkedPages || []).length,
+          uploadedPicture: Boolean(job.silent.uploadedPicture),
         }
       : null,
     result: job.result
@@ -240,6 +241,7 @@ function publicView(job) {
         }
       : null,
     review: job.review || { reviewed: false },
+    explorers: explorersView(job),
     email: job.email,
     input: {
       firstName: job.input.firstName,
@@ -249,6 +251,15 @@ function publicView(job) {
       customerEmail: job.input.customerEmail,
       templateId: job.input.templateId,
       fromId: job.input.fromId,
+      // What was uploaded and the address that came with it, without the server
+      // path the file sits at.
+      uploadedListing: job.input.uploadedListing
+        ? {
+            originalName: job.input.uploadedListing.originalName || "",
+            uploadedAt: job.input.uploadedListing.uploadedAt || "",
+            address: job.input.uploadedListing.address || null,
+          }
+        : null,
     },
   };
 }
@@ -273,6 +284,29 @@ function libraryView(job) {
     error: job.error || "",
     errorCode: job.errorCode || null,
     failure: failureView(job),
+  };
+}
+
+/**
+ * Where the two Explorers were filmed.
+ *
+ * Both cards in the video are photographs of the live product at the listing's
+ * address, so this is the answer to "is this video about the right house" - the
+ * question nobody could answer on the job where the School Explorer was showing
+ * Smyrna, Georgia for a listing in Peoria, Illinois.
+ */
+function explorersView(job) {
+  const neighborhood = job.explorer || null;
+  const school = job.schoolExplorer || null;
+  if (!neighborhood && !school) return null;
+  return {
+    lat: neighborhood ? neighborhood.lat : null,
+    lng: neighborhood ? neighborhood.lng : null,
+    precision: (neighborhood && neighborhood.precision) || "",
+    matched: (neighborhood && neighborhood.matched) || "",
+    neighborhoodPlace: (neighborhood && neighborhood.place) || "",
+    schoolPlace: (school && school.place) || "",
+    schoolsNearby: (school && school.nearby) || 0,
   };
 }
 
@@ -306,6 +340,7 @@ module.exports = {
   publicView,
   libraryView,
   failureView,
+  explorersView,
   recordFailure,
   listFailures,
   failureLogPath,

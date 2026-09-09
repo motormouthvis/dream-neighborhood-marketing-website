@@ -61,6 +61,14 @@
           <p class="lede">
             Pick a script, fill in the customer, and you get a silent video to record your voice over.
           </p>
+          <!--
+            One site is usually several takes, so the form comes back filled in.
+            Kept in this browser only - see public/js/remember.js.
+          -->
+          <p class="hint" id="rememberedNote" hidden>
+            Filled in from your last video. Click any box and it selects itself, so you can type straight over it.
+            <button type="button" class="linkbtn linkbtn--ink" id="forgetFormBtn">Clear the form</button>
+          </p>
 
           <form id="form" class="stack" autocomplete="off">
             <fieldset class="field" id="templateField">
@@ -90,7 +98,38 @@
               <span class="hint" id="websiteHint"></span>
             </label>
 
-            <label class="field">
+            <!--
+              Where the listing picture comes from.
+
+              Nearly always the live site. The upload is here as a first-class
+              choice because some sites refuse an automated browser outright and
+              there is no point finding that out a minute into a render.
+            -->
+            <fieldset class="field" id="sourceField">
+              <legend class="label">Where does the listing picture come from?</legend>
+              <div class="choices" role="radiogroup" id="sourceChoices">
+                <label class="choice">
+                  <input type="radio" name="pictureSource" value="site" checked />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">Their live site</strong>
+                      <span class="choice__note">The normal way. We open it and film one of their listings.</span>
+                    </span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="pictureSource" value="upload" />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">A screenshot I upload</strong>
+                      <span class="choice__note">
+                        For a site that blocks us. Their site is never opened, so nothing can refuse us.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="field" id="listingUrlField">
               <span class="label">Listing page URL <span class="opt">optional</span></span>
               <input class="input" id="listingUrl" name="listingUrl" placeholder="Paste one of their listing pages" />
               <span class="hint">
@@ -98,6 +137,58 @@
                 after a failed search.
               </span>
             </label>
+
+            <!-- Shown only when the picture is being uploaded. -->
+            <div class="field upload" id="uploadField" hidden>
+              <span class="label">The listing screenshot</span>
+              <span class="hint hint--above">
+                Open the listing in your own browser, screenshot the page, and upload it here. PNG or JPG, up to 12MB. A
+                screenshot of the browser window works best; the whole scrolled page will be shrunk to fit.
+              </span>
+              <input class="input" id="listingImage" type="file" accept="image/png,image/jpeg" />
+
+              <span class="label label--sub">And the listing's address</span>
+              <span class="hint hint--above">
+                Start typing and pick the address from the list. These are the Explorer's own suggestions, so a picked
+                address is one it can place - nothing is read off the picture, and both Explorer popups in the video are
+                filmed at whatever you choose here.
+              </span>
+              <div class="suggest">
+                <input
+                  class="input"
+                  id="addressSearch"
+                  autocomplete="off"
+                  placeholder="e.g. 6031 N Rosemead Dr, Peoria, IL 61614"
+                />
+                <div class="suggest__list" id="addressSuggestions" hidden></div>
+              </div>
+              <p class="hint" id="addressNote" hidden></p>
+
+              <!--
+                The before shot has to be a clean listing, and on this path only
+                the person who took the screenshot can say whether it is.
+
+                The live capture checks the page itself and refuses a listing
+                that already has one of our Explorers on it. There is no page
+                here, and nothing reads the pixels - for the same reason nothing
+                reads the address off them. So it is asked, and shown only for
+                the scripts it matters to.
+              -->
+              <div id="cleanShotField" hidden>
+                <label class="check">
+                  <input type="checkbox" id="listingHasNoExplorer" />
+                  <span id="cleanShotLabel">
+                    This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
+                    Explorer on the page I screenshotted.
+                  </span>
+                </label>
+                <span class="hint">
+                  This script is the "before" shot. Nothing can check a picture for an Explorer, so this is the only
+                  check there is. If the listing already has School Explorer on it, use the
+                  <strong>SE to NE upgrade</strong> script instead.
+                </span>
+              </div>
+            </div>
 
             <label class="field">
               <span class="label">Customer email</span>
@@ -327,6 +418,68 @@
               Try that listing
             </button>
           </div>
+
+          <!--
+            The way out when their site will not be filmed at all.
+
+            Shown for every capture refusal, and opened for you when the site
+            answered 403 - at that point pasting another URL from the same site is
+            the one thing already known not to work.
+          -->
+          <details class="escape" id="uploadEscape" hidden>
+            <summary id="uploadEscapeSummary">Upload a screenshot of the listing instead</summary>
+            <p class="hint hint--above" id="uploadEscapeWhy"></p>
+
+            <label class="field">
+              <span class="label">The listing screenshot</span>
+              <input class="input" id="retryListingImage" type="file" accept="image/png,image/jpeg" />
+              <span class="hint">
+                Open the listing in your own browser, where it loads fine, and screenshot the page. PNG or JPG, up to
+                12MB.
+              </span>
+            </label>
+
+            <div class="field">
+              <span class="label">The listing's address</span>
+              <div class="suggest">
+                <input
+                  class="input"
+                  id="retryAddressSearch"
+                  autocomplete="off"
+                  placeholder="e.g. 6031 N Rosemead Dr, Peoria, IL 61614"
+                />
+                <div class="suggest__list" id="retryAddressSuggestions" hidden></div>
+              </div>
+              <p class="hint" id="retryAddressNote" hidden></p>
+              <span class="hint">
+                Start typing and pick it from the list. These are the Explorer's own suggestions, so a picked address is
+                one it can place - nothing is read off the picture, and the School Explorer and Neighborhood Explorer
+                popups in the video are both filmed at whatever you choose.
+              </span>
+            </div>
+
+            <!-- The same clean-listing question the form asks, because this is
+                 the same upload arriving by a different door. -->
+            <div id="retryCleanShotField" hidden>
+              <label class="check">
+                <input type="checkbox" id="retryListingHasNoExplorer" />
+                <span>
+                  This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
+                  Explorer on the page I screenshotted.
+                </span>
+              </label>
+              <span class="hint">
+                This script is the "before" shot, and nothing can check a picture for an Explorer. If the listing
+                already has School Explorer on it, that customer wants the <strong>SE to NE upgrade</strong> script.
+              </span>
+            </div>
+
+            <p class="error" id="uploadError" hidden></p>
+            <button type="button" class="btn btn--primary" id="uploadListingBtn">
+              Use this screenshot
+            </button>
+          </details>
+
           <button type="button" class="btn btn--ghost" id="retryBtn" style="margin-top: 18px">Back to the form</button>
         </section>
       </section>
@@ -420,6 +573,9 @@
     </main>
 
     <script src="/tools/listing-video/static/js/core.js"></script>
+    <script src="/tools/listing-video/static/js/beat-timing.js"></script>
+    <script src="/tools/listing-video/static/js/remember.js"></script>
+    <script src="/tools/listing-video/static/js/place-picker.js"></script>
     <script src="/tools/listing-video/static/js/maker.js"></script>
     <script src="/tools/listing-video/static/js/library.js"></script>
     <script src="/tools/listing-video/static/js/scripts-page.js"></script>

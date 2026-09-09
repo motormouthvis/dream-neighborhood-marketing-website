@@ -14,7 +14,7 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const templates = require("../src/templates");
 const { specForBeat, specsForBeat, spreadDurations, tooltipFor } = require("../src/frames");
-const { NE_TABS } = require("../src/demo-data");
+const { NE_TABS } = require("../src/ne-tabs");
 
 /** A screenshot for every tab, as the Explorer walk hands them over. */
 const explorerShots = Object.fromEntries(
@@ -25,11 +25,15 @@ const explorerShots = Object.fromEntries(
     return [tab, Array.from({ length: count }, (_, i) => `/tmp/shots/${slug}-${i + 1}.jpg`)];
   })
 );
+/** The School Explorer's own pictures, as its walk hands them over. */
+const schoolExplorerShots = ["/tmp/shots/se-1.jpg", "/tmp/shots/se-2.jpg"];
+
 const context = {
   bgUrl: "file:///site.png",
   address: { street: "815 Larkspur Lane" },
   company: "Patty Realty",
   explorerShots,
+  schoolExplorerShots,
 };
 
 test("every Neighborhood Explorer beat draws the real screenshot of its own tab", async () => {
@@ -60,6 +64,59 @@ test("every Neighborhood Explorer beat draws the real screenshot of its own tab"
   assert.ok(specs.filter((spec) => spec.card).every((spec) => spec.hidePopup));
 });
 
+/* ---------------------------------------------------------------- */
+/* the School Explorer card is the product, not a drawing            */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill's video: the School Explorer showed Smyrna, GA and Cobb County School
+ * District for a listing at 6031 N Rosemead Dr, Peoria, IL. The card was drawn
+ * here from a fixed list of that reference neighborhood's schools, so it showed
+ * them whatever address the video was about.
+ */
+test("a School Explorer beat draws the photograph of the real product", () => {
+  const spec = specForBeat({ scene: "se", seconds: 4, caption: null }, context);
+  assert.equal(spec.card, "se");
+  assert.equal(spec.hidePopup, true);
+  assert.ok(spec.tabImage.startsWith("file://"), `no photograph: ${spec.tabImage}`);
+  assert.ok(spec.tabImage.includes("se-1"), spec.tabImage);
+
+  // And nothing is handed to the template for it to draw schools from.
+  assert.equal(spec.demo, undefined, "there is no stand-in neighborhood any more");
+  assert.equal(spec.schools, undefined, "there is no stand-in school list any more");
+});
+
+test("each School Explorer beat gets its own view of the list", () => {
+  const beat = { scene: "se", seconds: 4, caption: null };
+  const first = specForBeat(beat, context, { sePosition: 0 });
+  const second = specForBeat(beat, context, { sePosition: 1 });
+  assert.notEqual(first.tabImage, second.tabImage, "two beats, two pictures");
+
+  // A script with more beats than pictures holds the last one rather than
+  // running out - the list was short enough to fit in two.
+  const third = specForBeat(beat, context, { sePosition: 2 });
+  assert.equal(third.tabImage, second.tabImage);
+});
+
+test("a School Explorer beat with no photograph is refused rather than drawn", () => {
+  assert.throws(
+    () => specForBeat({ scene: "se", caption: null }, { ...context, schoolExplorerShots: [] }),
+    /no School Explorer screenshot/i
+  );
+  assert.throws(
+    () => specsForBeat({ scene: "se", seconds: 4 }, { ...context, schoolExplorerShots: undefined }),
+    /no School Explorer screenshot/i
+  );
+});
+
+test("the frame template has no school card left to draw", () => {
+  const frame = fs.readFileSync(path.join(config.root, "views", "frame.html"), "utf8");
+  // The markup that drew the eight Smyrna school cards, gone with the data.
+  assert.doesNotMatch(frame, /school__score|school__rank|class="schools"/);
+  // What is there instead: the popup's chrome around a photograph.
+  assert.match(frame, /class="se__shot"/);
+});
+
 test("a tab beat with no screenshot is refused rather than drawn from stand-in data", () => {
   assert.throws(
     () => specForBeat({ scene: "ne", neTabName: "Commutes", caption: null }, { ...context, explorerShots: {} }),
@@ -67,10 +124,28 @@ test("a tab beat with no screenshot is refused rather than drawn from stand-in d
   );
 });
 
-test("the popup tooltip uses the address that was filmed, or says nothing about one", () => {
-  assert.equal(tooltipFor({ street: "815 Larkspur Lane" }), "Click here to explore the neighborhood around 815 Larkspur Lane");
-  assert.equal(tooltipFor({ street: "" }), "Click here to explore this neighborhood");
-  assert.equal(tooltipFor(null), "Click here to explore this neighborhood");
+/*
+ * The label beside the house button on a listing frame says schools.
+ *
+ * It used to say "Click here to explore the neighborhood around 815 Larkspur
+ * Lane", on every listing frame of every script - the school-only one included,
+ * which is documented never to mention the Neighborhood Explorer. That is the
+ * Neighborhood Explorer Bill saw on the listing frames three times over, and it
+ * was drawn the same way whether the listing behind it was filmed or uploaded.
+ *
+ * The button is the School Explorer's: templates.js guarantees School Explorer
+ * is the first Explorer any script shows, and by the time a Neighborhood
+ * Explorer beat runs the popup is open and this label is hidden with the rest of
+ * the button.
+ */
+test("the label beside the house button says schools, and names the house it is about", () => {
+  assert.equal(tooltipFor({ street: "815 Larkspur Lane" }), "Click here to explore the schools around 815 Larkspur Lane");
+  assert.equal(tooltipFor({ street: "" }), "Click here to explore the schools near this home");
+  assert.equal(tooltipFor(null), "Click here to explore the schools near this home");
+
+  for (const address of [{ street: "815 Larkspur Lane" }, { street: "" }, null]) {
+    assert.doesNotMatch(tooltipFor(address), /neighborhood/i, "nothing on a listing frame says neighborhood");
+  }
 });
 
 /* ---------------------------------------------------------------- */
@@ -322,6 +397,68 @@ test("the popup has a header and a way out of it", needsChrome, async () => {
 
     assert.ok(chrome.borderWidth >= 1, "the card has a visible edge");
     assert.equal(chrome.hasShadow, true, "and a shadow, so it reads as lifted off the page");
+  } finally {
+    await closeBrowser(browser);
+  }
+});
+
+/*
+ * The School Explorer is a popup too, and the shots are of the embed only, so
+ * without chrome drawn round them the card is a white rectangle with no name on
+ * it and no way out.
+ */
+test("the School Explorer card is drawn as the popup it is", needsChrome, async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+    await page.goto(pathToFileURL(path.join(config.root, "views", "frame.html")).toString(), {
+      waitUntil: "load",
+    });
+    await page.evaluate((value) => window.renderFrame(value), {
+      bg: "",
+      caption: { headline: "Schools, right on your site.", subline: "" },
+      card: "se",
+      hidePopup: true,
+      tabImage: "",
+      address: { street: "6031 N Rosemead Dr" },
+    });
+
+    const chrome = await page.evaluate(() => {
+      const head = document.querySelector("#card .se__head");
+      const x = document.querySelector("#card .se__x");
+      const card = document.getElementById("card");
+      return {
+        headerText: head ? head.innerText.replace(/\s+/g, " ").trim() : "",
+        hasX: Boolean(x && x.querySelector("svg")),
+        hasPhoto: Boolean(document.querySelector("#card img.se__shot")),
+        // The same size and place as the Neighborhood Explorer's card, because
+        // the upgrade script cuts between the two.
+        box: card.getBoundingClientRect().toJSON(),
+      };
+    });
+
+    assert.match(chrome.headerText, /School Explorer/i, chrome.headerText);
+    assert.match(chrome.headerText, /6031 N Rosemead Dr/, "and it names the house it is about");
+    assert.equal(chrome.hasX, true, "there has to be a way out of the popup");
+    assert.equal(chrome.hasPhoto, true, "the body of the card is a photograph");
+
+    const ne = await page.evaluate(async () => {
+      await window.renderFrame({
+        bg: "",
+        caption: { headline: "Demographics.", subline: "" },
+        card: "ne",
+        hidePopup: true,
+        tabImage: "",
+        address: { street: "6031 N Rosemead Dr" },
+      });
+      return document.getElementById("card").getBoundingClientRect().toJSON();
+    });
+    assert.deepEqual(
+      { x: chrome.box.x, y: chrome.box.y, width: chrome.box.width, height: chrome.box.height },
+      { x: ne.x, y: ne.y, width: ne.width, height: ne.height },
+      "the two popups must not change size and place between beats"
+    );
   } finally {
     await closeBrowser(browser);
   }

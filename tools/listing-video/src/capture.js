@@ -25,6 +25,9 @@ const {
   REGISTRATION_GATE_RE,
 } = require("./page-analysis");
 const { closeStartupPage } = require("./browser");
+const config = require("./config");
+const persona = require("./persona");
+const siteAccount = require("./site-account");
 
 const LISTING_HREF_HINTS =
   /(listing|listings|property|properties|homes?-for-sale|for-sale|home-details|homedetail|idx|mls|\/p\/|\/home\/|\/l\/|realestate|real-estate)/i;
@@ -484,6 +487,15 @@ const MAX_LISTING_VIEWS = 1;
 const MAX_NAV_VISITS = 3;
 // A backstop on opening candidates that turn out not to be listings at all.
 const MAX_CANDIDATE_OPENS = 4;
+/*
+ * How many outright refusals are worth collecting before giving up on the crawl.
+ *
+ * Two. The first could be one awkward page; the second is the site's position.
+ * Bill's failed run walked four pages and was refused all four times, and pages
+ * three and four told us nothing while adding two more hits to a site that had
+ * already said no.
+ */
+const MAX_BLOCKED_PAGES = 2;
 // Homepage, then their listings page, then the house. Three hops is enough.
 const MAX_CRAWL_DEPTH = 3;
 const VIEWPORT = { width: 1920, height: 1080 };
@@ -535,11 +547,15 @@ function captureError(code, message) {
 /**
  * The site wants an account. Bill's words, because this is the one refusal where
  * the person reading it can fix the problem in five seconds.
+ *
+ * The note says what became of the QUAL account, when there was one to try. A
+ * wall we could not sign in to is a different problem to a wall nobody has a key
+ * for, and the person reading this is the one who can tell them apart.
  */
-function registrationWallError() {
+function registrationWallError(note) {
   return captureError(
     "REGISTRATION_WALL",
-    "This site asks for an account after a few listing views. Paste a listing URL."
+    `This site asks for an account after a few listing views.${note ? ` ${note}` : ""} Paste a listing URL, or upload a screenshot of the listing page instead.`
   );
 }
 
@@ -550,6 +566,14 @@ function registrationWallError() {
  * somebody "there is no page there" when curl gets a 302 from their laptop sends
  * them looking for a typo that is not there.
  */
+/**
+ * A status that means the site has decided about us, rather than having had a
+ * bad moment. There is nothing to be gained by asking it again.
+ */
+function isRefusalStatus(status) {
+  return status === 401 || status === 403 || status === 429 || status === 451;
+}
+
 function statusError(status, { pastedListing = false } = {}) {
   const ask = pastedListing
     ? "Try a different listing URL."
@@ -560,7 +584,16 @@ function statusError(status, { pastedListing = false } = {}) {
 
   if (status === 401 || status === 403 || status === 451) {
     code = "SITE_BLOCKED";
-    message = `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${ask}`;
+    /*
+     * The one refusal where the advice has to be more than "try another URL".
+     *
+     * When the page that was refused is the listing URL somebody pasted, another
+     * listing on the same site will be refused in the same way - which is exactly
+     * what happened to Bill. So say what actually works.
+     */
+    message = pastedListing
+      ? `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own, and another listing on the same site will usually be refused too. Upload a screenshot of that listing page instead \u2013 that skips their site altogether.`
+      : `That site blocked the capture (HTTP ${status}). Some sites refuse automated browsers even though the page opens fine in your own. ${UPLOAD_INSTEAD}`;
   } else if (status === 429) {
     code = "SITE_BLOCKED";
     message = `That site is rate limiting us (HTTP 429), so it would not load the page. Wait a minute, then ${ask.toLowerCase()}`;
@@ -641,6 +674,38 @@ const EXPLORER_ALREADY_THERE =
   "That page already has a Dream Neighborhood Explorer on it, so it cannot be the \u201cbefore\u201d shot for this script. " +
   "This customer is already on School Explorer, so the \u201cSE to NE upgrade\u201d script is the one to use - it opens on their listing with School Explorer and pitches Neighborhood Explorer. " +
   "Otherwise paste one of their listings that does not have it yet.";
+
+/*
+ * Added when the Explorer was not there during the crawl and was there at the
+ * shutter - usually a tag manager, which is blocked while we are looking around
+ * and allowed for the shot. Worth saying out loud, because otherwise the
+ * refusal reads as nonsense to somebody who watched the page load clean.
+ */
+const APPEARED_LATE =
+  "It was not there while their site was being looked over and appeared once the page had fully loaded, which is what a tag manager does - so the page can look clean and still be carrying one.";
+
+/*
+ * The advice at the end of a refusal that was the site's choice.
+ *
+ * It used to stop at "paste that URL", and for Scott Rodgers Real Estate that
+ * was a dead end - the detail URL is refused as well, so the one thing offered
+ * was the one thing already known not to work. The upload is the way through,
+ * and a refusal is where somebody is actually reading, so it is named here.
+ */
+const UPLOAD_INSTEAD =
+  "Open one of their listings in your browser and paste that URL. If that is refused too, upload a screenshot of the listing page instead \u2013 that skips their site altogether.";
+
+/** A site that refused the pages holding its listings, in one place. */
+function siteRefusedError(host, pageCount) {
+  const error = captureError(
+    "SITE_BLOCKED",
+    `${host} blocked the capture on ${pageCount} page${
+      pageCount === 1 ? "" : "s"
+    } (HTTP 403), so none of them could be read. Some sites refuse automated browsers even though the pages open fine in your own. ${UPLOAD_INSTEAD}`
+  );
+  error.httpStatus = 403;
+  return error;
+}
 
 /** One refusal for "something is over the page", naming a cookie bar as such. */
 function blockedError(left) {
@@ -1300,29 +1365,49 @@ function readPageFacts() {
  * appearing in the page copy is only a hint.
  */
 function readExplorer() {
-  const sources = [];
-  for (const el of Array.from(document.querySelectorAll("script[src], iframe[src], link[href]"))) {
-    sources.push(el.getAttribute("src") || el.getAttribute("href") || "");
-  }
-  for (const el of Array.from(document.querySelectorAll("[id], [class]"))) {
-    sources.push(`${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`);
-  }
-  for (const el of Array.from(document.querySelectorAll("*"))) {
-    for (const name of el.getAttributeNames ? el.getAttributeNames() : []) {
-      if (name.startsWith("data-dn-") && name !== "data-dn-hidden") sources.push(name);
+  /*
+   * Our own embed, however a realtor installed it. Both snippets we hand out
+   * carry the domain in a script src - explorer/sdk.js for the popup and
+   * explorer/inline.js for the in-page one - and the inline one also leaves a
+   * #dn-explorer container behind.
+   */
+  const EMBED = /dreamneighborhood|dream-neighborhood|dn-explorer|dn-popup|data-dn-/i;
+  /* What our widgets put on screen. Only a hint: a page can say these words. */
+  const ON_SCREEN = /(School Explorer|Neighborhood Explorer|Find Your Dream School)/i;
+  /* src and href are only evidence on the tags that load something. A footer link to our site is not an install. */
+  const LOADS = { SCRIPT: 1, IFRAME: 1, LINK: 1, EMBED: 1, OBJECT: 1 };
+
+  /*
+   * Open shadow roots are walked as well as the page itself. A floating widget
+   * that renders into a shadow root is invisible to a plain querySelectorAll
+   * and to body.innerText, and a popup button in the corner of the page is
+   * exactly the sort of thing built that way.
+   */
+  const roots = [document];
+  for (let at = 0; at < roots.length && at < 400; at += 1) {
+    for (const el of Array.from(roots[at].querySelectorAll("*"))) {
+      if (el.shadowRoot) roots.push(el.shadowRoot);
+
+      if (LOADS[el.tagName]) {
+        const src = el.getAttribute("src") || el.getAttribute("href") || "";
+        if (src && EMBED.test(src)) return { found: true, how: "embed" };
+        if (el.tagName === "SCRIPT" && !src && EMBED.test((el.textContent || "").slice(0, 200000))) {
+          return { found: true, how: "embed" };
+        }
+      }
+      if (EMBED.test(`${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`)) {
+        return { found: true, how: "embed" };
+      }
+      for (const name of el.getAttributeNames ? el.getAttributeNames() : []) {
+        if (name.startsWith("data-dn-") && name !== "data-dn-hidden") return { found: true, how: "embed" };
+      }
     }
   }
-  const inline = Array.from(document.querySelectorAll("script:not([src])"))
-    .map((el) => el.textContent || "")
-    .join(" ")
-    .slice(0, 200000);
 
-  if (/dreamneighborhood|dream-neighborhood|dn-explorer|dn-popup|data-dn-/i.test(`${sources.join(" ")} ${inline}`)) {
-    return { found: true, how: "embed" };
-  }
-  if (/(School Explorer|Neighborhood Explorer|Find Your Dream School)/i.test(document.body.innerText || "")) {
-    return { found: true, how: "text" };
-  }
+  let words = document.body ? document.body.innerText || "" : "";
+  for (let at = 1; at < roots.length; at += 1) words += ` ${roots[at].textContent || ""}`;
+  if (ON_SCREEN.test(words)) return { found: true, how: "text" };
+
   return { found: false, how: null };
 }
 /* eslint-enable no-undef */
@@ -1432,8 +1517,28 @@ async function settle(page, { forShot = false } = {}) {
   await sleep(forShot ? 500 : 200);
 }
 
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+/**
+ * Who this page says it is.
+ *
+ * Built in src/browser.js at launch, out of what that Chrome actually is, and
+ * left on the browser. A browser made some other way still gets a persona
+ * rather than nothing, because a page with no user agent set is a page sending
+ * "HeadlessChrome" to a realtor.
+ */
+function personaOf(browser) {
+  return browser.__lvmPersona || (browser.__lvmPersona = persona.buildPersona({ desktop: config.capturePersona }));
+}
+
+/**
+ * Stop the page contradicting the persona in JavaScript.
+ *
+ * See src/persona.js: `navigator.platform` is the one the headers cannot reach,
+ * and `navigator.webdriver` is left alone unless Chrome really did leave it on.
+ */
+async function looksLikeAnOrdinaryBrowser(page, who) {
+  const { fn, arg } = persona.pageScript(who);
+  await page.evaluateOnNewDocument(fn, arg);
+}
 
 /**
  * A fresh page, set up the way capture needs it.
@@ -1443,9 +1548,24 @@ const USER_AGENT =
  * capture and being killed for using a gigabyte.
  */
 async function preparePage(browser, { heavy = false } = {}) {
+  const who = personaOf(browser);
   const page = await browser.newPage();
   await silenceMediaFeatures(page);
-  await page.setUserAgent(USER_AGENT);
+  await looksLikeAnOrdinaryBrowser(page, who);
+  /*
+   * Puppeteer takes the client hints as a second argument. An older build that
+   * does not is not a reason to fail a capture, so the string alone is the
+   * fallback - though on that build the hints and the user agent would once
+   * again be telling a site two different stories.
+   *
+   * Accept, Accept-Encoding and the Sec-Fetch-* headers are deliberately NOT set
+   * here. Chrome already writes all of them, correctly and differently for a
+   * navigation, an image and a fetch - forcing one value would put
+   * `Sec-Fetch-Dest: document` on every stylesheet on the page, which is a
+   * louder tell than anything it would fix. The only header worth taking off
+   * Chrome is one Chrome gets wrong, and there is not one.
+   */
+  await page.setUserAgent(who.userAgent, who.metadata).catch(() => page.setUserAgent(who.userAgent));
   await page.setViewport({ ...(heavy ? VIEWPORT : CRAWL_VIEWPORT), deviceScaleFactor: 1 });
   page.setDefaultNavigationTimeout(GOTO_TIMEOUT_MS);
   page.setDefaultTimeout(GOTO_TIMEOUT_MS);
@@ -1545,6 +1665,8 @@ async function captureListing({
   const origin = new URL(home).origin;
   /* Pages holding their listings that the site refused outright. */
   let blockedFromSearch = 0;
+  /* Set when the QUAL account was what got us to the listing, so the video says so. */
+  let accountUsed = null;
   const start = listingUrl ? normalizeUrl(listingUrl) : home;
   const startedAt = Date.now();
   const deadline = startedAt + budgetMs;
@@ -1563,6 +1685,17 @@ async function captureListing({
   /* The last status a navigation came back with, so a refusal can name it. */
   let lastStatus = 0;
 
+  /** Take whatever page is open to a URL, and remember where it ended up. */
+  const navigate = async (target, heavy) => {
+    if (outOfTime()) return 0;
+    const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
+    registrationGate = opened.registrationGate || null;
+    loadedUrl = page.url();
+    loadedHeavy = heavy;
+    lastStatus = opened.status || 0;
+    return opened.status;
+  };
+
   const visit = async (target, { heavy = false } = {}) => {
     await closePage(page);
     page = null;
@@ -1571,12 +1704,32 @@ async function captureListing({
     loadedHeavy = false;
     if (outOfTime()) return 0;
     page = await preparePage(browser, { heavy });
-    const opened = await open(page, target, Math.min(GOTO_TIMEOUT_MS, Math.max(3000, deadline - Date.now())), log);
-    registrationGate = opened.registrationGate || null;
-    loadedUrl = page.url();
-    loadedHeavy = heavy;
-    lastStatus = opened.status || 0;
-    return opened.status;
+    return navigate(target, heavy);
+  };
+
+  /**
+   * Go somewhere without opening a new page, keeping the cookies we have.
+   *
+   * Every other navigation gets a brand new page, because closing the old one
+   * hands its renderer memory back - and that is most of what keeps a capture
+   * inside a small dyno. A new page also starts with an empty cookie jar, since
+   * the browser runs incognito on purpose so an IDX view counter never begins
+   * part-used.
+   *
+   * That is exactly wrong for one case. A session established by filling in a
+   * login form lives in cookies, and would not survive the next visit() - the
+   * listing would come back as the same wall we just signed in past. So the
+   * one navigation that follows a sign-in keeps its page.
+   */
+  const revisitOnSamePage = async (target, { heavy = false } = {}) => {
+    if (!page) return visit(target, { heavy });
+    if (heavy) {
+      // The crawl blocks images and fonts to save memory. The page that actually
+      // gets photographed needs them.
+      await page.setRequestInterception(false).catch(() => {});
+      await page.setViewport({ ...VIEWPORT, deviceScaleFactor: 1 });
+    }
+    return navigate(target, heavy);
   };
 
   /*
@@ -1693,6 +1846,18 @@ async function captureListing({
         trouble = error;
       }
       if (status && status < 400) break;
+      /*
+       * A refusal is not a hiccup, so it does not get a second go.
+       *
+       * Loading the page again after a 403 is the worst thing to do with one:
+       * the site has just decided about us, and a repeat hit on the same URL
+       * seconds later is what rate limiters and bot protection are counting.
+       * Retrying a timeout or a 502 is worth it; retrying a "no" is not.
+       */
+      if (isRefusalStatus(status)) {
+        log(`Their site refused the listing outright (HTTP ${status}) - not asking again`);
+        break;
+      }
       if (attempt === 1) log("The page did not come back with its photos - one more try");
     }
     if (status >= 400) throw statusError(status, { pastedListing: Boolean(listingUrl) });
@@ -1705,6 +1870,65 @@ async function captureListing({
       );
     }
     return finishShot(verdict, notes);
+  };
+
+  /**
+   * Look for our own Explorer one more time, on the page being photographed.
+   *
+   * This is the check that matters, and until now it was the one that was not
+   * being made. The Explorer was looked for during the crawl - a small window,
+   * with images, fonts and every analytics host blocked - and then the page was
+   * loaded AGAIN, at full size with nothing blocked, and photographed without
+   * anybody looking again.
+   *
+   * Everything in that gap is a way for the Explorer to be in the picture
+   * having been absent from the check. The clearest is a tag manager: our
+   * snippet is often installed through Google Tag Manager, googletagmanager.com
+   * is in JUNK_HOSTS and is blocked during the crawl, so the crawl sees a clean
+   * listing - and then the shot loads GTM, GTM injects the Explorer, and the
+   * "before" video opens on a listing that already has one. Which is what Bill
+   * got. A widget that loads late, or only once its images are allowed, or only
+   * below the fold, all land the same way.
+   *
+   * So the page is asked once more, here, after everything has loaded and the
+   * overlays have been cleared, one line before the shutter. What is in this
+   * picture is the only thing "the before shot" can mean.
+   *
+   * A refusal needs hard evidence - an actual embed. The words "School
+   * Explorer" in a page's own copy are a hint worth recording during the crawl,
+   * when there was still a choice of pages, but they are not a reason to throw
+   * away a listing that is otherwise ready to photograph.
+   */
+  const lastLookForOurOwnExplorer = async (notes) => {
+    const now = await detectExplorer(page);
+
+    // The pages-checked list is what the failure panel shows, so it should say
+    // what was true at the shutter rather than what was true minutes earlier.
+    const note = checked.find((entry) => sameTarget(entry.url, page.url()));
+    if (note && now.found && !note.explorer) {
+      note.explorer = now.how;
+      if (note.kind === "detail") tally.withExplorer += 1;
+    }
+
+    if (!wantExplorer) {
+      if (now.how === "embed") {
+        log("The Explorer is on that listing after all - it only appeared once the page fully loaded");
+        throw captureError("LISTING_HAS_EXPLORER", `${EXPLORER_ALREADY_THERE} ${APPEARED_LATE}`);
+      }
+      if (now.found) log("That listing mentions an Explorer in its own words, but does not have one on it");
+      return;
+    }
+
+    /*
+     * The upgrade script wants one, and one turned up. The note saying we would
+     * draw School Explorer onto the shot was written before the page had
+     * finished loading, so it is no longer true and would tell whoever reviews
+     * the video the opposite of what they are looking at.
+     */
+    if (now.how === "embed" && notes.length) {
+      notes.length = 0;
+      log("School Explorer is on that listing after all - filming it as it is, nothing added");
+    }
   };
 
   /** Clear the late overlays, then take the picture. */
@@ -1766,16 +1990,34 @@ async function captureListing({
       );
     }
 
+    const allNotes = [...(notes || [])];
+    await lastLookForOurOwnExplorer(allNotes);
+
     const shotPath = path.join(outDir, "site.png");
     await page.screenshot({ path: shotPath, type: "png", captureBeyondViewport: false });
     log(`Filmed ${address.street}`);
+
+    /*
+     * Say so on the video when a login was what made the listing visible. The
+     * page a signed-in visitor sees is not always the page the public sees, and
+     * whoever reviews this should know which one they are looking at.
+     */
+    if (accountUsed) {
+      allNotes.push(
+        `Their site would not show this listing without an account, so it was filmed signed in with the QUAL account${
+          accountUsed.how === "register" ? ", which was registered on their site" : ""
+        }. Check that the page looks the way a visitor's would.`
+      );
+    }
+
     return {
       screenshot: shotPath,
       pageUrl: page.url(),
       address,
       checked,
       tally,
-      notes: notes || [],
+      notes: allNotes,
+      account: accountUsed,
       tookSeconds: Math.round((Date.now() - startedAt) / 1000),
     };
   };
@@ -1858,7 +2100,11 @@ async function captureListing({
       }
 
       const verdict = await assess(target);
-      if (verdict.reason === "wall") throw registrationWallError();
+      if (verdict.reason === "wall") {
+        const after = await throughTheWall(target);
+        if (after && after.ok) return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+        throw registrationWallError(qualNote);
+      }
       if (verdict.ok) return await shoot(target, verdict.verdict, verdict.preferred ? [] : fallbackNote);
       if (verdict.reason === "blocked") throw blockedError(verdict.left);
       if (verdict.reason === "explorer") throw captureError("LISTING_HAS_EXPLORER", EXPLORER_ALREADY_THERE);
@@ -1871,10 +2117,7 @@ async function captureListing({
     }
 
     if (blockedFromSearch > 0) {
-      throw captureError(
-        "SITE_BLOCKED",
-        `${new URL(home).hostname} blocked the capture (HTTP 403) on the pages that hold its listings. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
-      );
+      throw siteRefusedError(new URL(home).hostname, blockedFromSearch);
     }
     /*
      * Go back to the search page before giving up, so the picture kept with the
@@ -1888,6 +2131,57 @@ async function captureListing({
       searchUrl,
       `${new URL(home).hostname} opens on its property search (${new URL(searchUrl).pathname}), and no single listing could be reached from it - its map and results came back empty. A search or map page is never filmed. Open one of their listings in your own browser and paste that URL - the page for a single house, with its street address, price, beds and baths.`
     );
+  };
+
+  /*
+   * An account wall, and the QUAL account is the key to it.
+   *
+   * Tried once per capture, and only when the site actually served us a page
+   * asking to log in. A 403 never gets here: there is no form on a page that was
+   * never sent, so there is nothing to sign in to - see src/site-account.js.
+   *
+   * If the key turns, the listing is opened again. The session cookie lives on
+   * the browser rather than the page, so the fresh page that visit() opens still
+   * carries it, and the page is then judged from scratch like any other.
+   */
+  let qualTried = false;
+  let qualNote = "";
+
+  const throughTheWall = async (target) => {
+    if (qualTried || !target || !siteAccount.configured()) return null;
+    qualTried = true;
+
+    const host = new URL(home).hostname;
+    const outcome = await siteAccount
+      .passTheWall(page, { host, log })
+      .catch((error) => ({ attempted: true, signedIn: false, why: error.message }));
+
+    if (!outcome.attempted) return null;
+    if (!outcome.signedIn) {
+      qualNote = `The QUAL account could not get past it: ${outcome.why}.`;
+      return null;
+    }
+
+    accountUsed = { how: outcome.how, unconfirmed: Boolean(outcome.unconfirmed) };
+    log("Opening the listing again, signed in");
+    let status = 0;
+    try {
+      // Same page, or the session we just established would be left behind.
+      status = await revisitOnSamePage(target, { heavy: true });
+    } catch (_) {
+      status = 0;
+    }
+    if (!status || status >= 400) {
+      qualNote = `Signed in with the QUAL account, but the listing then came back as ${status || "nothing at all"}.`;
+      return null;
+    }
+
+    const verdict = await assess(page.url());
+    if (verdict.reason === "wall") {
+      qualNote = "Signed in with the QUAL account, and their site asked for an account anyway.";
+      return null;
+    }
+    return verdict;
   };
 
   try {
@@ -1959,7 +2253,14 @@ async function captureListing({
     }
 
     const first = await assess(startUrl);
-    if (first.reason === "wall") throw registrationWallError();
+    if (first.reason === "wall") {
+      const after = await throughTheWall(startUrl);
+      if (after && after.ok) {
+        log("Signed in, and the listing is there - using it");
+        return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+      }
+      throw registrationWallError(qualNote);
+    }
 
     // The first usable listing is the one we film. There is no looking around
     // for a better one, because that would mean opening a second listing.
@@ -2093,15 +2394,30 @@ async function captureListing({
           continue;
         }
         if (!status || status >= 400) {
-          if (status === 401 || status === 403 || status === 429 || status === 451) {
+          if (isRefusalStatus(status)) {
             blockedPages += 1;
             log(`Their site blocked that page (HTTP ${status})`);
+            /*
+             * Two refusals in a row is the site's answer, not bad luck.
+             *
+             * Bill's run walked four pages and was refused four times, which
+             * told us nothing the second one had not and left four more hits in
+             * their logs. Stop and say so instead.
+             */
+            if (blockedPages >= MAX_BLOCKED_PAGES) {
+              log("Their site is refusing every page - stopping rather than trying more");
+              return { blocked: true, blockedPages };
+            }
           }
           continue;
         }
 
         const verdict = await assess(candidate.href);
-        if (verdict.reason === "wall") return { wall: true };
+        if (verdict.reason === "wall") {
+          const after = await throughTheWall(candidate.href);
+          if (after && after.ok) return { ...after, url: loadedUrl };
+          return { wall: true };
+        }
         if (verdict.ok) return { ...verdict, url: candidate.href };
         // That was a listing, just not one we can use. Stop rather than open
         // another: this is the counter that puts the account wall up.
@@ -2117,7 +2433,8 @@ async function captureListing({
     /** Turn whatever drain stopped on into either a shot or a refusal. */
     const settleWith = async (found) => {
       if (!found) return null;
-      if (found.wall) throw registrationWallError();
+      if (found.wall) throw registrationWallError(qualNote);
+      if (found.blocked) throw siteRefusedError(new URL(home).hostname, found.blockedPages);
       if (found.spent) {
         if (found.reason === "explorer") {
           throw captureError(
@@ -2159,7 +2476,11 @@ async function captureListing({
       // A site without /listings just 404s; that is not a page we "checked".
       if (!indexStatus || indexStatus >= 400) continue;
       const here = await assess(indexUrl);
-      if (here.reason === "wall") throw registrationWallError();
+      if (here.reason === "wall") {
+        const after = await throughTheWall(indexUrl);
+        if (after && after.ok) return await shoot(loadedUrl, after.verdict, after.preferred ? [] : fallbackNote);
+        throw registrationWallError(qualNote);
+      }
       if (here.ok) {
         log("Found a listing page with nothing in the way");
         return await shoot(indexUrl, here.verdict, here.preferred ? [] : fallbackNote);
@@ -2171,16 +2492,11 @@ async function captureListing({
 
     /* ---- nothing usable: say exactly what was wrong ---- */
     const host = new URL(home).hostname;
-    if (tally.wall) throw registrationWallError();
+    if (tally.wall) throw registrationWallError(qualNote);
     // Every page it tried was refused outright. That is the site turning an
     // automated browser away, not a site without any listings on it.
     if (blockedPages > 0 && !tally.detail) {
-      throw captureError(
-        "SITE_BLOCKED",
-        `${host} blocked the capture on ${blockedPages} page${
-          blockedPages === 1 ? "" : "s"
-        } (HTTP 403), so none of them could be read. Some sites refuse automated browsers even though the pages open fine in your own. Open one of their listings in your browser and paste that URL.`
-      );
+      throw siteRefusedError(host, blockedPages);
     }
     if (outOfTime()) {
       log("Could not find a listing in time");
@@ -2281,11 +2597,16 @@ module.exports = {
   normalizeUrl,
   detectExplorer,
   // Exposed so a page can be inspected on its own while working out why a real
-  // site was read the way it was.
+  // site was read the way it was, and so a test can check what a page set up the
+  // way capture sets one up actually looks like from inside.
   collectPageFacts,
+  preparePage,
   CAPTURE_BUDGET_MS,
   MAX_LISTING_VIEWS,
   MAX_NAV_VISITS,
+  MAX_BLOCKED_PAGES,
+  isRefusalStatus,
+  personaOf,
   JUNK_HOSTS,
   HEAVY_RESOURCE_TYPES,
   DISMISS_LABELS,

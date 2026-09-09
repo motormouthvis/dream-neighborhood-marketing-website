@@ -5,6 +5,17 @@ customer, record their own voice over a silent video, hear it against the
 pictures, add it to the video, review the finished file, and send a shareable
 link.
 
+The picture normally comes from one of the customer's own live listings. Some
+sites refuse an automated browser and will go on refusing it, so the picture can
+also be **uploaded** — a screenshot taken in a real browser, plus the address
+picked from the Explorer's own suggestions — and their site is then never opened at
+all. See
+[When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
+
+Both Explorer popups in the video are **photographs of the live product** at that
+listing's address. Neither is drawn by this tool. See
+[Filming the Explorers](#filming-the-explorers).
+
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
 static site build, and it does not touch any Dream Neighborhood product code. No
@@ -43,6 +54,44 @@ talking to. Each script says which it needs, and capture obeys it.
 
 First name, company, website URL, customer email. There is also an optional
 **Listing page URL** for when you already know the exact listing you want.
+
+**Where does the listing picture come from?** is normally *their live site*, and
+that is the whole flow below. The other choice — *a screenshot I upload* — is for
+a site that refuses an automated browser outright, and is described in
+[When their site will not be filmed at all](#when-their-site-will-not-be-filmed-at-all).
+
+#### The form comes back filled in
+
+One site is several takes. The same realtor gets done three or four times over — a
+different script, a different voice, a screenshot instead of the live capture,
+another go after a listing came out wrong — and all of it used to be typed in
+again from nothing each time. **Make another video** reset the form and threw the
+lot away as well.
+
+So the answers are kept in the browser's `localStorage` and put back next time:
+first name, company, website, listing URL, customer email, the address box, and
+the picked script, picture source, send-from and AI voice. Nothing goes to the
+server — this is one person's browser filling in their own form again.
+
+A remembered box **selects all of its text the first time it is focused**, so the
+one answer that changed between takes is replaced by typing over it. Once
+something has been typed into a box it is that person's own work, and focusing it
+again leaves the caret where they put it.
+
+**Clear the form** empties it and stops it coming back, for when what is
+remembered is a customer ago.
+
+Three things are deliberately never kept:
+
+| | Why |
+| --- | --- |
+| the password | that is a session cookie's job, and it is not going anywhere that outlives the tab |
+| the screenshot | a file input cannot be filled in by script, and last week's picture quietly standing in for this listing is exactly what this tool exists to stop |
+| the before-shot confirmation | it is a statement about **one** particular screenshot, so it has to be made again for the next one |
+
+A browser that will not store anything — Safari in private browsing throws on
+`setItem` — is no problem. The form works as it always did; it just forgets
+between page loads. See `public/js/remember.js`.
 
 ### 3. The tool finds a listing detail page
 
@@ -87,6 +136,49 @@ What it does about an Explorer already being on the page depends on the script:
 
 Both of those used to look through several listings to find the right one. They
 cannot any more — see [the account wall](#the-account-wall).
+
+#### The last look, one line before the shutter
+
+That check is made **twice**, and the second one is the one that counts: on the
+page as it stands at the moment it is photographed.
+
+It used to be made once, while capture was looking the site over, and that turned
+out to be the wrong page. A capture loads the listing **twice** — cheaply for the
+crawl, with images, fonts and every analytics host blocked, and then again at full
+size with nothing blocked for the photograph. Everything in that gap is a way for
+the Explorer to be in the picture having been absent from the check. The clearest
+is a **tag manager**: our snippet is often installed through Google Tag Manager,
+`googletagmanager.com` is on the blocked list, so the crawl sees a clean listing —
+and then the shot loads the tag manager, the tag manager injects the Explorer, and
+the "before" video opens on a listing that already has one.
+
+That is one way the Neighborhood Explorer got onto a "before" listing, and it was
+not the way Bill kept hitting. He reported it again on a job that never opened
+their site at all — a screenshot he uploaded — and this check has no page to make
+on that path. The label we draw beside the house button was the real culprit; see
+[Nothing about the Neighborhood Explorer goes on a listing frame](#nothing-about-the-neighborhood-explorer-goes-on-a-listing-frame).
+
+So the page is asked once more, after everything has loaded and the overlays have
+been cleared, one line before the shutter. What is in **this** picture is the only
+thing "the before shot" can mean.
+
+- Under **absent**, an Explorer found there is a refusal, and the message says it
+  appeared once the page had fully loaded — otherwise the refusal reads as
+  nonsense to somebody who watched that page load clean.
+- Under **prefer-present**, it drops the note promising School Explorer would be
+  drawn onto the opening shot, which by then would tell whoever reviews the video
+  the opposite of what they are looking at.
+
+**Only a real embed refuses.** The words "School Explorer" in a page's own copy
+stay a hint worth recording, not grounds for throwing away a listing that is
+otherwise ready to photograph. Open **shadow roots** are searched as well as the
+page itself, since a floating widget that renders into one is invisible both to
+`querySelectorAll` and to `innerText`.
+
+**Nothing can check an uploaded screenshot.** There is no live page on that path
+and reading one off the pixels would be guessing, so an upload on a before-shot
+script says so plainly in the notes beside the video, for the person who can see
+the picture and settle it in a second.
 
 The walk is up to three clicks, and ends at the first listing it opens: their
 site, then a listings or homes page, then the house. Links are ranked, so a concrete listing URL like
@@ -432,39 +524,121 @@ One 1920x1080 still per beat, held for that beat's suggested duration, with **no
 audio track at all**:
 
 - Captions sit in a **top** bar only. A bottom bar would cover the house button.
-- The house button hovers in the bottom right of their own page.
+- The house button hovers in the bottom right of their own page, labelled *"Click
+  here to explore the schools around 6031 N Rosemead Dr"*.
 - The School Explorer and Neighborhood Explorer cards are about 70% of the frame,
   in the same place and at the same size as each other.
 - School Explorer is always the first explorer on screen. Neighborhood Explorer
   beats only run after it, and only in a `se-ne` script.
-- Each Neighborhood Explorer beat is a **photograph of that tab in the live
-  product**, taken at this listing's own address. See
-  [Filming the Explorer](#filming-the-explorer).
+- **Both** cards are photographs of the live product at this listing's own
+  address — the School Explorer's schools list, and each Neighborhood Explorer
+  tab. See [Filming the Explorers](#filming-the-explorers).
 
-#### Filming the Explorer
+#### Nothing about the Neighborhood Explorer goes on a listing frame
 
-The seven Neighborhood Explorer tabs each show genuinely different data, so each
-tab beat is a screenshot of that tab **in the live product, at this listing's
-address**. Nothing about a tab's contents is drawn by this tool.
+A `listing` or `listing-tap` beat is the **customer's own page**. Our popups open
+on their own beats — School Explorer on an `se` beat, Neighborhood Explorer on an
+`ne` beat — and nothing about either belongs on the page underneath. On a
+before-shot script the listing has no Explorer on it at all; that is the point of
+the shot.
 
-It used to be. The card was ours, and between tab beats only the highlighted chip
-moved while the body stayed on Map and Summary — so Schools, Commutes and
-Walk & Bike all showed the same income and rent bars. Because each beat is now one
-photograph, the highlighted chip and the body underneath it cannot disagree.
+Bill reported the Neighborhood Explorer on the listing frames of a School-Explorer
+-only, before-shot video **three times**. It was the label beside the house button:
+
+> Click here to explore the neighborhood around 6031 N Rosemead Dr
+
+on every listing frame of every script, the school-only one included — which is
+documented never to mention the Neighborhood Explorer at all. The button is the
+School Explorer's, so the label now says **schools**.
+
+It was drawn the same way whether the listing behind it was photographed off their
+site or uploaded by hand, which is why the fix before this one — re-checking the
+live page for an Explorer at the moment of the shot — did nothing at all for the
+screenshot path. There is no page there to re-check.
+
+Rather than trust the label, **every frame is read off the stage after the beat is
+drawn and before the shutter**, and refused if:
+
+| What is on screen | Where |
+| --- | --- |
+| "Neighborhood Explorer", "explore the neighborhood" | a `listing` or `listing-tap` frame |
+| a Neighborhood Explorer popup | a `listing` or `listing-tap` frame |
+| anything naming the Neighborhood Explorer | any frame of a `se` script |
+
+So a caption, a label, a popup header, or something a later change starts drawing
+is caught the same way, on the upload path exactly as on the live one, and the job
+fails loudly with the scene number rather than quietly shipping the video. See
+`wrongExplorerOnScreen` in `src/frames.js` and
+`test/before-shot-frames.test.js`.
+
+#### Filming the Explorers
+
+Neither card is drawn by this tool. Both are screenshots of the real product
+opened at **this listing's address**, so nothing on screen can be about anywhere
+else.
+
+Both were drawn once, and both went wrong the same way:
+
+- The **Neighborhood Explorer** card was ours, and between tab beats only the
+  highlighted chip moved while the body stayed on Map and Summary — so Schools,
+  Commutes and Walk & Bike all showed the same income and rent bars.
+- The **School Explorer** card was ours too, drawn from a fixed list: the eight
+  schools of the neighborhood in the approved reference video. Every video ever
+  made showed *Smyrna, GA · Cobb County School District*, Nickajack Elementary and
+  Griffin Middle, whatever address it was about. Bill found it on a listing at
+  6031 N Rosemead Dr, Peoria, IL: he typed the Peoria address, and the School
+  Explorer in the video was about Georgia. It was not the wrong address — the card
+  was not the product.
+
+Because each beat is now one photograph, nothing in a card can disagree with
+anything else in it, or with the address the video is about.
 
 How it runs, after the listing still is in hand:
 
 1. The listing browser is **closed first**. It is deliberately starved to survive
    a small dyno, and the Explorer's map needs WebGL — without a GPU the widget
-   sits on "Loading location..." forever. The walk gets its own browser, so only
+   sits on "Loading location..." forever. The walks get their own browser, so only
    one Chrome is ever alive at a time.
-2. The address captured from the realtor page is turned into coordinates. Every
-   answer is checked against the town and state the listing gave, because a loose
-   geocode once put "123 Main St, Long Beach, CA" in Lake Huron, and filming that
-   would have put another town's schools in the video. If only the town or
-   postcode resolves, the job log says the Explorer was centred nearby.
-3. The live widget is opened at those coordinates, and each tab is clicked and
-   photographed once its own content has arrived and stopped moving.
+2. The address is turned into coordinates **once**, and both Explorers are filmed
+   at that one point, so they cannot be about two different places. On the upload
+   path the address is already a place the Explorer named and resolved before the
+   job started — see
+   [The address is picked from the Explorer's own suggestions](#the-address-is-picked-from-the-explorers-own-suggestions).
+   Otherwise the address read off the realtor page is looked up: the Explorer's own
+   geocoder first, since it is the one that decides what the Explorer shows, and
+   OpenStreetMap behind it. Every answer is checked against the town and state the
+   listing gave, because a loose geocode once put "123 Main St, Long Beach, CA" in
+   Lake Huron. If only the town or postcode resolves, the job log says the Explorer
+   was centred nearby.
+3. The **School Explorer** embed is opened at that address and photographed. It
+   refuses if it will not load schools, because a card of our own is the bug.
+4. The **Neighborhood Explorer** widget is opened at the same coordinates, and each
+   tab is clicked and photographed once its own content has arrived and stopped
+   moving.
+
+Where each one landed is written into the job and shown beside the silent video —
+*"The School Explorer in this video is the live product at Peoria, IL · Peoria Sd
+150 School District, showing 30 schools nearby"* — so the review can see it is
+about the right house before anything is sent. That is the check nobody had on the
+video Bill was sent.
+
+#### The School Explorer beats
+
+A script has more than one School Explorer beat, so the list is photographed
+scrolled a little further each time and each beat gets its own picture, up to
+three. A short list gives fewer, and the last one is held rather than running out.
+
+It refuses rather than falling back to anything drawn by us:
+
+| What happened | What it says |
+| --- | --- |
+| the address cannot be placed | it could not place that address, so it has no schools for it |
+| it loads, but never lists schools | it did not load any schools for that address, try again in a minute |
+| it takes too long to photograph | it took too long, try again |
+
+Every refusal saves a picture of the popup as it stood, which usually answers
+"why" faster than the message does: its own front door with the search box on it
+means it never got the address at all.
 
 #### How big the popup is, and how sharp
 
@@ -487,18 +661,25 @@ The listing behind an explorer card is **dimmed**. It used to be washed with
 card sitting on it had no edge to see. On a light listing the popup disappeared
 into the page.
 
-Around the Neighborhood Explorer shot the video now draws the popup's own
-**chrome**: a border, a strong shadow, a header bar with the brand and the address
-being shown, and an **X** in the corner. The shots are of the inner widget
-(`popup=true`), so the real popup's header and close button are not in them — 
-without this there was no header and no way out anywhere in the video.
+Around each Explorer shot the video draws that popup's own **chrome**: a border, a
+strong shadow, a header bar with the product's name and the address being shown,
+and an **X** in the corner. The shots are of the inner widget and the inner embed,
+so the real popups' headers and close buttons are not in them — without this there
+was no header and no way out anywhere in the video.
 
-That is chrome and nothing else. No tabs, no data and no Explorer features are
-invented: everything inside the frame is the photograph of the real product.
+The Neighborhood Explorer's header is white with green type, as its own popup's is;
+the School Explorer's is a solid green bar with white type, as its own popup's is.
 
-**School Explorer keeps the size and position the approved v11 cuts used**, but it
-sits on the same dimmed listing now — the white wash was washing it out too, so
-the dim is shared.
+That is chrome and nothing else. No tabs, no schools, no ratings and no Explorer
+features are invented: everything inside the frame is the photograph of the real
+product.
+
+**Both cards are the same size and in the same place** — 1600x780 at 150,168 — so
+the upgrade script's "same button, it just does more" cuts between two popups
+rather than between two differently shaped rectangles. The School Explorer card was
+1340x764, the size the approved v11 cuts used for the drawing; now that it holds a
+photograph it is filmed and framed like the other one, which is also what fixed it
+reading small and washed out.
 
 There is a test that renders a card over a white listing and measures the pixels:
 the listing has to get **darker**, the card has to stay bright, and the header and
@@ -755,8 +936,8 @@ lot, and it can be read with `tail`. Each line has:
 | `jobId` | the job, so the Library card and the picture can be found |
 | `firstName`, `company` | who it was for |
 | `websiteUrl`, `listingUrl` | what it was given |
-| `stage` | `capture`, `explorer-walk`, `geocode` or `render` |
-| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, and so on |
+| `stage` | `capture`, `uploaded-picture`, `explorer-walk`, `geocode` or `render` |
+| `errorCode` | `NO_LISTING_FOUND`, `SITE_BLOCKED`, `REGISTRATION_WALL`, `SITE_IS_SEARCH_ONLY`, `CAPTURE_TIMED_OUT`, `EXPLORER_TAB_MISSING`, `LISTING_IMAGE_NOT_AN_IMAGE`, and so on |
 | `reason` | the message Bill saw, cut to one line |
 | `httpStatus` | only when a status caused it. A refusal that was not about a status does not claim one — the last page to load might have been a 404 on a path we guessed at |
 | `pageKind` | what the page was classified as, if it was |
@@ -777,6 +958,330 @@ as the jobs and the videos. They answer "what happened on that job just now", no
 
 ---
 
+## When their site will not be filmed at all
+
+Some sites refuse an automated browser and go on refusing it. Scott Rodgers Real
+Estate answers 403 on every page that holds a listing; refusing us is what they
+are paying for, and no user agent changes that.
+
+Until this existed, that was the end of the road. Bill's panel said *"blocked the
+capture on 4 pages (HTTP 403)"* and offered him one thing — paste a listing URL —
+and the listing URL is refused in the same way. Nowhere to go.
+
+### Upload the listing picture instead
+
+Open the listing in your own browser, where it loads perfectly. Screenshot the
+page. Upload it, with the address.
+
+**No browser is opened on this path at all.** That is the point: their site is
+never asked for anything, so it has nothing left to refuse. Everything after the
+picture is identical — the scenes, both Explorer popups, the silent cut, the
+voice, the review, the send.
+
+It is offered in two places:
+
+- **On the failure panel**, where the refusal actually happened. For a refusal by
+  HTTP status it is open and explained, because at that point it is not an
+  alternative, it is the answer. Other capture failures get it too, folded away,
+  as a way out.
+- **On the form**, so a site already known to block us does not have to fail once
+  first. Picking it hides the Listing page URL box — a URL and a screenshot would
+  be two answers to one question, and the upload would win silently.
+
+### The address is typed in, and never read off the picture
+
+There is no OCR here, on purpose, and no guessing from the file name.
+
+The Explorers are pointed at **coordinates**. A house number misread off a
+screenshot would film another street's schools, commutes and walk scores while
+looking completely convincing — a wrong video that reviews as a right one. So the
+address is typed by the person who can see the listing, or there is no video.
+
+### A before-shot upload has to be a clean listing, and only a person can say so
+
+On the live path the capture looks at the page itself and refuses a listing that
+**already** has one of our Explorers on it when the script is a before-and-after —
+right up to the moment of the shot, because a tag manager can put one there after
+the page looks clean. See [The last look, one line before the shutter](#the-last-look-one-line-before-the-shutter).
+
+There is no page behind a screenshot. And nothing here reads the pixels, for the
+same reason nothing reads the address off them: a wrong answer would look
+completely correct.
+
+This used to be a note beside the finished video — *"nothing checked your
+screenshot for an Explorer"* — which is a thing to notice after the fact rather
+than a check. Now the upload is **refused** until whoever took the screenshot
+confirms the listing in it has no Explorer on it yet:
+
+> This listing has no Explorer on it yet — I can see there is no School Explorer or
+> Neighborhood Explorer on the page I screenshotted.
+
+Asked only for a script whose *listing* setting is **absent**, and asked at both
+doors the upload can come in by: the form and the failure panel. Saying no is not
+a dead end — the refusal names the **SE to NE upgrade** script, which is the one
+that wants a listing that already has School Explorer on it.
+
+The answer is kept with the job and said beside the video, with what was drawn on
+the listing frames, so the review reads what was confirmed rather than what could
+not be checked.
+
+### The address is picked from the Explorer's own suggestions
+
+Typing it is not enough on its own. It used to be four free-text boxes, and Bill's
+Peoria job showed why that is not the same thing as an address: nothing checked
+what he typed until a job was already running, and a geocoder will answer a loose
+query with a street of the same name somewhere else. "123 Main St, Long Beach, CA"
+comes back in El Segundo.
+
+So the box is **the Neighborhood Explorer's own place picker** — not a second one
+built here. As you type, the Explorer's `autocomplete` endpoint is asked what it
+would offer, and the suggestion you pick is resolved by the Explorer's own
+`geocode` endpoint. Both live beside the widget URL, so moving
+`LISTING_VIDEO_EXPLORER_URL` to staging moves the picker with it, and the address
+behind a job is one the Explorer itself named and placed.
+
+They are proxied through `GET /api/places` rather than called from the browser, so
+the tool stays one origin and CORS never comes into it.
+
+What that buys:
+
+- The address is settled **before the job exists**. An address the Explorer cannot
+  place is a form to send back — "pick one of the suggestions" — not a video a
+  minute later that filmed the wrong town.
+- Both Explorers are filmed at exactly the point the picker resolved. Nothing is
+  looked up a second time, so nothing can come back differently.
+- Typing the whole address by hand still works, because a picker that will not
+  suggest must not be a dead end. Free text is resolved the same way and checked
+  against the town that was typed: if the Explorer places it somewhere else, the
+  form says where and asks you to pick from the list.
+- A picker that **cannot be reached** blocks nothing. The address goes on as typed
+  and is looked up at render time, where the town check and OpenStreetMap are both
+  still there. The form says the lookup was unreachable rather than looking like it
+  has no suggestions.
+
+### What is accepted
+
+| | |
+| --- | --- |
+| Types | PNG or JPG. Checked by **signature**, not by what the upload claims — a browser will label a file whatever it likes |
+| Size | Up to 12MB |
+| Smallest | 320px on both sides; below that the video is just blurry |
+| Shape | Anything. It is **fitted whole and never cropped** — the address is usually near an edge, and cropping to fill would cut off the one thing the video is about |
+
+A screenshot of a browser window is about 16:9, so the common case scales to
+exactly 1920x1080 and is padded by nothing at all. A full-page grab is shown
+whole and small rather than cropped to its top strip.
+
+### It says so afterwards
+
+A video built this way is not a capture of their site, and nothing pretends it
+is. The record step reads *"on the screenshot you uploaded for 6031 N Rosemead
+Dr"* rather than *"filmed on their listing for…"*, there is no captured page URL
+because no page was filmed, and a note names the file and repeats the address
+that was typed so the map can be checked in the review.
+
+Beside it, a note says where each Explorer was actually filmed — *"the live product
+at Peoria, IL · Peoria Sd 150 School District, showing 30 schools nearby"* — which
+is the line that would have said "Smyrna, GA · Cobb County School District" on the
+video Bill was sent, and nothing said it at all.
+
+Retrying with a listing URL means going back to the live site, so it drops the
+upload. Leaving it in place would let the upload win silently while the pasted
+URL looked ignored.
+
+### Best-effort 403 hardening, and what it is not
+
+Two things changed in how the site is *asked*, and one in **who is asking**.
+None of them is a bypass.
+
+- **A refusal is not retried.** Loading the same URL again seconds after being
+  refused is the worst thing to do with one: the site has just decided about us,
+  and a repeat hit is what rate limiters count. A timeout still gets a second go.
+- **The crawl stops after two refusals** instead of collecting four. Bill's run
+  walked four pages and was refused four times; pages three and four told us
+  nothing the second had not, and left two more hits in their logs.
+- **The request stopped contradicting itself**, which is the rest of this
+  section.
+
+#### One persona, and everything agreeing with it
+
+`src/persona.js` holds the user agent, the client hints, the language and the
+platform in one place, because the thing bot protection actually reads is not
+any single header being wrong — it is **two of them disagreeing**. A browser
+that answers the same question two different ways has said something no ordinary
+visitor says, and the disagreement is worth more to a scoring engine than either
+answer on its own.
+
+Four disagreements have been live at different points, and all four are gone:
+
+| It said | And it also said | Caught by |
+| --- | --- | --- |
+| `Chrome/131` in the user agent | `HeadlessChrome` in `Sec-CH-UA` | reading one header |
+| `Chrome/131` in the user agent | Chrome **148** actually making the request | comparing to the TLS handshake, or just noticing a user agent a year behind stable |
+| `macOS` in the user agent and hints | `Linux x86_64` in `navigator.platform` | one line of JavaScript |
+| `navigator.webdriver === undefined` | every real Chrome answers `false` | one line of JavaScript |
+
+The persona is now **built from the browser at launch** rather than typed into a
+constant, so it cannot go stale when the dyno's Chrome is upgraded:
+
+- The version comes from the running Chrome. The user agent carries the major
+  with the minor parts zeroed, exactly as Chrome writes it, and the real full
+  version goes out in `Sec-CH-UA-Full-Version-List`.
+- The `Sec-CH-UA` brand list is **Chrome's own**, read from the live browser —
+  including the deliberately silly GREASE entry, which is a different string in
+  every Chrome version and is therefore the giveaway in any hand-written list.
+  The one thing never taken from Chrome is a brand containing `Headless`.
+- The operating system is named consistently in all three places a page can ask:
+  the user agent string, `Sec-CH-UA-Platform`, and `navigator.platform`. Windows
+  by default, because it is the least remarkable thing to be; see
+  `LISTING_VIDEO_PERSONA`.
+- `navigator.webdriver` answers `false`, which is what an ordinary Chrome
+  answers. It used to be forced to `undefined`, and that is worse: a navigator
+  with no `webdriver` property at all is not a browser anybody ships, so it swaps
+  a known tell for a stranger one. Chrome launched with
+  `--disable-blink-features=AutomationControlled` already answers `false` on its
+  own, so the page script only steps in if it finds the bit still set.
+
+#### The headers Chrome writes are left alone, on purpose
+
+`Accept`, `Accept-Encoding` and the `Sec-Fetch-*` family are **not** set by this
+tool, and that is a decision rather than an omission. Chrome already writes all
+of them correctly, and differently for a navigation, a stylesheet and an image.
+Pinning one value would put `Sec-Fetch-Dest: document` on every image on the
+page, which is a louder tell than anything it would fix.
+
+`Accept-Language` is set at **launch**, with `--accept-lang`, not with
+`setExtraHTTPHeaders`. Two reasons, both found by reading the bytes that reached
+a server rather than the code that sent them:
+
+- **Order.** Chrome sends `Accept-Language` last, after `Accept-Encoding`. An
+  extra header is appended by the automation layer and lands in the middle,
+  ahead of `Accept`. Header order is a fingerprint in its own right, and an order
+  no Chrome produces is a signal created by trying to help.
+- **Value.** Chrome writes the q-values itself. Given `--accept-lang=en-US,en` it
+  sends `en-US,en;q=0.9`; handed the q-values it applies them twice and sends
+  `en-US,en;q=0.9,en;q=0.9;q=0.8`, which is stranger than sending nothing.
+
+`AcceptCHFrame` was also removed from the disabled-features list. It is not a
+memory feature — it is how Chrome answers a site that asks for client hints at
+connection setup over HTTP/2 — and having it off meant staying silent where a
+real Chrome would answer.
+
+The whole navigation now leaves in Chrome's own order, with Chrome's own values:
+
+```
+sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, upgrade-insecure-requests,
+user-agent, accept, sec-fetch-site, sec-fetch-mode, sec-fetch-user,
+sec-fetch-dest, accept-encoding, accept-language
+```
+
+`test/capture.test.js` asserts that against a real socket — the values, the
+agreement between them, and the order — and `test/persona.test.js` covers the
+rules behind them on a machine with no Chrome.
+
+#### What headers cannot fix
+
+**A site that fingerprints properly still knows**, and this is the honest list of
+why. None of it is reachable from a header:
+
+- **The IP.** The request comes from a Heroku dyno in a datacentre range. Bot
+  protection buys that list, and for many products it alone is enough. This is by
+  far the biggest one.
+- **TLS and HTTP/2.** The handshake, the cipher order and the HTTP/2 SETTINGS
+  frame are the real Chrome build's, and are what a JA3/JA4 check reads. They
+  agree with the persona now that the version is honest, but they cannot be
+  edited into agreement with something else.
+- **The machine.** No GPU worth the name, no real fonts, a headless canvas and a
+  clock in UTC. A US persona in a container's font list does not survive a
+  serious fingerprint.
+- **Behaviour.** No mouse ever moves, nothing hovers, pages are asked for faster
+  than a person reads them, and the visit arrives with no history and no referer.
+- **Being an unknown visitor every time**, which is deliberate: the throwaway
+  profile that stops IDX view counters also means we never look like a returning
+  human.
+
+Scott Rodgers is expected to carry on refusing, and the upload is what actually
+gets that video made there.
+
+### A pasted detail URL is one house, not a search page
+
+Worth calling out separately, because it was the other half of Bill's failure and
+had nothing to do with the 403.
+
+Scott Rodgers writes one listing as
+`/property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614`.
+No single-listing URL pattern matched that shape, while `property-search` **does**
+match the search pattern — so the URL he pasted was read as the site's search
+page.
+
+That is why his run crawled at all. Being taken for a search page made capture
+ignore the house he had named and go hunting for one of its own choosing, and it
+was those four crawl hops that came back 403. A pasted detail URL is now one hit
+on the page he asked for. kvCORE, Real Estate Webmasters and Placester shapes are
+covered too.
+
+---
+
+## Signing in to a realtor site (the QUAL account)
+
+Separate problem, separate answer, and the two get confused.
+
+An **account wall** is a door with a form on it: the site served us a page, and
+that page asks us to log in. Capture used to refuse those outright and say "paste
+a listing URL", which is no help when every listing is behind the same door. With
+the QUAL account configured it fills the sign-in form in, and if the key turns it
+opens the listing again and films it.
+
+**It does nothing whatsoever for a 403**, and the difference matters. A 403 is bot
+protection refusing to send the page at all — there is no form, no page and
+nothing to sign in to. Credentials are not even offered to a site that has already
+refused us. Scott Rodgers is that case, and the upload is what works there.
+
+### Switching it on
+
+Off unless **both** `LISTING_VIDEO_QUAL_EMAIL` and `LISTING_VIDEO_QUAL_PASSWORD`
+are set. They are set on staging and not on production, and that is what keeps
+this off production — not a flag somebody could flip by accident.
+
+| Setting | What it does |
+| --- | --- |
+| `LISTING_VIDEO_QUAL_EMAIL` | The QUAL account's address. **Both this and the password are required**; either on its own is off |
+| `LISTING_VIDEO_QUAL_PASSWORD` | Its password. Never logged, and never sent to the browser |
+| `LISTING_VIDEO_QUAL_NAME` | Name to put in a registration form. Defaults to `Motormouth QUAL` |
+| `LISTING_VIDEO_QUAL_PHONE` | Phone for a registration form that insists on one |
+| `LISTING_VIDEO_QUAL_HOSTS` | Comma-separated hostnames. **Empty means any site**; a list is an allowlist, which is the safer way to switch this on one customer at a time |
+| `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account. Off. See below |
+
+### Why registering is its own switch, and off
+
+Signing in to an account that already exists is quiet.
+
+**Registering is not.** Creating an account on an IDX site is precisely how that
+site's agent gets a "you have a new lead" email, and not emailing realtors is a
+hard rule here. So it has to be turned on deliberately, ideally alongside
+`LISTING_VIDEO_QUAL_HOSTS`, for a site where somebody has decided that is
+acceptable.
+
+### What it will and will not do
+
+- Tried **once per capture**, and only when the page we were served was read as a
+  wall.
+- The sign-in form is preferred over the registration form on the same page. Two
+  password boxes, or a "confirm password", means it is a registration form.
+- A form mentioning card numbers, billing or payment is never touched.
+- One hop to a "already have an account? sign in" link, and no more.
+- Success is judged on the **page having stopped asking** — a sign-out link, an
+  account link, or the password box being gone. A form that submits and comes back
+  with the same password box on it has not signed anybody in.
+- A wall it could not get past is still a refusal, and says the key was tried and
+  did not turn, which is a different problem to there being no key at all.
+
+A video filmed behind a login **says so on the job**, because the page a
+signed-in visitor sees is not always the page the public sees, and whoever
+reviews it should know which one they have.
+
+---
+
 ## Editing scripts
 
 A script is a list of **beats**. Each beat has:
@@ -785,13 +1290,56 @@ A script is a list of **beats**. Each beat has:
 | --- | --- |
 | Words you say | The teleprompter line. `{firstName}` and `{company}` are filled in. |
 | Scene | `listing`, `listing-tap`, `se` or `ne`. These four are the only scenes. |
-| Suggested seconds | How long that picture is held. Editable per beat. |
+| Suggested seconds | How long that picture is held. Follows the words as you write them, and can be held at a number of your own — see below. |
 | Top caption | Two optional lines for the top bar. |
 | Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
 
 Plus a name, a notes field, whether the script is *School Explorer only* or
 *School Explorer, then Neighborhood Explorer*, and what their listing should
 already have on it.
+
+### The suggested seconds follow the words
+
+The duration used to be typed in by hand with nothing connecting it to the line
+beside it, so rewriting a beat left the old number sitting there. Now the box
+fills itself in as you type, and the running total at the bottom keeps up.
+
+```
+seconds = 1.5 + characters ÷ 16
+```
+
+**16 characters a second** is about 160 words a minute at the usual six
+characters per word including the space — an ordinary voiceover pace, and what
+the hosted voices actually read at. **1.5 seconds** is the part that is not
+reading speed: the breath before the first word, the beat after the last one, and
+the moment a viewer needs to take in a new picture. Under all of it is a floor of
+**2.5 seconds**, so a beat is never too short to see and writing the first word
+never makes it shorter than an empty one.
+
+Neither number was taken from a table. Both are fitted to the listing beats of
+the three shipped scripts, which were timed by hand against the approved
+reference video, and land within half a second of them. A 69-character line was
+timed at 5.7s and this suggests 5.8; a 162-character one was timed at 11 and 12
+across two scripts and this suggests 11.6.
+
+It reads a couple of seconds **long** against the shipped Explorer beats, and
+that is the formula being right rather than wrong. Those were written as floors
+and left deliberately short, because an Explorer beat is a still and the voice is
+what should decide how long it stays up.
+
+**Typing a number holds it.** That beat stops following and the hint under the
+box says so. **Emptying the box hands it back** and it starts following again.
+Opening a saved script only lets a beat follow if it is already sitting at exactly
+the suggested length — a duration somebody chose is left alone, so editing an old
+script never silently retimes it.
+
+Getting it close matters in both directions but is not fatal either way: too short
+and `src/audio.js` stretches the beat to fit the recorded line, too long and the
+voice finishes while the picture hangs.
+
+The arithmetic is in `public/js/beat-timing.js`, which the browser loads and Node
+requires, so there is one copy of it and the test is checking the one the editor
+runs.
 
 **The tab field** is how a script guarantees the Demographics tab is on screen
 while the voice is saying "Demographics". Name the tab and it is pinned; leave it
@@ -881,6 +1429,32 @@ Two women and two men, by name — **Jessica is the default**, because she is th
 voice that has been heard and approved. The choice only matters if the AI voice is
 used at all; recording over the silent video is still the normal way.
 
+Three of those four are **named choices, pinned by id**:
+
+| | Voice | Id |
+| --- | --- | --- |
+| Female, default | Jessica | `cgSgspJ2msm6clMCkdW9` |
+| Male | Dan | `PGqDc9SLzJTxDTy8SjYb` |
+| Male | Adam | `wBXNqKUATyqu0RtYt25i` |
+
+The men used to be whichever two the account listed first, and it lists them
+alphabetically — so the picker offered **Adam and Bill**, which nobody had chosen
+and Bill did not like. These two were asked for by id, so being first is no longer
+what decides it. The fourth slot, the second woman, is still filled by whoever the
+account offers next.
+
+> **Worth knowing:** the second man is called Adam as well, and is *not* the Adam
+> that was there before. That one was `pNInz6obpgDQGcFmaJgB`; this is a different
+> recording of a different person. Worth checking the id before "fixing" the name
+> back.
+
+A pinned voice is offered **whether or not the account's list happens to carry
+it**. Dropping a voice somebody chose by name because a list came back a little
+different is the failure worth avoiding, and there is already a better check: a
+401 at render time says a plan cannot speak with a voice, and that drops it from
+the picker for good. The name still comes from the account wherever it has one, so
+a rename upstream reaches the radio button without a deploy.
+
 **The list is asked of the account, not written down here.** `GET /v1/voices` is
 called with the existing key (header only — it is never logged, never put in a URL,
 and never handed to the browser), the answer is filtered to the voices this plan
@@ -893,7 +1467,7 @@ would mean offering a voice that fails at render time — after the silent video
 already been made. If a voice ever answers 401, 402 or 403, it is dropped from the
 picker and another takes its place; the ones that work carry on.
 
-A short hardcoded list (Jessica, Sarah, George, Brian) is used only when the
+A short hardcoded list (the three pinned voices plus Sarah) is used only when the
 account cannot be asked at all, so the picker still offers something sensible.
 
 > **Worth knowing:** ElevenLabs' Default voices expire on **31 December 2026**, and
@@ -981,8 +1555,15 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `PIPER_BIN`, `PIPER_VOICE` | Point at a Piper install if `setup-voice.sh` put it somewhere unusual. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Mailbox. Leave unset and the tool says "mailbox not connected". |
 | `LISTING_VIDEO_CHROME` | Chrome path, if it is not found automatically. |
-| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. |
-| `LISTING_VIDEO_GEOCODER` | Address lookup. Defaults to OpenStreetMap's Nominatim, which needs no key. |
+| `LISTING_VIDEO_PERSONA` | Which desktop capture says it is on: `windows` (default), `macos` or `linux`. The user agent, the client hints and `navigator.platform` all follow it together. Anything else falls back to `windows`. See [One persona](#one-persona-and-everything-agreeing-with-it). |
+| `LISTING_VIDEO_EXPLORER_URL`, `LISTING_VIDEO_EXPLORER_PARTNER`, `LISTING_VIDEO_EXPLORER_WIDGET` | Which Neighborhood Explorer widget the tab beats are filmed from. Defaults to the one the marketing site's demo page loads. The address picker follows this URL, so pointing it at staging points the suggestions at staging too. |
+| `LISTING_VIDEO_PLACE_SUGGEST`, `LISTING_VIDEO_PLACE_RESOLVE` | The Explorer's `autocomplete/` and `geocode/` endpoints, if they ever move away from beside the widget URL. |
+| `LISTING_VIDEO_SCHOOL_EXPLORER_URL`, `LISTING_VIDEO_SCHOOL_EXPLORER_ACCENT` | Which School Explorer embed the school beats are filmed from, and its accent colour. Defaults to the embed the popup snippet loads on a realtor's page. |
+| `LISTING_VIDEO_GEOCODER` | Address lookup for when the Explorer's own geocoder cannot place an address. Defaults to OpenStreetMap's Nominatim, which needs no key. |
+| `LISTING_VIDEO_QUAL_EMAIL`, `LISTING_VIDEO_QUAL_PASSWORD` | The QUAL account, for realtor sites that put a listing behind a login. Off unless **both** are set, which is what keeps it off production. Nothing here helps with a 403. See [Signing in to a realtor site](#signing-in-to-a-realtor-site-the-qual-account). |
+| `LISTING_VIDEO_QUAL_NAME`, `LISTING_VIDEO_QUAL_PHONE` | Details for a registration form. The name defaults to `Motormouth QUAL`. |
+| `LISTING_VIDEO_QUAL_HOSTS` | Which sites the QUAL account may be used on. Empty means any; a comma-separated list is an allowlist. |
+| `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account, not just signing in. Off, because registering on an IDX site is what emails that site's agent a new lead. |
 
 ### Memory
 
@@ -1048,8 +1629,10 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | --- | --- |
 | `GET /tools/listing-video` | Bill and Myles, after the password |
 | `GET/POST/PUT/DELETE /tools/listing-video/api/templates...` | Signed in only |
-| `POST /tools/listing-video/api/jobs` | Signed in only |
-| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only |
+| `GET /tools/listing-video/api/places?q=` | Signed in only. The Neighborhood Explorer's own address suggestions, proxied so the tool stays one origin |
+| `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields |
+| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. Goes back to the live site, dropping any uploaded screenshot |
+| `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
@@ -1070,7 +1653,10 @@ server.js                    routes, sign-in gate, uploads, one-at-a-time queue
 src/templates.js             script templates on disk: load, save, validate, render
 src/default-templates.js     the three shipped scripts
 src/browser.js               Chrome, kept small, and killed for certain
+src/persona.js               the user agent, client hints and language, all agreeing
 src/capture.js               opens their site, accepts cookies, walks to a listing
+src/site-account.js          signs in with the QUAL account at an account wall
+src/listing-image.js         an uploaded screenshot, checked and fitted to the frame
 src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
@@ -1078,12 +1664,22 @@ src/audio.js                 recorded takes, the optional AI voice, 0.6s lead si
 src/render.js                phase one (silent picture) and phase two (attach audio)
 src/store.js                 jobs on disk, the library list, delete
 src/mail.js                  the two from-addresses, honest "not connected" state
-src/demo-data.js             the demo neighborhood shown inside the School Explorer card
+src/ne-tabs.js               the seven chips, their old names, and the order they are walked
 src/explorer.js              films the live Neighborhood Explorer, one tab at a time
+src/school-explorer.js       films the live School Explorer at the listing's address
+src/places.js                the Explorer's own address suggestions and geocoder
 src/geocode.js               the listing's address as coordinates, checked against its town
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
+public/js/place-picker.js    the address box: the Explorer's suggestions as you type
+public/js/beat-timing.js     how long a beat should be, from the words in it
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
+test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
+test/persona.test.js         the persona's rules, with no browser needed to check them
+test/beat-timing.test.js     the suggested seconds, against the hand-timed scripts
+test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
+test/places.test.js          the address is a place the Explorer named, not free text
+test/site-account.test.js    the QUAL account, and what it must not be used for
 ```

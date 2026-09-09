@@ -19,6 +19,35 @@
     return (D.state.session && D.state.session.explorerModes) || [];
   }
 
+  /* How long a beat should be, worked out from its words. See beat-timing.js. */
+  function timing() {
+    return window.DNBeatTiming;
+  }
+
+  /** A beat as the editor holds it, with the duration following the words. */
+  function newBeat(scene) {
+    return {
+      scene: scene,
+      seconds: timing().suggestSeconds(""),
+      text: "",
+      caption: { headline: "", subline: "" },
+      followsText: true,
+    };
+  }
+
+  /*
+   * A beat off a saved script.
+   *
+   * Whether its duration goes on following the words depends on what is already
+   * there: a beat sitting at exactly the suggested length was never held at
+   * anything, so it keeps up with edits, while one somebody timed by hand is
+   * left at the number they chose. Opening an old script must not silently
+   * retime it.
+   */
+  function loadedBeat(beat) {
+    return Object.assign({}, beat, { followsText: timing().isSuggested(beat.seconds, beat.text) });
+  }
+
   function listingExplorerModes() {
     return (D.state.session && D.state.session.listingExplorerModes) || [];
   }
@@ -153,10 +182,7 @@
   /* the editor                                                    */
   /* ------------------------------------------------------------ */
   el("newTemplateBtn").addEventListener("click", function () {
-    editing = {
-      id: null,
-      beats: [{ scene: "listing", seconds: 6, text: "", caption: { headline: "", subline: "" } }],
-    };
+    editing = { id: null, beats: [newBeat("listing")] };
     D.setText(el("editorTitle"), "New script");
     D.setText(el("editorSub"), "Saved on this box as soon as you press Save script.");
     el("tplName").value = "";
@@ -186,7 +212,7 @@
         return;
       }
       var template = result.body.template;
-      editing = { id: template.id, beats: template.beats.slice() };
+      editing = { id: template.id, beats: template.beats.map(loadedBeat) };
       D.setText(el("editorTitle"), "Edit " + template.name);
       D.setText(
         el("editorSub"),
@@ -285,7 +311,8 @@
       options +
       "</select></label>" +
       '<label class="beatrow__field"><span class="beatrow__lbl">Suggested seconds</span>' +
-      '<input class="input" type="number" min="0.5" max="120" step="0.1" data-role="seconds" /></label>' +
+      '<input class="input" type="number" min="0.5" max="120" step="0.1" data-role="seconds" />' +
+      '<span class="hint" data-role="secondsHint"></span></label>' +
       "</div>" +
       '<label class="beatrow__field" data-role="tabField"><span class="beatrow__lbl">Which Neighborhood Explorer tab is showing?</span>' +
       '<select class="input" data-role="tab">' +
@@ -305,11 +332,34 @@
     var subline = row.querySelector('[data-role="subline"]');
     var tab = row.querySelector('[data-role="tab"]');
     var tabField = row.querySelector('[data-role="tabField"]');
+    var secondsHint = row.querySelector('[data-role="secondsHint"]');
 
     text.value = beat.text || "";
     seconds.value = beat.seconds;
     headline.value = (beat.caption && beat.caption.headline) || "";
     subline.value = (beat.caption && beat.caption.subline) || "";
+
+    /*
+     * The duration follows the words until somebody says otherwise.
+     *
+     * followsText is remembered per beat and never saved: the payload below
+     * picks its fields by name, so this stays in the editor where it belongs.
+     */
+    var showTiming = function () {
+      D.setText(
+        secondsHint,
+        beat.followsText
+          ? "Following the words above. Type a number here to hold it."
+          : "Held at " + beat.seconds + "s. Clear the box to follow the words again."
+      );
+    };
+    var retime = function () {
+      if (!beat.followsText) return;
+      beat.seconds = timing().suggestSeconds(beat.text);
+      seconds.value = beat.seconds;
+      updateTotal();
+    };
+    showTiming();
 
     // The tab only means anything on a Neighborhood Explorer beat.
     var syncTabField = function () {
@@ -319,6 +369,8 @@
 
     text.addEventListener("input", function () {
       beat.text = text.value;
+      retime();
+      showTiming();
     });
     tab.addEventListener("change", function () {
       beat.tab = tab.value;
@@ -329,8 +381,18 @@
       syncTabField();
     });
     seconds.addEventListener("input", function () {
+      // An emptied box is the way back: nobody is holding a number any more, so
+      // the words take over again and the field fills itself in.
+      if (seconds.value.trim() === "") {
+        beat.followsText = true;
+        retime();
+        showTiming();
+        return;
+      }
+      beat.followsText = false;
       beat.seconds = Number(seconds.value);
       updateTotal();
+      showTiming();
     });
     headline.addEventListener("input", function () {
       beat.caption = beat.caption || {};
@@ -385,7 +447,7 @@
   }
 
   el("addBeatBtn").addEventListener("click", function () {
-    editing.beats.push({ scene: "listing", seconds: 4, text: "", caption: { headline: "", subline: "" } });
+    editing.beats.push(newBeat("listing"));
     paintBeats();
   });
 

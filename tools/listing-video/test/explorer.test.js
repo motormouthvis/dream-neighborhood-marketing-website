@@ -36,7 +36,7 @@ const {
 } = require("../src/explorer");
 const { launchExplorerBrowser, closeBrowser } = require("../src/browser");
 const { queriesFor } = require("../src/geocode");
-const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("../src/demo-data");
+const { NE_TABS, NE_TAB_ALIASES, canonicalTabName } = require("../src/ne-tabs");
 
 /* ---------------------------------------------------------------- */
 /* the bits that need nothing                                       */
@@ -355,7 +355,8 @@ test("the popup is filmed bigger than the frame it lands in, and at twice the pi
 
   // The picture area is exactly the size the shot is taken at, so it maps one to
   // one. The card itself is taller, because it also carries the popup's header.
-  const shot = (frame.match(/\.ne__shot\s*\{[^}]*\}/) || [""])[0];
+  // One rule for both Explorers: they are the same popup at the same size.
+  const shot = (frame.match(/\.ne__shot,\s*\.se__shot\s*\{[^}]*\}/) || [""])[0];
   const shotHeight = Number((shot.match(/height:\s*(\d+)px/) || [])[1]);
   assert.equal(width, TAB_VIEWPORT.width, "the card is the width the shot is taken at");
   assert.equal(shotHeight, TAB_VIEWPORT.height, "and the picture area is its height");

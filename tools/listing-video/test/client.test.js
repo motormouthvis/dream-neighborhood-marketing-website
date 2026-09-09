@@ -73,7 +73,39 @@ const state = () => ({
   progressShown: !document.getElementById("step-progress").hidden,
   why: document.getElementById("failedWhy").textContent.trim(),
   retryBoxShown: !document.getElementById("retryListing").hidden,
+  uploadShown: !document.getElementById("uploadEscape").hidden,
+  uploadOpen: document.getElementById("uploadEscape").open,
+  uploadSummary: document.getElementById("uploadEscapeSummary").textContent.trim(),
+  uploadWhy: document.getElementById("uploadEscapeWhy").textContent.trim(),
   polls: window.__jobPolls || 0,
+});
+
+/** Answer every job poll with one canned job, which is what a failure looks like. */
+function serveJob(job) {
+  return (canned) => {
+    const real = window.fetch;
+    window.fetch = function (url, init) {
+      if (typeof url === "string" && /\/api\/jobs\/[a-f0-9]+(\?|$)/.test(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify(canned), { status: 200, headers: { "Content-Type": "application/json" } })
+        );
+      }
+      return real(url, init);
+    };
+  };
+}
+
+/* A failed job, as the browser would be handed one. */
+const failedJob = (overrides) => ({
+  id: "bd7620f10ca57c5459",
+  status: "failed",
+  progress: ["Opening scottrodgersrealestate.com"],
+  template: { name: "School only (v11)" },
+  beats: [],
+  review: { reviewed: false },
+  input: {},
+  retryable: true,
+  ...overrides,
 });
 
 test("opening a video that no longer exists says so instead of spinning", options, async () => {
@@ -92,6 +124,280 @@ test("opening a video that no longer exists says so instead of spinning", option
     assert.match(shown.why, /paste a listing url/i);
     // There is nothing to retry on a job that is gone, so that box stays away.
     assert.equal(shown.retryBoxShown, false);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The dead end.
+ *
+ * Bill's panel said "blocked the capture on 4 pages (HTTP 403)" and offered him
+ * one thing: paste a listing URL. The URL he had is refused in the same way, so
+ * there was nowhere to go. On an HTTP refusal the upload is not an alternative,
+ * it is the answer, so it is open and explained rather than folded away.
+ */
+test("a 403 opens the upload and explains why another URL will not help", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(
+      serveJob(),
+      failedJob({
+        error:
+          "www.scottrodgersrealestate.com blocked the capture on 4 pages (HTTP 403), so none of them could be read.",
+        errorCode: "SITE_BLOCKED",
+        failure: { errorCode: "SITE_BLOCKED", httpStatus: 403, reason: "blocked", pageUrl: "" },
+      })
+    );
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.equal(shown.uploadShown, true, "the upload has to be offered");
+    assert.equal(shown.uploadOpen, true, "and opened, because it is the way through");
+    assert.match(shown.uploadSummary, /upload a screenshot/i);
+    // Say why the obvious thing will not work, rather than leaving him to find out.
+    assert.match(shown.uploadWhy, /refused in the same way|refusing an automated browser/i);
+    assert.match(shown.uploadWhy, /your own browser/i);
+
+    // The boxes he needs are both there: the picture, and the address as the
+    // Explorer's own picker rather than free text a geocoder might misplace.
+    const boxes = await tool.page.evaluate(() => ({
+      file: document.getElementById("retryListingImage").accept,
+      address: Boolean(document.getElementById("retryAddressSearch")),
+      suggestions: Boolean(document.getElementById("retryAddressSuggestions")),
+    }));
+    assert.match(boxes.file, /image\/png/);
+    assert.match(boxes.file, /image\/jpeg/);
+    assert.ok(boxes.address && boxes.suggestions);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The address on the upload path, in the browser.
+ *
+ * Bill typed a Peoria address into four free-text boxes and got a video about
+ * Smyrna, Georgia. It is one box now, with the Neighborhood Explorer's own
+ * suggestions under it, and picking one is what fills the address in - so what the
+ * form posts is a place the Explorer named rather than whatever was typed.
+ */
+test("the address box offers the Explorer's suggestions, and picking one is what fills it in", options, async () => {
+  const tool = await openTool();
+  try {
+    // Answer the suggestions ourselves, so this is about the form and not the
+    // Explorer being up.
+    const asked = await tool.page.evaluate(() => {
+      window.__placeQueries = [];
+      const real = window.fetch;
+      window.fetch = function (url, init) {
+        if (typeof url === "string" && url.includes("/api/places?q=")) {
+          window.__placeQueries.push(decodeURIComponent(url.split("q=")[1]));
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                reachable: true,
+                asked: true,
+                suggestions: [
+                  { description: "6031 N Rosemead Dr, Peoria, IL 61614", street: "6031 N Rosemead Dr", city: "Peoria", state: "IL", zip: "61614" },
+                  { description: "6031 N Rosemary Ct, Peoria, IL 61614", street: "6031 N Rosemary Ct", city: "Peoria", state: "IL", zip: "61614" },
+                ],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+        return real(url, init);
+      };
+      return true;
+    });
+    assert.equal(asked, true);
+
+    // The address box only exists on the upload path, so choose it first.
+    await tool.page.evaluate(() => {
+      document.querySelector('input[name="pictureSource"][value="upload"]').click();
+    });
+    await tool.page.waitForFunction(() => !document.getElementById("uploadField").hidden, { timeout: 5000 });
+
+    await tool.page.focus("#addressSearch");
+    await tool.page.type("#addressSearch", "6031 N Rosem", { delay: 12 });
+    await tool.page.waitForFunction(
+      () => document.querySelectorAll("#addressSuggestions .suggest__item").length > 0,
+      { timeout: 5000 }
+    );
+
+    const offered = await tool.page.evaluate(() =>
+      Array.from(document.querySelectorAll("#addressSuggestions .suggest__item")).map((row) =>
+        row.innerText.replace(/\s+/g, " ").trim()
+      )
+    );
+    assert.equal(offered.length, 2, JSON.stringify(offered));
+    assert.match(offered[0], /6031 N Rosemead Dr/);
+    assert.match(offered[0], /Peoria, IL 61614/);
+
+    // Picking one puts the Explorer's own description in the box and closes the list.
+    await tool.page.click("#addressSuggestions .suggest__item");
+    const picked = await tool.page.evaluate(() => ({
+      value: document.getElementById("addressSearch").value,
+      listShown: !document.getElementById("addressSuggestions").hidden,
+      // What the form would post, which is the point of all of this.
+      queries: window.__placeQueries,
+    }));
+
+    assert.equal(picked.value, "6031 N Rosemead Dr, Peoria, IL 61614");
+    assert.equal(picked.listShown, false);
+    assert.ok(picked.queries.length >= 1, "the Explorer should have been asked");
+    assert.equal(picked.queries[picked.queries.length - 1], "6031 N Rosem");
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The suggested seconds on a beat, in the editor somebody actually types into.
+ *
+ * test/beat-timing.test.js covers the arithmetic; this is the wiring - that the
+ * number follows the words, that typing over it stops that, and that emptying
+ * the box hands it back.
+ */
+async function openTheScriptEditor(page) {
+  await page.evaluate(() => document.querySelector('.tab[data-view="scripts"]').click());
+  await page.waitForFunction(() => !document.getElementById("view-scripts").hidden, { timeout: 5000 });
+  await page.evaluate(() => document.getElementById("newTemplateBtn").click());
+  await page.waitForFunction(() => document.querySelector('[data-role="seconds"]'), { timeout: 5000 });
+}
+
+const firstBeat = () => ({
+  seconds: document.querySelector('[data-role="seconds"]').value,
+  hint: document.querySelector('[data-role="secondsHint"]').textContent.trim(),
+  total: document.getElementById("beatTotal").textContent.trim(),
+});
+
+test("the suggested seconds follow the words as a beat is written", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    const empty = await tool.page.evaluate(firstBeat);
+    assert.equal(empty.seconds, "2.5", "a beat with nothing in it still holds its picture");
+    assert.match(empty.hint, /following the words/i);
+
+    // 64 characters: 1.5s of lead-in plus 4s of reading at 16 a second.
+    const line = "Here is the listing, exactly as a buyer sees it on the site.....";
+    assert.equal(line.length, 64);
+    await tool.page.focus('[data-role="text"]');
+    await tool.page.type('[data-role="text"]', line, { delay: 1 });
+
+    const written = await tool.page.evaluate(firstBeat);
+    assert.equal(written.seconds, "5.5", "the box should have kept up with the words");
+    assert.match(written.total, /5\.5s/, "and the running total with it");
+
+    // Deleting words takes it back down; the number is not a high-water mark.
+    await tool.page.evaluate(() => {
+      const box = document.querySelector('[data-role="text"]');
+      box.value = "Short line.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "2.5");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a duration typed by hand is left alone, and clearing it starts it following again", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    await tool.page.evaluate(() => {
+      const seconds = document.querySelector('[data-role="seconds"]');
+      seconds.value = "9";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const held = await tool.page.evaluate(firstBeat);
+    assert.equal(held.seconds, "9");
+    assert.match(held.hint, /held at 9s/i, held.hint);
+
+    // The words change underneath it and the number stays where it was put.
+    await tool.page.focus('[data-role="text"]');
+    await tool.page.type('[data-role="text"]', "A line of words that would suggest something else entirely.", { delay: 1 });
+    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "9", "somebody chose 9, so it stays 9");
+
+    // Emptying the box is the way back.
+    await tool.page.evaluate(() => {
+      const seconds = document.querySelector('[data-role="seconds"]');
+      seconds.value = "";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const following = await tool.page.evaluate(firstBeat);
+    assert.equal(following.seconds, "5.2", "59 characters: 1.5 + 59/16");
+    assert.match(following.hint, /following the words/i);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("another kind of failure offers the upload too, but closed", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(
+      serveJob(),
+      failedJob({
+        error: "No single listing page could be found on redwagonteam.com.",
+        errorCode: "NO_LISTING_FOUND",
+        failure: { errorCode: "NO_LISTING_FOUND", httpStatus: null, reason: "no listing", pageUrl: "" },
+      })
+    );
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.equal(shown.retryBoxShown, true, "pasting a URL is still the first thing to try here");
+    assert.equal(shown.uploadShown, true);
+    assert.equal(shown.uploadOpen, false, "it is a way out, not the recommendation");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a job that is gone offers neither, because there is nothing to upload against", options, async () => {
+  const tool = await openTool();
+  try {
+    await tool.page.evaluate(() => window.DNLV.maker.openJob("bd7620f10ca57c5459"));
+    await tool.page.waitForFunction(() => !document.getElementById("step-failed").hidden, { timeout: 10000 });
+
+    const shown = await tool.page.evaluate(state);
+    assert.match(shown.why, /server restarted/i);
+    assert.equal(shown.retryBoxShown, false);
+    assert.equal(shown.uploadShown, false);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The upload is an alternative to the live site, not an extra. Two answers to
+ * one question would mean the upload winning silently while the pasted URL
+ * looked ignored.
+ */
+test("picking the upload on the form puts the listing URL box away", options, async () => {
+  const tool = await openTool();
+  try {
+    const pick = (value) =>
+      tool.page.evaluate((wanted) => {
+        const input = document.querySelector('input[name="pictureSource"][value="' + wanted + '"]');
+        input.checked = true;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return {
+          uploadShown: !document.getElementById("uploadField").hidden,
+          urlShown: !document.getElementById("listingUrlField").hidden,
+        };
+      }, value);
+
+    assert.deepEqual(await pick("site"), { uploadShown: false, urlShown: true });
+    assert.deepEqual(await pick("upload"), { uploadShown: true, urlShown: false });
+    assert.deepEqual(await pick("site"), { uploadShown: false, urlShown: true });
   } finally {
     await tool.close();
   }

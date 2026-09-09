@@ -104,6 +104,47 @@
       "We open it and look for one of their listing pages that already has School Explorer on it, because this script is the upgrade pitch. If none of them do, we use their best listing and show School Explorer added to it for the opening shot.",
   };
 
+  /*
+   * The upload is an alternative to the live site, not an extra.
+   *
+   * So the listing URL field goes away while it is chosen: pasting a URL AND
+   * uploading a picture would mean two answers to one question, and the server
+   * would use the upload, making the URL look ignored.
+   */
+  function onPictureSourcePicked() {
+    var uploading = D.selectedValue("pictureSource") === "upload";
+    D.show(el("uploadField"), uploading);
+    D.show(el("listingUrlField"), !uploading);
+    D.setText(
+      el("makeBtn"),
+      uploading ? "Make the silent video from that screenshot" : "Make the silent video"
+    );
+    paintCleanShotAsk();
+  }
+
+  /** Is the chosen script a "before" shot - a listing with no Explorer on it yet? */
+  function beforeShotPicked() {
+    var picked = D.selectedValue("templateId");
+    var template = D.state.templates.filter(function (entry) {
+      return entry.id === picked;
+    })[0];
+    return Boolean(template) && (template.listingExplorer || "absent") === "absent";
+  }
+
+  /*
+   * The clean-listing question, asked only where it means something.
+   *
+   * It is the only check there is on this path: the live capture looks at the
+   * page and refuses a listing that already has one of our Explorers, and there
+   * is no page behind a screenshot. Shown for a before-shot script with an
+   * upload, and nowhere else.
+   */
+  function paintCleanShotAsk() {
+    var needed = D.selectedValue("pictureSource") === "upload" && beforeShotPicked();
+    D.show(el("cleanShotField"), needed);
+    if (!needed) el("listingHasNoExplorer").checked = false;
+  }
+
   function onTemplatePicked() {
     var picked = D.selectedValue("templateId");
     el("makeBtn").disabled = !picked;
@@ -117,6 +158,7 @@
     })[0];
     var key = template ? template.listingExplorer || "absent" : "none";
     D.setText(el("websiteHint"), WEBSITE_HINTS[key] || WEBSITE_HINTS.none);
+    paintCleanShotAsk();
   }
 
   function paintFromChoices() {
@@ -241,6 +283,102 @@
     });
   }
 
+  /*
+   * A multipart POST, for the routes that can carry a screenshot.
+   *
+   * The content type is deliberately not set: the browser has to add its own
+   * multipart boundary, and setting it by hand is what makes multer answer
+   * "Unexpected end of form".
+   */
+  function postForm(url, fields, file, fileField) {
+    var form = new FormData();
+    Object.keys(fields).forEach(function (key) {
+      if (fields[key] !== undefined && fields[key] !== null) form.append(key, fields[key]);
+    });
+    if (file) form.append(fileField, file, file.name);
+    return D.json(url, { method: "POST", body: form });
+  }
+
+  /*
+   * The two address boxes, each driven by the Explorer's own picker: the one on
+   * the form and the one on the failure panel's way out. Picking a suggestion is
+   * what fills the address in - see public/js/place-picker.js.
+   */
+  var addressPicker = D.placePicker.attach({
+    input: "addressSearch",
+    list: "addressSuggestions",
+    note: "addressNote",
+    onPick: function () {
+      memory.save();
+    },
+  });
+  var retryAddressPicker = D.placePicker.attach({
+    input: "retryAddressSearch",
+    list: "retryAddressSuggestions",
+    note: "retryAddressNote",
+  });
+
+  /*
+   * What this form remembers between takes.
+   *
+   * The same site is usually done several times over - another script, another
+   * voice, a screenshot instead of the live capture - and all of this used to be
+   * typed in again from nothing every time. See public/js/remember.js for what
+   * is deliberately not kept.
+   */
+  var memory = D.remember.attach({
+    texts: ["firstName", "company", "websiteUrl", "listingUrl", "customerEmail"],
+    choices: ["templateId", "pictureSource", "fromId", "voiceId"],
+    extras: {
+      // Not just letters: what this box holds is the place the Explorer named.
+      address: {
+        input: "addressSearch",
+        get: function () {
+          return addressPicker.state();
+        },
+        set: function (saved) {
+          return addressPicker.restore(saved);
+        },
+      },
+    },
+  });
+
+  /*
+   * Put last time's answers back, once the choices they refer to are on screen.
+   *
+   * The scripts, the from-addresses and the voices are all painted from the
+   * server after the page loads, so a saved script id has nothing to select
+   * until they are there.
+   */
+  function paintRememberedAnswers() {
+    var saved = memory.restore();
+    onTemplatePicked();
+    onPictureSourcePicked();
+    // Only say so when something really was put back, or the note is just noise
+    // on a form nobody has used yet.
+    D.show(el("rememberedNote"), Boolean(saved && saved.at));
+  }
+
+  /*
+   * A way out of the memory.
+   *
+   * Whatever is remembered is right until it is not - a company name kept from
+   * the customer before, a listing URL that belongs to another site - and
+   * hunting through five boxes to empty them is worse than the typing this saves.
+   */
+  el("forgetFormBtn").addEventListener("click", function () {
+    memory.forget();
+    el("form").reset();
+    addressPicker.reset();
+    paintTemplateChoices();
+    paintFromChoices();
+    paintVoiceChoices();
+    onPictureSourcePicked();
+    D.show(el("rememberedNote"), false);
+    D.showMessage(el("form-error"), "");
+    el("firstName").focus();
+  });
+
   el("form").addEventListener("submit", function (event) {
     event.preventDefault();
     D.showMessage(el("form-error"), "");
@@ -262,18 +400,58 @@
       voiceId: D.selectedValue("voiceId") || "",
     };
 
+    var uploading = D.selectedValue("pictureSource") === "upload";
+    var file = uploading ? (el("listingImage").files || [])[0] : null;
+    if (uploading && !file) {
+      D.showMessage(el("form-error"), "Pick the screenshot to use, or switch back to their live site.");
+      return;
+    }
+    if (uploading && !addressPicker.typed()) {
+      D.showMessage(
+        el("form-error"),
+        "Start typing the listing's address and pick it from the list. Nothing is read off the picture, so without it there is nothing to point the Explorers at."
+      );
+      return;
+    }
+    if (uploading && beforeShotPicked() && !el("listingHasNoExplorer").checked) {
+      D.showMessage(
+        el("form-error"),
+        "This script is the \u201cbefore\u201d shot, so tick the box to confirm the listing you screenshotted has no Explorer on it yet. Nothing here can check a picture for one. If it already has School Explorer on it, pick the \u201cSE to NE upgrade\u201d script."
+      );
+      return;
+    }
+
+    // What was actually used, kept for the next take on this same site.
+    memory.save();
+
     el("makeBtn").disabled = true;
     D.setText(el("makeBtn"), "Starting...");
 
-    D.send("POST", API + "/jobs", payload).then(function (result) {
+    var started = uploading
+      ? postForm(
+          API + "/jobs",
+          Object.assign({}, payload, addressPicker.value(), {
+            listingHasNoExplorer: el("listingHasNoExplorer").checked ? "yes" : "",
+          }),
+          file,
+          "listingImage"
+        )
+      : D.send("POST", API + "/jobs", payload);
+
+    started.then(function (result) {
       el("makeBtn").disabled = false;
-      D.setText(el("makeBtn"), "Make the silent video");
+      onPictureSourcePicked();
       if (!result.ok) {
         D.showMessage(el("form-error"), D.errorFrom(result, "That did not start."));
         return;
       }
       mine.jobId = result.body.id;
-      D.setText(el("progressTitle"), "Finding one of their listing pages and drawing the scenes");
+      D.setText(
+        el("progressTitle"),
+        uploading
+          ? "Drawing the scenes from your screenshot"
+          : "Finding one of their listing pages and drawing the scenes"
+      );
       step("progress", "silent");
       startPolling();
     });
@@ -330,12 +508,61 @@
     mine.poll = null;
   }
 
+  /*
+   * The failure panel.
+   *
+   * Every capture refusal offers the upload, because it is the one way through
+   * that does not depend on their site cooperating. A refusal by HTTP status gets
+   * it opened and explained rather than folded away: at that point "paste one
+   * listing URL and try again" is the one thing already known not to work, which
+   * is exactly the dead end Bill hit.
+   */
+  function paintFailure(message, options) {
+    var settings = options || {};
+    var retryable = Boolean(settings.retryable);
+    var refused = Boolean(settings.refused);
+
+    D.setText(el("failedWhy"), message);
+    D.show(el("retryListing"), retryable);
+    D.showMessage(el("uploadError"), "");
+    // The job carries the script it was started with, so the clean-listing
+    // question follows the job rather than whatever the form says now.
+    D.show(el("retryCleanShotField"), Boolean(settings.beforeShot));
+
+    // Nothing to upload against on a job that is no longer on the server.
+    D.show(el("uploadEscape"), retryable);
+    el("uploadEscape").open = refused;
+    D.setText(
+      el("uploadEscapeSummary"),
+      refused
+        ? "Upload a screenshot of the listing instead \u2014 start here"
+        : "Upload a screenshot of the listing instead"
+    );
+    D.setText(
+      el("uploadEscapeWhy"),
+      refused
+        ? "Their site is refusing an automated browser, so another URL from the same site will be refused in the same way. Open the listing in your own browser, where it loads perfectly, screenshot the page, and upload it here with the address. Their site is never opened again, so there is nothing left for it to refuse."
+        : "If their site will not give up a listing, screenshot one from your own browser and use that instead. Their site is not opened at all on this route."
+    );
+    step("failed");
+  }
+
+  /** A refusal that came from their site saying no, rather than from anything else. */
+  function wasRefused(job) {
+    var status = (job && job.failure && job.failure.httpStatus) || 0;
+    return (
+      (job && job.errorCode === "SITE_BLOCKED") ||
+      status === 401 ||
+      status === 403 ||
+      status === 429 ||
+      status === 451
+    );
+  }
+
   /** Stop waiting and say why. Never leaves the page spinning. */
   function giveUp(message, retryable) {
     stopPolling();
-    D.setText(el("failedWhy"), message);
-    D.show(el("retryListing"), Boolean(retryable));
-    step("failed");
+    paintFailure(message, { retryable: Boolean(retryable) });
   }
 
   function tickElapsed() {
@@ -368,9 +595,11 @@
     }
     if (job.status === "failed") {
       stopPolling();
-      D.setText(el("failedWhy"), job.error || "Something went wrong.");
-      D.show(el("retryListing"), Boolean(job.retryable));
-      step("failed");
+      paintFailure(job.error || "Something went wrong.", {
+        retryable: Boolean(job.retryable),
+        refused: wasRefused(job),
+        beforeShot: ((job.template && job.template.listingExplorer) || "absent") === "absent",
+      });
       return;
     }
     if (job.status === "silent-ready") {
@@ -392,7 +621,14 @@
 
     var bits = [job.template.name, mine.beats.length + " scenes"];
     if (job.silent) bits.push(D.runtime(job.silent.durationSeconds) + " of silent picture");
-    if (job.silent && job.silent.capturedAddress) bits.push("filmed on their listing for " + job.silent.capturedAddress);
+    if (job.silent && job.silent.capturedAddress) {
+      // Say which it was. A screenshot somebody took is not a capture of their
+      // site, and the person reviewing this should not have to guess.
+      bits.push(
+        (job.silent.uploadedPicture ? "on the screenshot you uploaded for " : "filmed on their listing for ") +
+          job.silent.capturedAddress
+      );
+    }
     if (job.silent && job.silent.capturedPageUrl) bits.push(job.silent.capturedPageUrl);
     D.setText(el("silentSummary"), bits.join(" \u00b7 ") + ".");
 
@@ -1031,6 +1267,61 @@
     });
   });
 
+  /*
+   * The upload, from the failure panel. Same job, same script, same customer -
+   * only the listing picture comes from somewhere else.
+   */
+  el("uploadListingBtn").addEventListener("click", function () {
+    D.showMessage(el("uploadError"), "");
+
+    var file = (el("retryListingImage").files || [])[0];
+    if (!file) {
+      D.showMessage(el("uploadError"), "Pick a PNG or JPG screenshot of the listing page.");
+      return;
+    }
+    if (!retryAddressPicker.typed()) {
+      D.showMessage(
+        el("uploadError"),
+        "Start typing the listing's address and pick it from the list. Nothing is read off the picture, so without it there is nothing to point the Explorers at."
+      );
+      return;
+    }
+    if (!el("retryCleanShotField").hidden && !el("retryListingHasNoExplorer").checked) {
+      D.showMessage(
+        el("uploadError"),
+        "This script is the \u201cbefore\u201d shot, so tick the box to confirm the listing you screenshotted has no Explorer on it yet. Nothing here can check a picture for one."
+      );
+      return;
+    }
+
+    var button = el("uploadListingBtn");
+    var done = function (message) {
+      button.disabled = false;
+      D.setText(button, "Use this screenshot");
+      if (message) D.showMessage(el("uploadError"), message);
+    };
+
+    button.disabled = true;
+    D.setText(button, "Uploading...");
+
+    postForm(
+      API + "/jobs/" + mine.jobId + "/listing-image",
+      Object.assign({}, retryAddressPicker.value(), {
+        listingHasNoExplorer: el("retryListingHasNoExplorer").checked ? "yes" : "",
+      }),
+      file,
+      "listingImage"
+    ).then(function (result) {
+      done(result.ok ? "" : D.errorFrom(result, "That screenshot was not accepted."));
+      if (!result.ok) return;
+      D.setText(el("progressTitle"), "Drawing the scenes from your screenshot");
+      step("progress", "silent");
+      startPolling();
+    }, function () {
+      done("The server did not answer. Try again.");
+    });
+  });
+
   function backToForm() {
     stopPolling();
     resetTake();
@@ -1040,14 +1331,31 @@
 
   el("retryBtn").addEventListener("click", backToForm);
 
+  /*
+   * Another video, which is nearly always another take on the same site.
+   *
+   * The form is reset and then filled back in from what was last used, because
+   * this button is pressed to change one answer - the script, the voice, the
+   * listing URL - and not to start again from an empty page. The remembered
+   * fields select all of their text on the first click, so changing one is a
+   * matter of typing over it.
+   */
   el("againBtn").addEventListener("click", function () {
     el("form").reset();
+    // form.reset() does not know about the picked place behind the address box.
+    addressPicker.reset();
     resetTake();
     paintTemplateChoices();
     paintFromChoices();
     paintVoiceChoices();
     paintVoiceUsage();
+    onPictureSourcePicked();
+    paintRememberedAnswers();
     backToForm();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="pictureSource"]'), function (input) {
+    input.addEventListener("change", onPictureSourcePicked);
   });
 
   /* Opening a video from the library drops straight into its own step. */
@@ -1076,9 +1384,16 @@
       paintFromChoices();
       paintVoiceChoices();
       paintVoiceUsage();
+      onPictureSourcePicked();
+      paintRememberedAnswers();
       step("form");
     }
   });
 
-  D.maker = { openJob: openJob, paintTemplateChoices: paintTemplateChoices, paintFromChoices: paintFromChoices };
+  D.maker = {
+    openJob: openJob,
+    paintTemplateChoices: paintTemplateChoices,
+    paintFromChoices: paintFromChoices,
+    memory: memory,
+  };
 })();

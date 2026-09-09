@@ -363,6 +363,128 @@ const FORBIDDEN_SITE = {
   "/listings/123-main-st": { status: 403, body: "<h1>Forbidden</h1>" },
 };
 
+/*
+ * A listing that looks clean while it is being looked over and has our own
+ * Explorer on it by the time it is photographed.
+ *
+ * This is the shape of the bug Bill hit: the crawl and the shot are two
+ * different loads of the same page, and the crawl is the cheap one. Images,
+ * fonts and every analytics host are blocked while capture is looking around,
+ * and nothing is blocked for the photograph - so a snippet that needs any of
+ * that to run is absent from the check and present in the picture. On his job
+ * it was a tag manager, which is on the blocked list.
+ *
+ * A tag manager cannot be used here without going out to the real internet, so
+ * the fixture hangs the Explorer off a photo loading instead. Same gap, same
+ * two loads, no network: during the crawl the photos are aborted and the page
+ * is clean, and for the shot they load and the Explorer arrives with them.
+ */
+const POPUP_BUTTON_CSS =
+  "position:fixed;right:24px;bottom:24px;z-index:9800;background:#1f7a4d;color:#fff;padding:14px 18px;border-radius:30px";
+
+/*
+ * The stand-in tag manager, served as its own file.
+ *
+ * It matters that this is not inline. A tag manager's payload is not in the
+ * page's HTML - that is the whole point of one - so a listing carrying our
+ * snippet this way has no trace of us in its source at all until the tag
+ * manager has run. A fixture with the snippet written into the page would be
+ * spotted by reading the source and would test nothing.
+ */
+/*
+ * Both stand-ins hang off the same "has the first photo really arrived?".
+ *
+ * A `load` listener on its own is a race the fixture loses under load: if the
+ * photo finished before this file did, `load` has already been and gone and the
+ * Explorer never arrives at all - so the shot comes out clean and the test reads
+ * as the check having failed when nothing was ever there to find.
+ *
+ * "Really arrived" is the load event OR an image that is already complete *with
+ * pixels in it*. The pixels matter: the crawl aborts the photo requests, and an
+ * aborted image is `complete` too, with a naturalWidth of zero. Without that
+ * part the Explorer would turn up on the crawl load as well, and the gap between
+ * the two loads - which is the whole point of this fixture - would close.
+ */
+const WHEN_THE_PHOTO_ARRIVES = `
+  var photo = document.querySelectorAll('img.photo')[0];
+  if (photo.complete && photo.naturalWidth > 0) arrived();
+  else photo.addEventListener('load', arrived);
+`;
+
+const TAG_MANAGER_JS = `
+  function arrived() {
+    if (document.getElementById('dn-popup-button')) return;
+    var tag = document.createElement('script');
+    tag.src = 'https://app.dreamneighborhood.com/explorer/sdk.js';
+    tag.async = true;
+    document.head.appendChild(tag);
+    var button = document.createElement('div');
+    button.id = 'dn-popup-button';
+    button.textContent = 'School Explorer';
+    button.style.cssText = '${POPUP_BUTTON_CSS}';
+    document.body.appendChild(button);
+  }
+  ${WHEN_THE_PHOTO_ARRIVES}
+`;
+
+/** The same thing, but the widget renders itself into a shadow root. */
+const TAG_MANAGER_SHADOW_JS = `
+  function arrived() {
+    if (document.getElementById('dn-host')) return;
+    var host = document.createElement('div');
+    host.id = 'dn-host';
+    document.body.appendChild(host);
+    host.attachShadow({ mode: 'open' }).innerHTML =
+      '<div id="dn-popup-button" style="${POPUP_BUTTON_CSS}">School Explorer</div>';
+  }
+  ${WHEN_THE_PHOTO_ARRIVES}
+`;
+
+const EXPLORER_ARRIVES_WITH_THE_PHOTOS = MAIN_ST.replace(
+  "</body>",
+  '<script src="/tag-manager.js"></script></body>'
+);
+
+/*
+ * That listing, on a site whose index offers only it.
+ *
+ * One listing on purpose. The gap being tested is between the two loads of the
+ * page that gets filmed - lean for the crawl, then everything for the shutter -
+ * so the crawl has to walk to this listing rather than be handed it: a pasted
+ * single-listing URL is loaded with its photos straight away and there is no
+ * second load to differ from.
+ */
+const ONE_LISTING_INDEX = page(
+  "Our Listings - Fathom Realty",
+  `<div class="wrap"><h1>Our Listings</h1>
+     <div class="card"><a href="/listings/123-main-st"><span class="thumb"></span>123 Main St</a>
+       <p>$925,000 &middot; 4 beds &middot; 3 baths &middot; 2,410 sq ft</p></div>
+   </div>`
+);
+
+/** Everything in ROUTES except 88 Ocean View Dr, which carries its own embed. */
+function onlyMainStreet(listing, tagManagerJs) {
+  const routes = {
+    ...ROUTES,
+    "/listings": ONE_LISTING_INDEX,
+    "/listings/123-main-st": listing,
+    "/tag-manager.js": { body: tagManagerJs, contentType: "application/javascript" },
+  };
+  delete routes["/listings/88-ocean-view"];
+  return routes;
+}
+
+const EXPLORER_APPEARS_LATE = onlyMainStreet(EXPLORER_ARRIVES_WITH_THE_PHOTOS, TAG_MANAGER_JS);
+
+/**
+ * The same page again, but the Explorer renders itself into a shadow root.
+ *
+ * A floating widget built this way is invisible to a plain querySelectorAll and
+ * to body.innerText, so this is the version that slips past a check which only
+ * reads the light DOM. Nothing of ours is in the source here either.
+ */
+const EXPLORER_IN_SHADOW_SITE = onlyMainStreet(EXPLORER_ARRIVES_WITH_THE_PHOTOS, TAG_MANAGER_SHADOW_JS);
+
 /**
  * A listing whose cookie banner cannot be dismissed at all: Accept does
  * nothing, and an observer puts the banner back if anything tries to hide it.
@@ -704,12 +826,177 @@ const IDX_DIRECTION_SITE = {
   [MILES_ST_PATH]: MILES_ST,
 };
 
-function createServer(routes = ROUTES, hits = {}) {
+/*
+ * Bill's actual listing, on a site that writes one house the way Scott Rodgers
+ * Real Estate does.
+ *
+ * The path is the shape that broke: "property-search" matches the search
+ * pattern, and "/detail/362/PA1269955/<slug>" matched no single-listing pattern,
+ * so the URL he pasted was read as the site's search page - and being taken for
+ * a search page is what sent capture crawling instead of opening his house.
+ */
+const ROSEMEAD_PATH = "/property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614";
+
+const ROSEMEAD = listing({
+  address: "6031 N Rosemead Dr",
+  city: "Peoria, IL 61614",
+  price: "260,000",
+  beds: 4,
+  baths: 2,
+  sqft: "2,114",
+  mls: "PA1269955",
+});
+
+/** That site, behaving itself. The detail URL opens the house. */
+const DETAIL_URL_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/property-search": SEARCH,
+  [ROSEMEAD_PATH]: ROSEMEAD,
+};
+
+/**
+ * And behaving the way it did for Bill: the house is there for a person, and
+ * everything answers an automated browser with 403.
+ */
+const DETAIL_URL_SITE_FORBIDDEN = {
+  "/": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/property-search": { status: 403, body: "<h1>Forbidden</h1>" },
+  [ROSEMEAD_PATH]: { status: 403, body: "<h1>Forbidden</h1>" },
+};
+
+/**
+ * A site whose homepage loads but whose listings are all refused.
+ *
+ * This is the shape of the crawl Bill's job actually did: page after page coming
+ * back 403. Capture should stop once the site has clearly made up its mind
+ * rather than collecting four of them.
+ */
+const BLOCKS_ITS_LISTINGS = {
+  ...ROUTES,
+  "/listings": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/123-main-st": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/88-ocean-view": { status: 403, body: "<h1>Forbidden</h1>" },
+  "/listings/456-pine-ave": { status: 403, body: "<h1>Forbidden</h1>" },
+};
+
+/* ---------------------------------------------------------------- */
+/* a site whose listings are behind a login it will actually accept  */
+/* ---------------------------------------------------------------- */
+
+/** The account this fixture site will let in. The QUAL test sets these. */
+const ACCOUNT = { email: "qual@motormouth.com", password: "fixture-password-not-a-real-one" };
+
+const SESSION_COOKIE = "fixture-session=in";
+
+const LOGIN_WALL_PAGE = page(
+  "Sign in to view this listing - Fathom Realty",
+  `<div class="wrap">
+     <h1>Sign in to view this listing</h1>
+     <p>You have viewed 3 of 3 free listings. Please sign in to continue viewing
+     property details, photos and pricing.</p>
+     <form method="post" action="/account/login">
+       <label for="email">Email</label>
+       <input id="email" name="email" type="email" placeholder="Email address" />
+       <label for="password">Password</label>
+       <input id="password" name="password" type="password" placeholder="Password" />
+       <button type="submit">Sign in</button>
+     </form>
+     <p>No account? <a href="/account/register">Register free</a></p>
+   </div>`
+);
+
+/** The listing, once signed in. The sign-out link is what confirms the session. */
+const MAIN_ST_SIGNED_IN = MAIN_ST.replace(
+  '<header class="site-header">',
+  '<header class="site-header"><a href="/account/logout">Sign out</a>'
+);
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+      // A fixture does not need to accept an unbounded body.
+      if (raw.length > 8000) req.destroy();
+    });
+    req.on("end", () => resolve(raw));
+  });
+}
+
+/**
+ * A site that hides its listings behind a login and opens up for the right
+ * credentials. Nothing here is a real account: the email and password are the
+ * fixture's own, and the test points the QUAL config at them.
+ */
+const LOGIN_WALL_SITE = {
+  "/": HOMEPAGE,
+  "/photo.svg": { body: PHOTO, contentType: "image/svg+xml" },
+  "/listings": LISTINGS_INDEX,
+  "/listings/123-main-st": (req, res, { signedIn }) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(signedIn ? MAIN_ST_SIGNED_IN : LOGIN_WALL_PAGE);
+  },
+  "/account/login": async (req, res) => {
+    if (req.method !== "POST") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(LOGIN_WALL_PAGE);
+      return;
+    }
+    const fields = new URLSearchParams(await readBody(req));
+    const ok = fields.get("email") === ACCOUNT.email && fields.get("password") === ACCOUNT.password;
+    if (!ok) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(LOGIN_WALL_PAGE.replace("<h1>", "<p>Those details are incorrect.</p><h1>"));
+      return;
+    }
+    res.writeHead(302, { location: "/listings/123-main-st", "set-cookie": `${SESSION_COOKIE}; Path=/` });
+    res.end();
+  },
+};
+
+/** The same site, but it will not accept the password either. */
+const LOGIN_WALL_REFUSES = {
+  ...LOGIN_WALL_SITE,
+  "/account/login": async (req, res) => {
+    if (req.method === "POST") await readBody(req);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(LOGIN_WALL_PAGE.replace("<h1>", "<p>Those details are incorrect.</p><h1>"));
+  },
+};
+
+function createServer(routes = ROUTES, hits = {}, requests = []) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
     hits[url.pathname] = (hits[url.pathname] || 0) + 1;
+    // Kept so a test can check what a realtor's site is actually sent, rather
+    // than what we believe we are sending it. The order matters as much as the
+    // values - a browser whose headers arrive in an order no Chrome produces has
+    // told the site something - so the names are kept in the order they came in
+    // as well as folded into an object.
+    requests.push({
+      path: url.pathname,
+      method: req.method,
+      headers: { ...req.headers },
+      headerOrder: req.rawHeaders.filter((_, index) => index % 2 === 0).map((name) => name.toLowerCase()),
+    });
 
     const route = routes[url.pathname];
+
+    /*
+     * A route can be a function when it needs to answer differently depending on
+     * the request - a login that sets a cookie, and a listing that is a wall
+     * until that cookie is there.
+     */
+    if (typeof route === "function") {
+      const signedIn = (req.headers.cookie || "").includes(SESSION_COOKIE);
+      Promise.resolve(route(req, res, { url, signedIn })).catch(() => {
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
+      });
+      return;
+    }
+
     const spec = route && typeof route === "object" ? route : { body: route };
     // A route can ask to be slow, so the capture budget can be exercised.
     const body = spec.body;
@@ -744,9 +1031,10 @@ function createServer(routes = ROUTES, hits = {}) {
 function listen(routes = ROUTES) {
   return new Promise((resolve) => {
     const hits = {};
-    const server = createServer(routes, hits);
+    const requests = [];
+    const server = createServer(routes, hits, requests);
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, hits, origin: `http://127.0.0.1:${server.address().port}` });
+      resolve({ server, hits, requests, origin: `http://127.0.0.1:${server.address().port}` });
     });
   });
 }
@@ -755,6 +1043,8 @@ module.exports = {
   ROUTES,
   NO_LISTINGS,
   UNCLOSEABLE_COOKIES,
+  EXPLORER_APPEARS_LATE,
+  EXPLORER_IN_SHADOW_SITE,
   LEAD_CAPTURE,
   WALLED_SITE,
   WALL_OVER_LISTING,
@@ -773,6 +1063,13 @@ module.exports = {
   SEARCH_WITH_NO_LISTINGS,
   IDX_LISTING_PATH,
   FORBIDDEN_SITE,
+  DETAIL_URL_SITE,
+  DETAIL_URL_SITE_FORBIDDEN,
+  ROSEMEAD_PATH,
+  BLOCKS_ITS_LISTINGS,
+  LOGIN_WALL_SITE,
+  LOGIN_WALL_REFUSES,
+  ACCOUNT,
   createServer,
   listen,
 };

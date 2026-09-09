@@ -39,10 +39,13 @@ const { run } = require("../src/exec");
 const realFetch = global.fetch;
 
 const JESSICA = "cgSgspJ2msm6clMCkdW9";
-const GEORGE = "JBFqnCBsd6RMkjVDRZzb";
+// The male voice the picker offers. It has to be one that is really on offer:
+// resolveVoiceId turns anything else into the default, and then "a different
+// voice" would quietly be the same voice. See src/voices.js.
+const DAN = "PGqDc9SLzJTxDTy8SjYb";
 const PREMADE = [
   { voice_id: JESSICA, name: "Jessica", category: "premade", labels: { gender: "female" } },
-  { voice_id: GEORGE, name: "George", category: "premade", labels: { gender: "male" } },
+  { voice_id: DAN, name: "Dan", category: "premade", labels: { gender: "male" } },
 ];
 
 /** A second of real audio, so ffmpeg can read what the stub "spoke". */
@@ -175,11 +178,11 @@ test("changing the voice speaks the whole script again", async () => {
   calls.spoke.length = 0;
   calls.voices.length = 0;
 
-  await buildFor("Vanessa", "DOMO Realty", GEORGE);
+  await buildFor("Vanessa", "DOMO Realty", DAN);
 
   assert.equal(calls.spoke.length, 5, "a different voice cannot reuse the first one's lines");
   assert.ok(
-    calls.voices.every((id) => id === GEORGE),
+    calls.voices.every((id) => id === DAN),
     `the whole track has to be one voice: ${JSON.stringify([...new Set(calls.voices)])}`
   );
 });

@@ -14,7 +14,7 @@ process.env.LISTING_VIDEO_DATA_DIR = dataDir;
 process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const templates = require("../src/templates");
-const { NE_TABS } = require("../src/demo-data");
+const { NE_TABS } = require("../src/ne-tabs");
 
 test("first run seeds all three shipped templates", async () => {
   const seeded = await templates.ensureSeeded();

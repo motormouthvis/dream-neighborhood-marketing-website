@@ -520,6 +520,25 @@ const SEARCH_URL_RE =
 const SINGLE_LISTING_PATH_RE =
   /\/(?:idx\/)?(?:details\/)?(?:listing|listings|property|properties|home|homes|mls|estate)\/[^/?#]+|\/pid_\d+/i;
 
+/*
+ * The other convention for one house: a "detail" segment under the section of
+ * the site that holds the properties.
+ *
+ * Scott Rodgers Real Estate writes it
+ * /property-search/detail/362/PA1269955/6031-n-rosemead-dr-peoria-il-61614, and
+ * kvCORE, Real Estate Webmasters and Placester sites all write some version of
+ * it. None of those shapes matched above, while "property-search" DOES match
+ * SEARCH_URL_RE - so a pasted detail URL was read as the site's search page.
+ *
+ * That is not a cosmetic misreading. Being taken for a search page is what made
+ * capture ignore the house Bill had named and go crawling the site for a listing
+ * of its own choosing, and it was those crawl hops that came back 403. The URL he
+ * pasted is the one page he wanted, and it is now treated as such: one hit, no
+ * crawl.
+ */
+const DETAIL_PATH_RE =
+  /\/(?:property-search|property|properties|listing|listings|home|homes|real-?estate|idx)\/(?:detail|details)\/[^/?#]+|\/(?:listing|property|home)-details?\/[^/?#]+/i;
+
 /** Somewhere on the site's own search, rather than on one property. */
 const IDX_SEARCH_PATH_RE = /\/idx\/(search|results|map|city|area|zipcode|county|subdivision|neighborhood|community|advanced)\b/i;
 
@@ -535,7 +554,7 @@ function looksLikeSingleListingUrl(url) {
   }
   if (IDX_SEARCH_PATH_RE.test(path)) return false;
   if (/\/(search|results|browse)\b/i.test(path)) return false;
-  return SINGLE_LISTING_PATH_RE.test(path);
+  return SINGLE_LISTING_PATH_RE.test(path) || DETAIL_PATH_RE.test(path);
 }
 
 function looksLikeIdxSearchUrl(url) {
@@ -838,4 +857,5 @@ module.exports = {
   looksLikeRegistrationWall,
   REGISTRATION_GATE_RE,
   SEARCH_URL_RE,
+  DETAIL_PATH_RE,
 };

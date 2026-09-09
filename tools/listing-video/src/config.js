@@ -27,6 +27,18 @@ const dataDir = process.env.LISTING_VIDEO_DATA_DIR
 const accessTokenFromEnv = (process.env.LISTING_VIDEO_TOKEN || "").trim();
 const accessToken = accessTokenFromEnv || crypto.randomBytes(6).toString("hex");
 
+/*
+ * The Neighborhood Explorer's widget, and the place picker that comes with it.
+ *
+ * The picker's two endpoints are siblings of the widget URL - autocomplete/ and
+ * geocode/ - so moving LISTING_VIDEO_EXPLORER_URL to staging moves the picker
+ * with it, and an address chosen here is one the Explorer itself can place.
+ */
+const explorerWidgetUrl = (
+  process.env.LISTING_VIDEO_EXPLORER_URL ||
+  "https://app.dreamneighborhood.com/a/dream-neighborhood-main-marketing-website/widget/"
+).replace(/\/*$/, "/");
+
 const config = {
   root: ROOT,
   dataDir,
@@ -48,6 +60,16 @@ const config = {
       "/usr/bin/chromium",
       "/usr/bin/chromium-browser",
     ]),
+
+  /*
+   * Which desktop capture says it is on: windows, macos or linux. See
+   * src/persona.js, which holds the user agent, the client hints and the
+   * language that go with each and keeps them agreeing with each other.
+   *
+   * Windows because it is the least remarkable thing to be. Anything unknown
+   * falls back to it rather than failing.
+   */
+  capturePersona: (process.env.LISTING_VIDEO_PERSONA || "").trim().toLowerCase(),
 
   ffmpegPath: process.env.FFMPEG_PATH || "ffmpeg",
   ffprobePath: process.env.FFPROBE_PATH || "ffprobe",
@@ -100,15 +122,63 @@ const config = {
    * defaults are the same widget the marketing site's own demo page loads.
    */
   explorer: {
-    widgetUrl:
-      process.env.LISTING_VIDEO_EXPLORER_URL ||
-      "https://app.dreamneighborhood.com/a/dream-neighborhood-main-marketing-website/widget/",
+    widgetUrl: explorerWidgetUrl,
     partnerId: process.env.LISTING_VIDEO_EXPLORER_PARTNER || "23784",
     widgetNumber: process.env.LISTING_VIDEO_EXPLORER_WIDGET || "1",
   },
 
-  // Address to coordinates. Keyless by default; see src/geocode.js.
+  /*
+   * The Explorer's own place picker - the same suggestions and the same
+   * resolution the Neighborhood Explorer's search box uses. See src/places.js.
+   */
+  places: {
+    suggestUrl: process.env.LISTING_VIDEO_PLACE_SUGGEST || `${explorerWidgetUrl}autocomplete/`,
+    resolveUrl: process.env.LISTING_VIDEO_PLACE_RESOLVE || `${explorerWidgetUrl}geocode/`,
+  },
+
+  /*
+   * The live School Explorer.
+   *
+   * Filmed the same way as the Neighborhood Explorer: opened at the listing's
+   * own address, and photographed. The default is the embed the popup snippet
+   * loads on a realtor's page.
+   */
+  schoolExplorer: {
+    embedUrl: process.env.LISTING_VIDEO_SCHOOL_EXPLORER_URL || "https://www.dreamneighborhoodschools.com/embed",
+    accentColor: process.env.LISTING_VIDEO_SCHOOL_EXPLORER_ACCENT || "#1f7a4d",
+  },
+
+  // Address to coordinates when the Explorer's own geocoder cannot place it.
+  // Keyless; see src/geocode.js.
   geocoderUrl: process.env.LISTING_VIDEO_GEOCODER || "https://nominatim.openstreetmap.org/search",
+
+  /*
+   * The QUAL account, for realtor sites that put a listing behind a login.
+   *
+   * Off unless an email and a password are both set, and they are only set on
+   * staging - which is what keeps this off production rather than a flag
+   * somebody could flip by accident. See src/site-account.js for what it does
+   * with them, and the README for what it cannot do.
+   *
+   * registerAllowed is deliberately its own switch and deliberately off. Signing
+   * in to an account that already exists is quiet; REGISTERING on an IDX site is
+   * how that site's agent gets a "you have a new lead" email, and not emailing
+   * realtors is a hard rule here. Turn it on per site, knowingly, or leave it
+   * alone.
+   */
+  qualAccount: {
+    email: (process.env.LISTING_VIDEO_QUAL_EMAIL || "").trim(),
+    password: process.env.LISTING_VIDEO_QUAL_PASSWORD || "",
+    name: (process.env.LISTING_VIDEO_QUAL_NAME || "Motormouth QUAL").trim(),
+    phone: (process.env.LISTING_VIDEO_QUAL_PHONE || "").trim(),
+    registerAllowed: bool(process.env.LISTING_VIDEO_QUAL_REGISTER, false),
+    // Empty means any site. A list means only these hostnames, which is the
+    // safer way to switch it on for one customer at a time.
+    hosts: (process.env.LISTING_VIDEO_QUAL_HOSTS || "")
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim().toLowerCase().replace(/^www\./, ""))
+      .filter(Boolean),
+  },
 };
 
 config.mailConfigured = Boolean(config.smtp.host);

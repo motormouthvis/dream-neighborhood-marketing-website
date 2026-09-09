@@ -26,7 +26,14 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 
 const config = require("../src/config");
 const { launch, closeBrowser } = require("../src/browser");
-const { captureListing, CAPTURE_BUDGET_MS, MAX_LISTING_VIEWS, JUNK_HOSTS, DISMISS_LABELS } = require("../src/capture");
+const {
+  captureListing,
+  preparePage,
+  CAPTURE_BUDGET_MS,
+  MAX_LISTING_VIEWS,
+  JUNK_HOSTS,
+  DISMISS_LABELS,
+} = require("../src/capture");
 const { run } = require("../src/exec");
 const fixture = require("./fixture-site");
 
@@ -35,7 +42,7 @@ const options = noChrome ? { skip: "no Chrome or Chromium on this machine" } : {
 
 /** Run one capture against a fixture site and hand back what it found. */
 async function capture(routes, { listingUrl = "", explorerRule = "absent", budgetMs } = {}) {
-  const { server, origin, hits } = await fixture.listen(routes);
+  const { server, origin, hits, requests } = await fixture.listen(routes);
   const outDir = await fsp.mkdtemp(path.join(dataDir, "shot-"));
   const messages = [];
   const startedAt = Date.now();
@@ -51,10 +58,10 @@ async function capture(routes, { listingUrl = "", explorerRule = "absent", budge
       explorerRule,
       ...(budgetMs ? { budgetMs } : {}),
     });
-    return { ...result, origin, hits, messages, error: null, elapsedMs: Date.now() - startedAt };
+    return { ...result, origin, hits, requests, messages, error: null, elapsedMs: Date.now() - startedAt };
   } catch (error) {
     // A refusal carries what it looked at, so a test can check it stopped early.
-    return { origin, hits, messages, error, checked: error.checked || [], elapsedMs: Date.now() - startedAt };
+    return { origin, hits, requests, messages, error, checked: error.checked || [], elapsedMs: Date.now() - startedAt };
   } finally {
     if (browser) await closeBrowser(browser);
     await new Promise((resolve) => server.close(resolve));
@@ -348,7 +355,10 @@ test("a 403 is the site blocking us, not a missing page", options, async () => {
   assert.equal(shot.error.code, "SITE_BLOCKED");
   assert.doesNotMatch(shot.error.message, /no page there|there is no page/i);
   assert.match(shot.error.message, /blocked/i);
-  assert.match(shot.error.message, /listing URL/i);
+  // Somewhere to go next: their own listing URL, and the upload for when that is
+  // refused too - which on a site like this it will be.
+  assert.match(shot.error.message, /paste that URL/i);
+  assert.match(shot.error.message, /upload a screenshot/i);
 });
 
 test("a pasted listing that 403s says so, and does not claim the page is missing", options, async () => {
@@ -356,6 +366,250 @@ test("a pasted listing that 403s says so, and does not claim the page is missing
   assert.ok(shot.error);
   assert.equal(shot.error.code, "SITE_BLOCKED");
   assert.doesNotMatch(shot.error.message, /no page there|there is no page/i);
+});
+
+/*
+ * Bill's job, and the half of it that was not the 403.
+ *
+ * He pasted /property-search/detail/362/PA1269955/6031-n-rosemead-dr-... and the
+ * message came back about four pages being blocked. Four pages, for a URL naming
+ * one house: "property-search" matched the search pattern and the detail shape
+ * matched no listing pattern, so his URL was read as the site's search page and
+ * capture went crawling for a listing of its own choosing. Those crawl hops are
+ * what got refused.
+ */
+test("a pasted /property-search/detail/ URL is filmed as the one house it names", options, async () => {
+  const shot = await capture(fixture.DETAIL_URL_SITE, { listingUrl: fixture.ROSEMEAD_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, fixture.ROSEMEAD_PATH);
+  assert.equal(shot.address.street, "6031 N Rosemead Dr");
+  assert.equal(shot.address.cityState, "Peoria, IL");
+  assert.equal(shot.address.zip, "61614");
+});
+
+test("a pasted detail URL goes straight there, with no crawl and one hit", options, async () => {
+  const shot = await capture(fixture.DETAIL_URL_SITE, { listingUrl: fixture.ROSEMEAD_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  // The whole point: his house, once. Not the homepage, and not their search.
+  assert.equal(shot.hits[fixture.ROSEMEAD_PATH], 1, "the listing is fetched once, not twice");
+  assert.equal(shot.hits["/"], undefined, "the homepage is never opened");
+  assert.equal(shot.hits["/property-search"], undefined, "and neither is their search");
+});
+
+test("when that detail URL 403s, the refusal offers the upload rather than another URL", options, async () => {
+  const shot = await capture(fixture.DETAIL_URL_SITE_FORBIDDEN, { listingUrl: fixture.ROSEMEAD_PATH });
+  assert.ok(shot.error, "a site that refuses us cannot be filmed");
+  assert.equal(shot.error.code, "SITE_BLOCKED");
+  assert.equal(shot.error.httpStatus, 403);
+  // The dead end Bill hit was being told to paste a listing URL, having just
+  // pasted one. The one thing that works has to be named.
+  assert.match(shot.error.message, /upload a screenshot/i);
+  // And asking a site that just said no is not worth a second hit.
+  assert.equal(shot.hits[fixture.ROSEMEAD_PATH], 1, "a refusal is not retried");
+});
+
+test("a site refusing every listing is dropped after two, not four", options, async () => {
+  const shot = await capture(fixture.BLOCKS_ITS_LISTINGS);
+  assert.ok(shot.error);
+  assert.equal(shot.error.code, "SITE_BLOCKED");
+  assert.match(shot.error.message, /upload a screenshot/i);
+
+  const refused = ["/listings", "/listings/123-main-st", "/listings/88-ocean-view", "/listings/456-pine-ave"];
+  const asked = refused.reduce((total, path) => total + (shot.hits[path] || 0), 0);
+  assert.ok(asked <= 2, `their site should be asked at most twice once it starts refusing, was asked ${asked}`);
+});
+
+/*
+ * What their site is actually sent.
+ *
+ * Everything below reads the request as it arrived at the fixture's socket,
+ * because the failure this guards against is never "we meant to send the wrong
+ * thing". The user agent said Chrome 131 on a Mac while Chrome's own Sec-CH-UA
+ * headers said HeadlessChrome, and later while the browser itself was Chrome
+ * 148 - each time the request disagreed with itself, and to bot protection the
+ * disagreement is worth more than any one header alone.
+ *
+ * It is not a claim that a site cannot tell. A site that fingerprints properly
+ * still can, which is why the uploaded screenshot exists.
+ */
+
+/** The listing request, as the realtor's server saw it. */
+async function headersSentToTheirSite() {
+  const shot = await capture(fixture.DETAIL_URL_SITE, { listingUrl: fixture.ROSEMEAD_PATH });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  const asked = shot.requests.find((entry) => entry.path === fixture.ROSEMEAD_PATH);
+  assert.ok(asked, "the listing was fetched");
+  return asked;
+}
+
+test("their site is not told in one header that we are a headless browser", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
+  assert.doesNotMatch(headers["user-agent"], /headless/i);
+  assert.match(headers["user-agent"], /Chrome\/\d+\.0\.0\.0 Safari\/537\.36$/);
+
+  // The client hints have to tell the same story as the user agent.
+  assert.ok(headers["sec-ch-ua"], "Chrome sends Sec-CH-UA and so must we");
+  assert.doesNotMatch(headers["sec-ch-ua"], /headless/i, `sec-ch-ua: ${headers["sec-ch-ua"]}`);
+  assert.match(headers["sec-ch-ua"], /"Google Chrome";v="\d+"/, `sec-ch-ua: ${headers["sec-ch-ua"]}`);
+
+  // A desktop browser, said in the header a site is actually allowed to trust.
+  assert.equal(headers["sec-ch-ua-mobile"], "?0");
+
+  // A browser with no language preference is unusual enough to be a signal.
+  assert.equal(headers["accept-language"], "en-US,en;q=0.9");
+});
+
+/*
+ * The version in the user agent has to be the version of the Chrome making the
+ * request. Claiming 131 from a Chrome 148 build is a disagreement a site can
+ * check for free - the TLS handshake, the HTTP/2 settings and half of what
+ * JavaScript can see are all the real build's - and a user agent a year behind
+ * stable is itself worth a second look.
+ */
+test("the version we claim is the version of the Chrome making the request", options, async () => {
+  const browser = await launch();
+  let real;
+  try {
+    real = await browser.version();
+  } finally {
+    await closeBrowser(browser);
+  }
+  const realMajor = /(\d+)\./.exec(real)[1];
+
+  const { headers } = await headersSentToTheirSite();
+  assert.equal(
+    /Chrome\/(\d+)\./.exec(headers["user-agent"])[1],
+    realMajor,
+    `the user agent claims a different Chrome from the one running: ${headers["user-agent"]} vs ${real}`
+  );
+  assert.equal(
+    /"Google Chrome";v="(\d+)"/.exec(headers["sec-ch-ua"])[1],
+    realMajor,
+    `sec-ch-ua claims a different Chrome from the one running: ${headers["sec-ch-ua"]} vs ${real}`
+  );
+});
+
+/*
+ * The operating system is named three times - in the user agent string, in
+ * Sec-CH-UA-Platform, and in navigator.platform - and one line of JavaScript
+ * reads all three. They said macOS, macOS and "Linux x86_64".
+ */
+test("the operating system we claim is the same one in every place a site can read it", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
+  const claimed = { Windows: /Windows NT/, macOS: /Macintosh/, Linux: /X11; Linux/ };
+  const platform = (headers["sec-ch-ua-platform"] || "").replace(/"/g, "");
+  assert.ok(claimed[platform], `sec-ch-ua-platform is not a desktop we know: ${headers["sec-ch-ua-platform"]}`);
+  assert.match(
+    headers["user-agent"],
+    claimed[platform],
+    `the user agent and sec-ch-ua-platform name different systems: ${headers["user-agent"]} vs ${platform}`
+  );
+
+  // On a real page rather than about:blank, because Chrome only exposes
+  // navigator.userAgentData in a secure context and 127.0.0.1 counts as one.
+  const { server, origin } = await fixture.listen();
+  const browser = await launch();
+  let inThePage;
+  try {
+    const page = await preparePage(browser, { heavy: true });
+    await page.goto(origin);
+    inThePage = await page.evaluate(() => ({
+      platform: navigator.platform,
+      hints: navigator.userAgentData ? navigator.userAgentData.platform : null,
+      userAgent: navigator.userAgent,
+    }));
+    await page.close();
+  } finally {
+    await closeBrowser(browser);
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  const expected = { Windows: "Win32", macOS: "MacIntel", Linux: "Linux x86_64" }[platform];
+  assert.equal(inThePage.platform, expected, `navigator.platform gives the header away: ${inThePage.platform}`);
+  assert.equal(inThePage.hints, platform, "the client hints a page reads must match the ones on the wire");
+  assert.match(inThePage.userAgent, claimed[platform]);
+});
+
+/*
+ * Header order is a fingerprint in its own right, and it is the one that gets
+ * broken by trying to help. Accept-Language set with setExtraHTTPHeaders is
+ * appended by the automation layer and lands ahead of Accept; Chrome puts it
+ * last, after Accept-Encoding. Set at launch with --accept-lang it goes out in
+ * Chrome's own place, which is what this pins.
+ */
+test("the headers arrive in the order Chrome sends them, not in an order we invented", options, async () => {
+  const { headerOrder } = await headersSentToTheirSite();
+  const at = (name) => headerOrder.indexOf(name);
+
+  for (const name of ["sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "user-agent", "accept", "accept-language"]) {
+    assert.ok(at(name) >= 0, `${name} was not sent at all: ${headerOrder.join(", ")}`);
+  }
+
+  const order = headerOrder.join(", ");
+  assert.ok(at("sec-ch-ua") < at("user-agent"), `Chrome puts the client hints before the user agent: ${order}`);
+  assert.ok(at("user-agent") < at("accept"), `Chrome puts the user agent before Accept: ${order}`);
+  assert.ok(at("accept") < at("sec-fetch-site"), `Chrome puts Accept before the Sec-Fetch headers: ${order}`);
+  assert.ok(
+    at("accept-language") > at("accept-encoding"),
+    `Chrome sends Accept-Language last; ours was injected earlier: ${order}`
+  );
+});
+
+/*
+ * The headers Chrome writes itself, left alone on purpose.
+ *
+ * Overriding these is the tempting mistake: one fixed Accept or one fixed
+ * Sec-Fetch-Dest would go out on the document, the stylesheets and the images
+ * alike, and a stylesheet requested with Sec-Fetch-Dest: document is a louder
+ * tell than anything it would fix.
+ */
+test("Chrome's own Accept and Sec-Fetch headers go out untouched", options, async () => {
+  const { headers } = await headersSentToTheirSite();
+
+  assert.match(headers.accept, /^text\/html,application\/xhtml\+xml/, `Accept: ${headers.accept}`);
+  assert.match(headers.accept, /image\/avif/, "a modern Chrome offers to take AVIF");
+  assert.match(headers["accept-encoding"], /\bbr\b/, `Accept-Encoding: ${headers["accept-encoding"]}`);
+
+  // What a person typing an address into the bar produces.
+  assert.equal(headers["sec-fetch-mode"], "navigate");
+  assert.equal(headers["sec-fetch-dest"], "document");
+  assert.equal(headers["sec-fetch-user"], "?1");
+  assert.equal(headers["upgrade-insecure-requests"], "1");
+});
+
+test("a page set up for capture does not announce that it is being driven", options, async () => {
+  const browser = await launch();
+  try {
+    /*
+     * navigator.webdriver is the cheapest bot check there is - one line of
+     * JavaScript, no fingerprinting needed - and it was left switched on. Chrome
+     * is also asked not to be launched with --enable-automation, which both sets
+     * that bit and puts an infobar across the top of the window.
+     */
+    assert.equal(
+      browser.process().spawnargs.some((arg) => arg === "--enable-automation"),
+      false,
+      "Chrome must not be launched in automation mode"
+    );
+
+    const page = await preparePage(browser, { heavy: true });
+    await page.goto("about:blank");
+
+    /*
+     * `false`, and not `undefined`. An ordinary Chrome has this property and
+     * answers false; a navigator with no webdriver on it at all is not a browser
+     * anybody ships, so deleting it swaps one tell for a stranger one.
+     */
+    assert.equal(await page.evaluate(() => navigator.webdriver), false);
+    assert.ok(await page.evaluate(() => "webdriver" in navigator), "real Chrome has the property");
+
+    assert.deepEqual(await page.evaluate(() => navigator.languages), ["en-US", "en"]);
+    await page.close();
+  } finally {
+    await closeBrowser(browser);
+  }
 });
 
 test("a page that really is missing still says so", options, async () => {
@@ -415,6 +669,67 @@ test("a pasted listing that already has School Explorer suits the upgrade script
   assert.deepEqual(shot.notes, [], "nothing was added; that listing already has it");
 });
 
+/*
+ * The before shot, checked on the page that is actually photographed.
+ *
+ * Bill picked "a listing with no Explorer on it yet" and the finished video
+ * opened on a listing with the Neighborhood Explorer sitting on it. The check
+ * was real and it was in the wrong place: it ran during the crawl, which loads
+ * the page cheaply with images, fonts and every analytics host blocked, and
+ * then the page was loaded AGAIN with nothing blocked and photographed without
+ * anybody looking a second time. His site installs our snippet through a tag
+ * manager, and a tag manager is on the blocked list.
+ *
+ * So the two loads saw two different pages, and the one nobody checked is the
+ * one in the video.
+ */
+test("a listing whose Explorer only arrives with the photos is refused, not filmed", options, async () => {
+  // Walked to from the homepage, not pasted: a pasted single listing is loaded
+  // with its photos from the start, so there is no second load to differ from
+  // and no gap to fall through. The crawl is where the two loads are.
+  const shot = await capture(fixture.EXPLORER_APPEARS_LATE);
+
+  assert.ok(shot.error, "the page in the picture had an Explorer on it, so it is not a before shot");
+  assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
+  // The refusal has to make sense to somebody who watched that page load clean.
+  assert.match(shot.error.message, /fully loaded/i, shot.error.message);
+  assert.match(shot.error.message, /SE to NE upgrade/, "and it names the script that does fit");
+});
+
+test("that same listing is what the upgrade script wants, with nothing drawn on", options, async () => {
+  const shot = await capture(fixture.EXPLORER_APPEARS_LATE, { explorerRule: "prefer-present" });
+
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  // The crawl saw no School Explorer and lined up a note saying one would be
+  // drawn onto the shot. By the shutter the real one was there, so that note
+  // would have told the reviewer the opposite of what they are looking at.
+  assert.deepEqual(shot.notes, [], `nothing should have been added: ${JSON.stringify(shot.notes)}`);
+});
+
+/*
+ * A widget in a shadow root is the version of the page a light-DOM check walks
+ * straight past: querySelectorAll does not reach into one and neither does
+ * body.innerText.
+ */
+test("an Explorer rendered into a shadow root is still found", options, async () => {
+  const shot = await capture(fixture.EXPLORER_IN_SHADOW_SITE, { listingUrl: "/listings/123-main-st" });
+  assert.ok(shot.error, "a widget in a shadow root is still a widget on the page");
+  assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
+});
+
+/*
+ * The other half of the fix: this must not become "refuse anything that says
+ * the words". The fixture's listings sit on a site whose pages talk about
+ * schools, and a listing is not disqualified by its own copy.
+ */
+test("a clean listing is still filmed, and the last look does not invent an Explorer", options, async () => {
+  const shot = await capture(fixture.ROUTES, { listingUrl: "/listings/123-main-st" });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, "/listings/123-main-st");
+  const filmed = shot.checked.find((entry) => new URL(entry.url).pathname === "/listings/123-main-st");
+  assert.equal(filmed.explorer, null, "nothing of ours was on that page");
+});
+
 /* ---------------------------------------------------------------- */
 /* the budget, and letting go of Chrome                             */
 /* ---------------------------------------------------------------- */
@@ -430,14 +745,19 @@ test("the capture budget is a minute, and only one listing is ever opened", () =
 /* the IDX account wall                                             */
 /* ---------------------------------------------------------------- */
 
-test("an account wall stops the capture instead of being worked around", options, async () => {
+/*
+ * With no QUAL account configured - which is the case on any box that has not
+ * been given one, and in every test but the QUAL ones - a wall is still the end
+ * of the capture. Nothing is filled in and no account is invented.
+ */
+test("an account wall stops the capture when there is no account to use", options, async () => {
   const shot = await capture(fixture.WALLED_SITE);
   assert.ok(shot.error, "a registration wall has to stop the capture");
   assert.equal(shot.error.code, "REGISTRATION_WALL");
-  assert.equal(
-    shot.error.message,
-    "This site asks for an account after a few listing views. Paste a listing URL."
-  );
+  assert.match(shot.error.message, /asks for an account after a few listing views/);
+  // Two ways on, and neither of them is guessing at a login.
+  assert.match(shot.error.message, /paste a listing URL/i);
+  assert.match(shot.error.message, /upload a screenshot/i);
 
   // It stopped at the wall rather than trying the next listing.
   const walls = shot.checked.filter((entry) => entry.kind === "wall");

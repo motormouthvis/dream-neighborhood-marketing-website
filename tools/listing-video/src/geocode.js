@@ -8,13 +8,19 @@
  * address captured from the realtor page is resolved here and handed to the
  * Explorer through the parameter it already supports.
  *
- * OpenStreetMap's Nominatim is the default because it needs no key. Their usage
- * policy asks for an identifying User-Agent and no more than one request a
- * second, and both are honoured below. Point LISTING_VIDEO_GEOCODER somewhere
- * else if staging ever needs a different service.
+ * The Explorer's own geocoder is asked first, through src/places.js. It is the
+ * one that decides what the Explorer shows, it is US-only, and it places
+ * addresses that OpenStreetMap does not have at all - "4697 Wehunt Commons Drive
+ * SE" among them. When it cannot place a query, OpenStreetMap's Nominatim is
+ * tried behind it: keyless, and their usage policy's identifying User-Agent and
+ * one-request-a-second are both honoured below. Point LISTING_VIDEO_GEOCODER
+ * somewhere else if staging ever needs a different service.
+ *
+ * Either way the answer is checked against the town the listing said it was in.
  */
 
 const config = require("./config");
+const { resolvePlace } = require("./places");
 
 const USER_AGENT =
   "DreamNeighborhoodListingVideo/1.0 (internal staging tool; support@dreamneighborhood.com)";
@@ -25,6 +31,18 @@ let lastCallAt = 0;
 function geocodeError(message) {
   const error = new Error(message);
   error.code = "ADDRESS_NOT_FOUND";
+  error.isCaptureRefusal = true;
+  return error;
+}
+
+/**
+ * A typed address that cannot be used, which is a filled-in form rather than a
+ * failed lookup - so it is answered on the request instead of failing a job.
+ */
+function addressError(message) {
+  const error = new Error(message);
+  error.code = "ADDRESS_INCOMPLETE";
+  error.status = 400;
   error.isCaptureRefusal = true;
   return error;
 }
@@ -56,6 +74,130 @@ const STATES = {
 };
 
 const flat = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+
+/** "illinois" and "IL" both mean IL, so a person can type either. */
+const STATE_CODE_BY_NAME = new Map(Object.entries(STATES).map(([code, name]) => [flat(name), code]));
+
+function stateCodeFor(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase();
+  if (STATES[upper]) return upper;
+  return STATE_CODE_BY_NAME.get(flat(raw)) || "";
+}
+
+/**
+ * The address as a person typed it, in the shape the rest of the tool uses.
+ *
+ * Used when the listing picture was uploaded rather than photographed, so there
+ * is no page to read an address off. Nothing here is inferred from the image:
+ * the Explorer is pointed at coordinates, and a house number guessed off a
+ * screenshot would film another street's schools and commutes while looking
+ * entirely convincing. What is typed is what gets looked up.
+ *
+ * The street is required. The town is not, because the geocoder can still place
+ * a distinctive street on its own and says so when it has - but a state that
+ * cannot be recognised is refused rather than quietly dropped, since "Peoria, XX"
+ * would throw away the one check on the answer being in the right place.
+ *
+ * `place` is the description of a suggestion chosen from the Explorer's own
+ * picker, and `lat`/`lng` are where the picker put it. When they are here the
+ * address is not a guess at all - it is somewhere the Explorer named and the
+ * form already resolved - so nothing is looked up again at render time.
+ */
+function addressFromFields({ street, city, state, zip, place, lat, lng } = {}) {
+  const tidy = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  const streetText = tidy(street);
+  const cityText = tidy(city).replace(/,+$/, "");
+  const zipText = tidy(zip).replace(/^(\d{5})-\d{4}$/, "$1");
+  const stateText = tidy(state);
+  const placeText = tidy(place);
+
+  if (!streetText) {
+    throw addressError(
+      "Type the listing's street address. The Neighborhood Explorer is pointed at coordinates, and nothing here reads an address off the picture."
+    );
+  }
+  if (zipText && !/^\d{5}$/.test(zipText)) {
+    throw addressError(`"${zipText}" is not a five digit ZIP code. Correct it, or leave it empty.`);
+  }
+
+  const stateCode = stateCodeFor(stateText);
+  if (stateText && !stateCode) {
+    throw addressError(`"${stateText}" is not a US state. Use the two letter code, like IL.`);
+  }
+
+  // The shape expectationsFrom parses back out: "City, ST", or just one of them.
+  let cityState = "";
+  if (cityText && stateCode) cityState = `${cityText}, ${stateCode}`;
+  else if (cityText) cityState = cityText;
+  else if (stateCode) cityState = stateCode;
+
+  const address = {
+    street: streetText,
+    cityState,
+    zip: zipText,
+    source: "typed",
+    // Typed in by somebody looking at the listing, so it is what the video is
+    // about - the same standing a heading read off the page would have.
+    isSubject: true,
+  };
+
+  if (placeText) address.place = placeText;
+  if (Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+    address.lat = Number(lat);
+    address.lng = Number(lng);
+  }
+  return address;
+}
+
+/**
+ * Settle a typed address before the job exists.
+ *
+ * This is what makes the upload path's address a place rather than a guess. It
+ * runs on the request, so somebody who typed something the Explorer cannot place
+ * is told on the form they are looking at - not by a video a minute later that
+ * has already filmed the wrong town.
+ *
+ * The Explorer's own geocoder answers, because the Explorer is what will be
+ * filmed. An address picked from its suggestions goes straight through. Free text
+ * is checked against the town that was typed beside it, since "123 Main St, Long
+ * Beach, CA" comes back in El Segundo.
+ *
+ * A picker that cannot be reached at all does not block anything: the address is
+ * handed on as typed and looked up again at render time, where there is still the
+ * town check and Nominatim behind it.
+ */
+async function confirmAddress(address, { timeoutMs = 9000 } = {}) {
+  if (!address || !address.street) return address;
+  if (Number.isFinite(address.lat) && Number.isFinite(address.lng)) return address;
+
+  const typed = [address.street, address.cityState, address.zip].filter(Boolean).join(", ");
+  const asked = address.place || typed;
+
+  let placed;
+  try {
+    placed = await resolvePlace(asked, { timeoutMs });
+  } catch (error) {
+    // Reached, and it does not know this address. That is a form to send back.
+    throw addressError(error.message);
+  }
+  if (!placed) return address;
+
+  const expect = expectationsFrom(address);
+  if (!address.place && !formattedMatches(placed.formattedAddress, expect)) {
+    throw addressError(
+      `The Explorer places "${typed}" at ${placed.formattedAddress}, which is not the town you typed. Start typing the address again and pick one of the suggestions.`
+    );
+  }
+
+  return {
+    ...address,
+    place: placed.formattedAddress,
+    lat: placed.lat,
+    lng: placed.lng,
+  };
+}
 
 /** What the listing said, so an answer can be checked against it. */
 function expectationsFrom(address) {
@@ -89,6 +231,45 @@ function resultMatches(result, expect) {
     return false;
   }
   return Boolean(expect.stateName);
+}
+
+/**
+ * Is this the town the listing said it was in?
+ *
+ * The Explorer's geocoder answers with one formatted line rather than the parsed
+ * parts Nominatim gives, so the check is made against that line. It is US-only,
+ * which is one whole class of wrong answer gone - but "123 Main St, Long Beach,
+ * CA" still comes back in El Segundo, so the town still has to be checked.
+ */
+function formattedMatches(formatted, expect) {
+  const text = String(formatted || "");
+  const letters = flat(text);
+  if (expect.stateName) {
+    const hasState =
+      new RegExp(`\\b${expect.stateCode}\\b`).test(text.toUpperCase()) || letters.includes(flat(expect.stateName));
+    if (!hasState) return false;
+  }
+  if (expect.zip && text.includes(expect.zip)) return true;
+  if (expect.city) return letters.includes(expect.city);
+  return Boolean(expect.stateName);
+}
+
+/**
+ * The Explorer's own geocoder, which is the one that decides what the Explorer
+ * shows. Unreachable is not the same as unknown: both mean "try the next thing",
+ * and neither is worth failing over here.
+ */
+async function askExplorer(query, expect, timeoutMs) {
+  let found;
+  try {
+    found = await resolvePlace(query, { timeoutMs });
+  } catch (_) {
+    // It was reached and does not know this query.
+    return null;
+  }
+  if (!found) return null;
+  if (!formattedMatches(found.formattedAddress, expect)) return null;
+  return { lat: found.lat, lng: found.lng, matched: found.formattedAddress };
 }
 
 async function askNominatim(query, expect, timeoutMs) {
@@ -171,6 +352,43 @@ function queriesFor(address) {
  * put another town's schools and commutes in the video.
  */
 async function locateAddress(address, { log = () => {}, timeoutMs = 12000 } = {}) {
+  /*
+   * A place chosen from the Explorer's own picker, already resolved on the form.
+   *
+   * Nothing to look up and nothing to check: these are the coordinates the
+   * Explorer gave for the suggestion somebody picked, so both Explorers are
+   * filmed at exactly the place that was chosen.
+   */
+  if (address && Number.isFinite(address.lat) && Number.isFinite(address.lng)) {
+    return {
+      lat: address.lat,
+      lng: address.lng,
+      matched: address.place || [address.street, address.cityState, address.zip].filter(Boolean).join(", "),
+      precision: "address",
+      query: address.place || address.street || "",
+    };
+  }
+
+  /*
+   * A place that was picked but not resolved - a job saved before the form
+   * resolved them, or a form that was filled in while the picker was unreachable.
+   */
+  if (address && address.place) {
+    const picked = await resolvePlace(address.place, { timeoutMs }).catch((error) => {
+      throw geocodeError(error.message);
+    });
+    if (picked) {
+      return {
+        lat: picked.lat,
+        lng: picked.lng,
+        matched: picked.formattedAddress,
+        precision: "address",
+        query: address.place,
+      };
+    }
+    log(`Could not reach the Explorer's place lookup for "${address.place}", so the address was looked up instead`);
+  }
+
   const queries = queriesFor(address);
   if (!queries.length) {
     throw geocodeError(
@@ -180,7 +398,8 @@ async function locateAddress(address, { log = () => {}, timeoutMs = 12000 } = {}
 
   const expect = expectationsFrom(address);
   for (const { query, precision } of queries) {
-    const found = await askNominatim(query, expect, timeoutMs);
+    // The Explorer's geocoder first, because it is the one the Explorer uses.
+    const found = (await askExplorer(query, expect, timeoutMs)) || (await askNominatim(query, expect, timeoutMs));
     if (!found) continue;
     if (precision === "street-only") {
       // Say so plainly: with no town on the page there was nothing to check the
@@ -197,4 +416,13 @@ async function locateAddress(address, { log = () => {}, timeoutMs = 12000 } = {}
   );
 }
 
-module.exports = { locateAddress, queriesFor, resultMatches, expectationsFrom };
+module.exports = {
+  locateAddress,
+  queriesFor,
+  resultMatches,
+  formattedMatches,
+  expectationsFrom,
+  addressFromFields,
+  confirmAddress,
+  stateCodeFor,
+};
