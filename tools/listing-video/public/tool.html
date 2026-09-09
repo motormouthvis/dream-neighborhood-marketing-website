@@ -69,6 +69,8 @@
             Filled in from your last video. Click any box and it selects itself, so you can type straight over it.
             <button type="button" class="linkbtn linkbtn--ink" id="forgetFormBtn">Clear the form</button>
           </p>
+          <!-- Said when you came back here from a video rather than starting one. -->
+          <p class="notice" id="rememberedNote2" hidden></p>
 
           <form id="form" class="stack" autocomplete="off">
             <fieldset class="field" id="templateField">
@@ -241,6 +243,29 @@
           <p class="lede" id="silentSummary"></p>
           <p class="notice" id="silentNotes" hidden></p>
 
+          <!--
+            The way back, before anything is recorded.
+
+            This step used to be a one-way door: the silent video arrives and
+            the only thing on the page is a record button. If the script was
+            wrong, or the wrong listing got filmed, or it just looked off, the
+            only way to change any of it was to start again from an empty form.
+            Both of these keep the job's answers - the form is never cleared,
+            and remember.js puts them back if it were.
+          -->
+          <div class="wayback">
+            <span class="label">Not right?</span>
+            <p class="hint">
+              Nothing has been recorded yet, so there is nothing to lose by going back. Your answers are still on the
+              form.
+            </p>
+            <div class="recorder__row recorder__row--wrap">
+              <button type="button" class="btn btn--ghost" id="editInputsBtn">Change the script, customer or listing</button>
+              <button type="button" class="btn btn--ghost" id="remakeSilentBtn">Film it again, same answers</button>
+              <span class="recorder__state" id="waybackState"></span>
+            </div>
+          </div>
+
           <!-- Two columns on a desktop: the pictures on the left, the words on the
                right, so whoever is recording can watch both at once. -->
           <div class="record-split">
@@ -373,6 +398,9 @@
 
           <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
             <button type="button" class="btn btn--ghost" id="redoAudioBtn">Back to recording</button>
+            <!-- The same way back as on the record step. A finished video that
+                 is wrong is usually wrong in the script, not the take. -->
+            <button type="button" class="btn btn--ghost" id="reviewEditInputsBtn">Change the script, customer or listing</button>
           </div>
 
           <div class="share">

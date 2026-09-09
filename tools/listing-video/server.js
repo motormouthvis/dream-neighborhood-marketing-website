@@ -520,11 +520,16 @@ app.post(`${TOOL_PATH}/api/jobs/:id/recapture`, auth.requireSession, async (req,
   }
 
   /*
-   * A retry with a URL goes back to the live site, so any screenshot uploaded
+   * A retry WITH A URL goes back to the live site, so any screenshot uploaded
    * earlier is dropped - otherwise the upload would silently win and the pasted
    * URL would look like it had been ignored.
+   *
+   * A retry with no URL is "film it again, same answers", off the record step.
+   * That must keep the screenshot: dropping it would quietly send a job that
+   * was deliberately made from an uploaded picture back to a site that could
+   * not be filmed in the first place.
    */
-  if (job.input.uploadedListing) {
+  if (listingRaw && job.input.uploadedListing) {
     await fsp.rm(job.input.uploadedListing.file, { force: true }).catch(() => {});
     job.input.uploadedListing = null;
   }

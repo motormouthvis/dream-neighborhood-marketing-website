@@ -946,6 +946,185 @@ test("a trim covers the step and blocks sending until the new file is back", opt
   }
 });
 
+/* ---------------------------------------------------------------- */
+/* the way back off the record step                                  */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill, on the silent video: when it is done, or failed, or just looks wrong,
+ * there was no way back. The record step offered one thing - record - and the
+ * only button that returned to the form was on the FINISHED step, two takes and
+ * a mux later. So changing a script meant recording something he did not want,
+ * waiting for it to be muxed, and starting again from an empty page.
+ */
+
+/** Fill the form in the way somebody would, without submitting it. */
+async function fillTheForm(page) {
+  await page.evaluate(() => {
+    document.getElementById("firstName").value = "Vanessa";
+    document.getElementById("company").value = "DOMO Realty";
+    document.getElementById("websiteUrl").value = "https://domorealty.example";
+    document.getElementById("customerEmail").value = "vanessa@domorealty.example";
+    ["firstName", "company", "websiteUrl", "customerEmail"].forEach((id) => {
+      document.getElementById(id).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const script = document.querySelector('input[name="templateId"]');
+    script.checked = true;
+    script.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+test("the record step has a way back to the form, and it keeps the answers", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    await fillTheForm(tool.page);
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+
+    // The way out is on the page, before anything has been recorded.
+    const offered = await tool.page.evaluate(() => ({
+      edit: document.getElementById("editInputsBtn").textContent.trim(),
+      remake: document.getElementById("remakeSilentBtn").textContent.trim(),
+      editShown: Boolean(document.getElementById("editInputsBtn").offsetParent),
+    }));
+    assert.match(offered.edit, /change the script, customer or listing/i);
+    assert.match(offered.remake, /film it again/i);
+    assert.equal(offered.editShown, true, "it is visible without opening anything");
+
+    await tool.page.click("#editInputsBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-form").hidden, { timeout: 10000 });
+
+    const back = await tool.page.evaluate(() => ({
+      recordShown: !document.getElementById("step-record").hidden,
+      firstName: document.getElementById("firstName").value,
+      company: document.getElementById("company").value,
+      website: document.getElementById("websiteUrl").value,
+      email: document.getElementById("customerEmail").value,
+      script: (document.querySelector('input[name="templateId"]:checked') || {}).value || "",
+      why: document.getElementById("rememberedNote2").textContent.trim(),
+      whyShown: !document.getElementById("rememberedNote2").hidden,
+      playing: !document.getElementById("silentPlayer").paused,
+      makeEnabled: !document.getElementById("makeBtn").disabled,
+    }));
+
+    assert.equal(back.recordShown, false, "it really left the record step");
+    // Every answer is still there. This is a step backwards, not a fresh start.
+    assert.equal(back.firstName, "Vanessa");
+    assert.equal(back.company, "DOMO Realty");
+    assert.equal(back.website, "https://domorealty.example");
+    assert.equal(back.email, "vanessa@domorealty.example");
+    assert.ok(back.script, "and the script is still picked");
+    assert.equal(back.makeEnabled, true, "so it can be made again straight away");
+
+    assert.equal(back.whyShown, true);
+    assert.match(back.why, /still here/i, back.why);
+    assert.match(back.why, /Library/i, "and it says the video that was made is not lost");
+    assert.equal(back.playing, false, "the silent video is not left playing to itself");
+
+    // The job that was already made is untouched and still in the Library.
+    const untouched = await store.getJob(job.id);
+    assert.equal(untouched.status, "silent-ready");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("the finished video has the same way back, and sends nothing on the way", options, async () => {
+  const { job } = await jobOnFinalReview([4, 4, 4], 12);
+  const tool = await openTool();
+  try {
+    await fillTheForm(tool.page);
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 15000 });
+
+    await tool.page.click("#reviewEditInputsBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-form").hidden, { timeout: 10000 });
+
+    const back = await tool.page.evaluate(() => ({
+      firstName: document.getElementById("firstName").value,
+      why: document.getElementById("rememberedNote2").textContent.trim(),
+      playing: !document.getElementById("reviewPlayer").paused,
+    }));
+    assert.equal(back.firstName, "Vanessa", "the answers came back with it");
+    assert.match(back.why, /nothing has been sent/i, back.why);
+    assert.equal(back.playing, false);
+
+    const untouched = await store.getJob(job.id);
+    assert.equal(untouched.status, "ready");
+    assert.ok(!untouched.email || !untouched.email.sent, "and nothing was emailed");
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * "Film it again, same answers" is for the case where nothing needs changing
+ * and the capture simply came out wrong - it found a listing that was not their
+ * best one, or the page had not settled.
+ */
+test("filming it again reuses the same job rather than starting from nothing", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await openTool();
+  try {
+    /*
+     * The recapture is the only thing under test here; the Chrome walk behind
+     * it is covered elsewhere. Once it has been asked for, the job answers as
+     * one being worked on - which is what the server really does, since it
+     * claims the job before it replies.
+     */
+    await tool.page.evaluate(() => {
+      window.__recaptured = [];
+      const real = window.fetch;
+      window.fetch = function (url, init) {
+        if (typeof url === "string" && /\/recapture$/.test(url)) {
+          window.__recaptured.push({ url: url, body: init && init.body });
+          return Promise.resolve(new Response('{"id":"x"}', { status: 202 }));
+        }
+        if (window.__recaptured.length && typeof url === "string" && /\/api\/jobs\/[a-z0-9]+(\?|$)/i.test(url)) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "again",
+                status: "capturing",
+                progress: ["Trying the capture again"],
+                template: { name: "School only (v11)" },
+                beats: [],
+                review: { reviewed: false },
+                input: {},
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+        return real(url, init);
+      };
+    });
+
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+    await tool.page.click("#remakeSilentBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-progress").hidden, { timeout: 10000 });
+
+    const asked = await tool.page.evaluate(() => ({
+      calls: window.__recaptured,
+      steps: Array.from(document.querySelectorAll("#steps li")).map((item) => item.textContent.trim()),
+      recordShown: !document.getElementById("step-record").hidden,
+      formShown: !document.getElementById("step-form").hidden,
+    }));
+
+    assert.equal(asked.calls.length, 1, "one recapture, on the job that already exists");
+    assert.ok(asked.calls[0].url.includes(job.id), asked.calls[0].url);
+    // No listing URL: the point of this button is that the answers do not change.
+    assert.deepEqual(JSON.parse(asked.calls[0].body), {});
+    assert.equal(asked.recordShown, false, "it left the record step");
+    assert.equal(asked.formShown, false, "and it did not send him back to the form to type it all in");
+    assert.ok(asked.steps.some((line) => /again/i.test(line)), asked.steps.join(" | "));
+  } finally {
+    await tool.close();
+  }
+});
+
 test.after(async () => {
   await fsp.rm(dataDir, { recursive: true, force: true }).catch(() => {});
 });
