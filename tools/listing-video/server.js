@@ -682,8 +682,9 @@ app.post(`${TOOL_PATH}/api/jobs/:id/reviewed`, auth.requireSession, async (req, 
 /**
  * Cut the end off the finished video, where a person paused it.
  *
- * The only thing that shortens a video. The picture is otherwise as long as the
- * silent cut that was approved, whatever the voice did.
+ * The only thing that shortens a finished video. It is otherwise as long as it
+ * was built: the silent cut's length on an overdub, and the length of the spoken
+ * lines on an AI take.
  */
 app.post(`${TOOL_PATH}/api/jobs/:id/trim`, auth.requireSession, async (req, res) => {
   const job = await store.getJob(req.params.id);

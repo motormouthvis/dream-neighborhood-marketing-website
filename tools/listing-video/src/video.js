@@ -7,14 +7,22 @@ const { run } = require("./exec");
 const { probeDuration } = require("./audio");
 
 /*
- * The silent cut's length is the length of the finished video.
+ * How long the finished video is: whatever the scene lengths handed in add up to.
  *
- * That is the picture that was approved, so that is what gets sent. A shorter
- * voice does not shorten it - the picture holds and the audio stops - and nothing
- * is padded on after the last word.
+ * Nothing here decides those. Two callers do, and they answer differently on
+ * purpose - see attachAudio in render.js:
  *
- * The only thing that makes a video shorter is a person trimming it on the final
- * review: trimVideoAt below.
+ *   Overdub. The silent cut's own lengths, unchanged. That is the picture that
+ *   was approved and the picture the take was recorded against, so a shorter
+ *   voice does not shorten it: the picture holds and the audio stops.
+ *
+ *   AI voice. The lengths src/audio.js measured off the spoken lines. The
+ *   picture follows the voice, so the video comes out as long as the speech
+ *   plus a breath rather than as long as the script's guess at it.
+ *
+ * Either way nothing is padded on after the last word, and the only thing that
+ * makes a finished video shorter than it was built is a person trimming it on
+ * the final review: trimVideoAt below.
  */
 
 const ENCODE = [
@@ -85,16 +93,21 @@ async function buildSilentVideo({ frames, durations, workDir, outFile, log }) {
 /**
  * The same stills, this time with a voice track laid over them.
  *
- * The finished video is as long as the silent cut. Silent 60 with a 30 second
- * voice comes out 60; silent 12 with a 12 second voice comes out 12. The picture
- * runs to the end and the audio stops. Nothing is padded on after the last word
- * and the picture is never cut back to the voice.
+ * The finished video is as long as the scene lengths add up to. On an overdub
+ * those are the silent cut's, so silent 60 with a 30 second voice comes out 60:
+ * the picture runs to the end and the audio stops. On the AI path they were
+ * measured off the speech, so a script that guesses 60 for forty seconds of
+ * words comes out at about forty.
  *
- * The one exception is a voice that runs past the script, and it is there to
+ * Nothing is padded on after the last word either way, and the picture is never
+ * quietly cut back to the voice - if it is shorter it is because the caller
+ * asked for shorter scenes.
+ *
+ * The one exception is a voice that runs past those scenes, and it is there to
  * avoid clipping somebody mid-word: the last scene is held to cover it.
  *
- * Making a video shorter is a person's decision, taken on the final review with
- * "Trim Remainder of Video" - see trimVideoAt below.
+ * Making a finished video shorter than it was built is a person's decision,
+ * taken on the final review with "Trim Remainder of Video" - see trimVideoAt.
  */
 async function buildVideo({ frames, durations, audioFile, workDir, outFile, log }) {
   if (frames.length !== durations.length) {
@@ -104,7 +117,7 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
   const audioDuration = await probeDuration(audioFile);
   const scenes = durations.slice();
   const plannedTotal = scenes.reduce((sum, value) => sum + value, 0);
-  // Only ever the silent cut's length, unless the voice would be clipped.
+  // Only ever what the scenes ask for, unless the voice would be clipped.
   const videoDuration = Math.max(plannedTotal, audioDuration);
   scenes[scenes.length - 1] += Math.max(0, videoDuration - plannedTotal);
 

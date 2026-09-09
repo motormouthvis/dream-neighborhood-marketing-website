@@ -423,6 +423,20 @@ async function attachAudio(job, { source, uploadPath }) {
 
   try {
     const beats = job.beats;
+    /*
+     * How long each scene is held, and the two sources answer differently.
+     *
+     * An overdub keeps the script's own seconds. Whoever recorded it was
+     * watching the silent cut and reading along, so the picture they were timing
+     * against is the picture that has to be under their voice.
+     *
+     * The AI voice does not read along - it is measured after the fact, and the
+     * lengths come back from buildAiVoiceTrack having been taken off the spoken
+     * lines. That is Bill's "the pauses between sections are too long": a
+     * hand-written duration is a guess at how long a line takes to say, and
+     * every second of it the voice did not use was being left on screen as
+     * silence.
+     */
     let durations = beats.map((beat) => beat.seconds);
     let track;
 

@@ -990,6 +990,23 @@
         Number(voice.scriptCharacters || 0).toLocaleString() +
         " characters were billed.";
     }
+    /*
+     * Why this is shorter than the silent cut he just watched.
+     *
+     * On the AI path the picture is cut to the spoken lines rather than to the
+     * script's guess at them, so the video is usually a good deal shorter than
+     * the silent one. Said out loud, because a video that came back shorter than
+     * the picture that was approved otherwise reads as something having gone
+     * wrong with it.
+     */
+    if (voice.followsSpeech && voice.scriptSeconds > job.result.durationSeconds + 1) {
+      text +=
+        " The picture follows the voice on an AI take, so this is " +
+        D.runtime(job.result.durationSeconds) +
+        " rather than the script's " +
+        D.runtime(voice.scriptSeconds) +
+        " - the difference was silence between the lines.";
+    }
     if (job.result.capturedAddress) text += " Filmed on their listing for " + job.result.capturedAddress + ".";
     if (job.result.capturedPageUrl) text += " " + job.result.capturedPageUrl;
     if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");
@@ -1081,11 +1098,12 @@
   });
 
   /*
-   * Trimming the end off, which is the only thing that shortens a video.
+   * Trimming the end off, which is the only thing that shortens a finished video.
    *
-   * The picture is as long as the silent cut that was approved, so it holds after
-   * the voice stops. The button only wakes up while the player is paused, because
-   * the playhead is the cut - there is nothing to guess at.
+   * An AI take is already cut to the voice; a take somebody recorded is as long
+   * as the silent cut they recorded against, so there the picture holds after
+   * the voice stops. The button only wakes up while the player is paused,
+   * because the playhead is the cut - there is nothing to guess at.
    */
   function applyTrimState() {
     var player = el("reviewPlayer");

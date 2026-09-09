@@ -10,7 +10,27 @@ const { run } = require("./exec");
 
 // Enough lead-in that the first word is never clipped by a player that starts slow.
 const LEAD_SILENCE_SECONDS = 0.6;
-const SEGMENT_GAP_SECONDS = 0.32;
+
+/**
+ * The breath between one AI line and the next, and the whole of the gap.
+ *
+ * On the AI path this is not a minimum, it is the answer: a line is spoken, the
+ * dead air is cut off both ends of it, and this much silence goes after it. See
+ * buildAiVoiceTrack for why the script's own seconds no longer decide.
+ */
+const AI_BREATH_SECONDS = 0.32;
+
+/** How long the last picture is held after the last AI word, and no longer. */
+const AI_TAIL_SECONDS = 0.4;
+
+/**
+ * The shortest an AI scene is allowed to be.
+ *
+ * Only the last scene can be pushed down here - it is pulled back to wherever
+ * the voice stopped - and a picture nobody has time to see is not a scene.
+ */
+const AI_LEAST_SCENE_SECONDS = 0.8;
+
 const END_SILENCE_THRESHOLD = "-45dB";
 const SAMPLE_RATE = 44100;
 
@@ -65,13 +85,15 @@ async function toWav(inputFile, outFile) {
 /**
  * Cut the silence off the end of a voice track.
  *
- * This is about the audio, not the picture. An AI line is padded out to whatever
- * the template allowed for, and a take is usually stopped a moment after the last
- * word, so a track can carry seconds of nothing on the end. Left there, that dead
- * air can push the finished video past the length of the script.
+ * A take is usually stopped a moment after the last word, and an AI track ends
+ * on the breath that was put after the last line, so either can carry dead air
+ * on the end. Left there it would drag the picture out behind it.
  *
- * It never makes the video shorter. The picture runs to the silent cut's length
- * whatever the voice does; only a person trimming on the final review shortens it.
+ * On the overdub path this is about the audio and not the picture: the picture
+ * still runs to the silent cut's length whatever the voice does, and only a
+ * person trimming on the final review shortens it. On the AI path the picture
+ * follows the voice, so cutting this silence is what stops the video ending on
+ * a held still - see buildAiVoiceTrack.
  *
  * Reversing the audio turns "trailing silence" into "leading silence", which
  * ffmpeg can already remove, and reversing it back leaves it on the last word.
@@ -128,6 +150,53 @@ async function trimLeadingSilence(inputFile, outFile) {
   // Silence removal ate the whole take; keep the original instead.
   await fsp.copyFile(inputFile, outFile);
   return outFile;
+}
+
+/**
+ * Cut the dead air off both ends of one spoken line.
+ *
+ * A hosted voice does not hand back only the words. It puts a moment of nothing
+ * in front of the first one and leaves another after the last, and on a nine
+ * line script that is most of a second of silence at every join even before
+ * anything is padded on. Bill heard those joins as the video stopping and
+ * starting, so each line is cut back to its own words here and the gap between
+ * lines becomes exactly the breath the track puts there on purpose.
+ *
+ * A line that is nearly all quiet - a short word, or a voice that trails away -
+ * can be eaten by the filter, so what came back is checked and the original is
+ * kept if it looks like the words went with the silence.
+ */
+async function tightenLine(inputFile, outFile) {
+  const before = await probeDuration(inputFile).catch(() => 0);
+  const keepOriginal = async () => {
+    await fsp.copyFile(inputFile, outFile);
+    return { file: outFile, seconds: before };
+  };
+
+  const cut = `silenceremove=start_periods=1:start_duration=0.05:start_threshold=${END_SILENCE_THRESHOLD}:detection=peak`;
+  try {
+    await run(config.ffmpegPath, [
+      "-y",
+      "-i",
+      inputFile,
+      "-af",
+      `${cut},areverse,${cut},areverse`,
+      "-ac",
+      "1",
+      "-ar",
+      String(SAMPLE_RATE),
+      "-c:a",
+      "pcm_s16le",
+      outFile,
+    ]);
+  } catch (_) {
+    return keepOriginal();
+  }
+
+  const after = await probeDuration(outFile).catch(() => 0);
+  if (after < 0.25) return keepOriginal();
+  if (before > 0 && after < before * 0.4) return keepOriginal();
+  return { file: outFile, seconds: after };
 }
 
 async function concatWavs(files, outFile, workDir) {
@@ -291,9 +360,28 @@ async function speakLine({ engine, text, outFile, workDir, voiceId }) {
 
 /**
  * AI voice: one wav per beat, using a single engine for the whole script so two
- * different voices are never spliced together. Scene lengths come from the
- * template, stretched only when a line takes longer to say than the template
- * allowed for.
+ * different voices are never spliced together.
+ *
+ * THE PICTURE FOLLOWS THE VOICE.
+ *
+ * Each scene is as long as the line spoken over it plus a breath, and that is
+ * the whole of it. The script's own `seconds` decide nothing here.
+ *
+ * They used to. A line was laid into a window the script had sized, and every
+ * second the voice did not use was left on screen as silence. Bill watched a
+ * 64 second video of a script whose speech came to about forty: three seconds of
+ * nothing after the first line, two and a half after the fourth, four and a half
+ * sitting on the last frame at the end. Nothing was broken - the windows were
+ * being honoured exactly - but the video sounded like it kept stopping.
+ *
+ * A hand-written duration is a guess at how long a line takes to say. Once the
+ * line has actually been said there is no need to guess: the file is on disk and
+ * it can be measured. So it is, and the scene is cut to it.
+ *
+ * The overdub path is the other way round and stays that way. There the script's
+ * seconds are a person's cue - they are watching the silent cut and reading
+ * along, and a window that closes early takes the words with it - so the silent
+ * cut's timing is left exactly alone. See buildRecordedTrack.
  */
 async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
   const engines = availableVoiceEngines();
@@ -320,7 +408,8 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
 
       pieces.push(lead);
       for (let index = 0; index < beats.length; index += 1) {
-        const wav = path.join(workDir, `voice-${String(index).padStart(3, "0")}.wav`);
+        const tag = String(index).padStart(3, "0");
+        const wav = path.join(workDir, `voice-${tag}.wav`);
         const said = await speakLine({
           engine: engine.id,
           text: beats[index].text,
@@ -330,19 +419,18 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
         });
         if (said.cached) reusedLines += 1;
         if (said.billed) billedCharacters += voiceCache.charactersIn(beats[index].text);
-        const spoken = await probeDuration(wav);
-        // Keep the template's picture timing unless the line simply will not fit.
-        const budget = beats[index].seconds - (index === 0 ? LEAD_SILENCE_SECONDS : 0);
-        const scene = Math.max(beats[index].seconds, spoken + SEGMENT_GAP_SECONDS + (index === 0 ? LEAD_SILENCE_SECONDS : 0));
-        const padding = Math.max(0, scene - spoken - (index === 0 ? LEAD_SILENCE_SECONDS : 0));
-        pieces.push(wav);
-        if (padding > 0.01) {
-          pieces.push(await makeSilence(padding, path.join(workDir, `pad-${String(index).padStart(3, "0")}.wav`)));
-        }
+
+        /*
+         * The words on their own, then a known breath after them. Both ends of
+         * the line are cut back first, so the gap a viewer hears is this breath
+         * and not this breath plus whatever silence the voice happened to send.
+         */
+        const line = await tightenLine(wav, path.join(workDir, `line-${tag}.wav`));
+        const scene = line.seconds + AI_BREATH_SECONDS + (index === 0 ? LEAD_SILENCE_SECONDS : 0);
+        pieces.push(line.file);
+        pieces.push(await makeSilence(AI_BREATH_SECONDS, path.join(workDir, `gap-${tag}.wav`)));
         durations.push(scene);
-        if (spoken > budget + 0.35) {
-          log(`Line ${index + 1} needs ${spoken.toFixed(1)}s but the template allows ${budget.toFixed(1)}s - that scene was stretched`);
-        }
+
         if ((index + 1) % 4 === 0 || index === beats.length - 1) {
           log(`Voiced ${index + 1} of ${beats.length} lines`);
         }
@@ -365,19 +453,42 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
 
       const joined = await concatWavs(pieces, path.join(workDir, "voice-joined.wav"), workDir);
       /*
-       * Each line was padded out to the length the template allowed for, so the
-       * last one usually ends in silence. Cutting back to the last word keeps
-       * that dead air from making the finished video longer than the script.
-       *
-       * It cannot make the video shorter: the picture runs to the silent cut's
-       * length whatever the voice does. Nothing is added after the last word.
+       * The breath that went after the last line has nothing following it, so it
+       * is not a breath, it is the video ending on silence. Off it comes.
        */
       const tightened = await trimTrailingSilence(joined, path.join(workDir, "voice-tight.wav"));
       const finalTrack = await normalizeLoudness(tightened, path.join(workDir, "voice.wav"));
+      const spokenTotal = await probeDuration(finalTrack);
+
+      /*
+       * Land the last scene on the last word.
+       *
+       * Everything above adds up to what was going into the track; the trim
+       * above then took the tail off it, and loudnorm can move the length by a
+       * frame either way. Rather than assume, the finished track is measured and
+       * the last scene is brought to wherever that leaves it, plus a beat to let
+       * the last word sit. That beat is AI_TAIL_SECONDS, not four seconds of a
+       * still frame.
+       */
+      const held = durations.reduce((sum, value) => sum + value, 0);
+      const last = durations.length - 1;
+      durations[last] = Math.max(
+        AI_LEAST_SCENE_SECONDS,
+        Math.round((durations[last] + (spokenTotal + AI_TAIL_SECONDS - held)) * 1000) / 1000
+      );
+
+      const scriptTotal = beats.reduce((sum, beat) => sum + (Number(beat.seconds) || 0), 0);
+      const pictureTotal = durations.reduce((sum, value) => sum + value, 0);
+      log(
+        `The voice runs ${spokenTotal.toFixed(1)}s. The picture follows it, so this cut is ` +
+          `${pictureTotal.toFixed(1)}s rather than the script's ${scriptTotal.toFixed(1)}s - ` +
+          `the difference was silence between the lines.`
+      );
+
       return {
         audioFile: finalTrack,
         durations,
-        totalDuration: await probeDuration(finalTrack),
+        totalDuration: spokenTotal,
         voice: {
           mode: "ai",
           engine: engine.id,
@@ -386,6 +497,10 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
           reusedLines,
           billedCharacters,
           scriptCharacters,
+          // The picture was cut to the voice rather than to the script, so the
+          // review step can say so instead of the length looking like a fault.
+          followsSpeech: true,
+          scriptSeconds: Math.round(scriptTotal * 10) / 10,
         },
       };
     } catch (error) {
@@ -435,9 +550,12 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
 
 module.exports = {
   LEAD_SILENCE_SECONDS,
+  AI_BREATH_SECONDS,
+  AI_TAIL_SECONDS,
   availableVoiceEngines,
   buildAiVoiceTrack,
   buildRecordedTrack,
+  tightenLine,
   trimTrailingSilence,
   probeDuration,
 };
