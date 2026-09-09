@@ -281,7 +281,8 @@ test("the suggested seconds follow the words as a beat is written", options, asy
 
     const empty = await tool.page.evaluate(firstBeat);
     assert.equal(empty.seconds, "2.5", "a beat with nothing in it still holds its picture");
-    assert.match(empty.hint, /following the words/i);
+    assert.match(empty.hint, /~2\.5s from 0 characters/, empty.hint);
+    assert.match(empty.hint, /clears if you type a number/, empty.hint);
 
     // 64 characters: 1.5s of lead-in plus 4s of reading at 16 a second.
     const line = "Here is the listing, exactly as a buyer sees it on the site.....";
@@ -292,6 +293,7 @@ test("the suggested seconds follow the words as a beat is written", options, asy
     const written = await tool.page.evaluate(firstBeat);
     assert.equal(written.seconds, "5.5", "the box should have kept up with the words");
     assert.match(written.total, /5\.5s/, "and the running total with it");
+    assert.match(written.hint, /~5\.5s from 64 characters/, written.hint);
 
     // Deleting words takes it back down; the number is not a high-water mark.
     await tool.page.evaluate(() => {
@@ -299,7 +301,50 @@ test("the suggested seconds follow the words as a beat is written", options, asy
       box.value = "Short line.";
       box.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "2.5");
+    const shortened = await tool.page.evaluate(firstBeat);
+    assert.equal(shortened.seconds, "2.5");
+    assert.match(shortened.hint, /~2\.5s from 11 characters/, shortened.hint);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * Bill: "the suggested seconds don't update in real time."
+ *
+ * The number did move. What it did not do was move on every keystroke - a
+ * character or two only shifts the suggestion by a hundredth, so the rounded
+ * figure sits still for a few letters at a time and the field reads as stuck.
+ *
+ * So this watches the hint as well as the number, one character at a time. The
+ * hint carries the character count, so it has to change on every single one.
+ */
+test("the hint under the box moves on every single keystroke", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+    await tool.page.focus('[data-role="text"]');
+
+    // No spaces in it, so every keystroke really is one more character - the
+    // suggestion ignores the whitespace at either end of a line.
+    const seen = [];
+    for (const character of "nothing-about-schools".split("")) {
+      await tool.page.type('[data-role="text"]', character, { delay: 1 });
+      seen.push(await tool.page.evaluate(firstBeat));
+    }
+
+    seen.forEach((state, at) => {
+      assert.match(
+        state.hint,
+        new RegExp(`from ${at + 1} character`),
+        `after ${at + 1} characters the hint said "${state.hint}"`
+      );
+    });
+    assert.equal(new Set(seen.map((state) => state.hint)).size, seen.length, "every keystroke changed the hint");
+
+    // Nothing waits for the field to lose focus: the box is still being typed in.
+    const focused = await tool.page.evaluate(() => document.activeElement.getAttribute("data-role"));
+    assert.equal(focused, "text", "and all of that happened without leaving the box");
   } finally {
     await tool.close();
   }
@@ -322,7 +367,12 @@ test("a duration typed by hand is left alone, and clearing it starts it followin
     // The words change underneath it and the number stays where it was put.
     await tool.page.focus('[data-role="text"]');
     await tool.page.type('[data-role="text"]', "A line of words that would suggest something else entirely.", { delay: 1 });
-    assert.equal((await tool.page.evaluate(firstBeat)).seconds, "9", "somebody chose 9, so it stays 9");
+    const stillHeld = await tool.page.evaluate(firstBeat);
+    assert.equal(stillHeld.seconds, "9", "somebody chose 9, so it stays 9");
+    // The suggestion is still shown while it is being overruled, so the way
+    // back is a number you can see rather than one you have to work out.
+    assert.match(stillHeld.hint, /~5\.2s from 59 characters/, stillHeld.hint);
+    assert.match(stillHeld.hint, /Empty the box to follow the words again/, stillHeld.hint);
 
     // Emptying the box is the way back.
     await tool.page.evaluate(() => {
@@ -332,7 +382,77 @@ test("a duration typed by hand is left alone, and clearing it starts it followin
     });
     const following = await tool.page.evaluate(firstBeat);
     assert.equal(following.seconds, "5.2", "59 characters: 1.5 + 59/16");
-    assert.match(following.hint, /following the words/i);
+    assert.match(following.hint, /~5\.2s from 59 characters/, following.hint);
+    assert.match(following.hint, /clears if you type a number/, following.hint);
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The bug behind "it only updates sometimes".
+ *
+ * Whether a beat followed its words was worked out by asking whether the saved
+ * number happened to equal the suggestion. Every shipped beat was hand-timed
+ * against the reference video, so none of them match - and opening one of those
+ * scripts gave a box that never moved again however much the words changed.
+ *
+ * It is saved with the beat now, so re-opening a script remembers which beats
+ * were following and which were held.
+ */
+test("re-opening a saved script remembers which beats were following the words", options, async () => {
+  const tool = await openTool();
+  try {
+    await openTheScriptEditor(tool.page);
+
+    // Beat one follows its words. Beat two is held at a number of its own.
+    await tool.page.type('[data-role="text"]', "The first line.", { delay: 1 });
+    await tool.page.evaluate(() => {
+      document.getElementById("tplName").value = "Two beats";
+      document.getElementById("addBeatBtn").click();
+    });
+    await tool.page.evaluate(() => {
+      const rows = document.querySelectorAll(".beatrow");
+      const text = rows[1].querySelector('[data-role="text"]');
+      text.value = "The second line.";
+      text.dispatchEvent(new Event("input", { bubbles: true }));
+      const seconds = rows[1].querySelector('[data-role="seconds"]');
+      seconds.value = "11";
+      seconds.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await tool.page.evaluate(() => document.getElementById("saveTemplateBtn").click());
+    await tool.page.waitForFunction(() => !document.getElementById("editorOk").hidden, { timeout: 5000 });
+
+    // Back out to the list and open it again, the way anybody would.
+    await tool.page.evaluate(() => document.getElementById("cancelTemplateBtn").click());
+    await tool.page.waitForFunction(() => !document.getElementById("scriptsList").hidden, { timeout: 5000 });
+    await tool.page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll("#templateList .card"));
+      const mine = cards.find((card) => card.textContent.includes("Two beats"));
+      Array.from(mine.querySelectorAll("button")).find((button) => button.textContent === "Edit").click();
+    });
+    await tool.page.waitForFunction(() => document.querySelectorAll(".beatrow").length === 2, { timeout: 5000 });
+
+    const reopened = await tool.page.evaluate(() =>
+      Array.from(document.querySelectorAll(".beatrow")).map((row) => ({
+        seconds: row.querySelector('[data-role="seconds"]').value,
+        hint: row.querySelector('[data-role="secondsHint"]').textContent.trim(),
+      }))
+    );
+
+    assert.match(reopened[0].hint, /clears if you type a number/, reopened[0].hint);
+    assert.match(reopened[1].hint, /Held at 11s/, reopened[1].hint);
+
+    // And the one that follows still follows: typing into it moves the number.
+    await tool.page.evaluate(() => {
+      const box = document.querySelector('.beatrow [data-role="text"]');
+      box.value = "The first line, made considerably longer than it was before.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const after = await tool.page.evaluate(firstBeat);
+    assert.notEqual(after.seconds, reopened[0].seconds, "it is still following the words");
+    assert.match(after.hint, /from 60 characters/, after.hint);
   } finally {
     await tool.close();
   }
@@ -514,8 +634,7 @@ const { run } = require("../src/exec");
 
 /** A job sitting on the final review with a real finished video behind it. */
 async function jobOnFinalReview(durations, voiceSeconds) {
-  await templates.ensureSeeded();
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
     firstName: "Bill",

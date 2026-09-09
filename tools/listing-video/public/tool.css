@@ -383,6 +383,8 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .pill--ok { background: #e6f6ec; color: #14714a; }
 .pill--bad { background: #fbe9e7; color: var(--red); }
 .pill--wait { background: var(--amber-bg); color: #8a5b12; }
+/* A script that lives in this browser rather than coming off the server. */
+.pill--mine { background: #e6f6ec; color: #14714a; }
 
 /* ---------- beat editor ---------- */
 .beatrow {

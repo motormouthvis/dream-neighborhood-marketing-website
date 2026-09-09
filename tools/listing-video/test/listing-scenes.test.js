@@ -382,7 +382,7 @@ test("the gate refuses the frame even if the template starts drawing it again", 
  */
 test("the before-shot scripts open on a page with nothing of ours on it", async () => {
   for (const id of ["vanessa-se-only-v11", "vanessa-se-ne-v11"]) {
-    const template = await templates.getTemplate(id);
+    const template = await templates.getDefault(id);
     assert.equal(template.listingExplorer, "absent", `${id} is the before shot`);
 
     const before = template.beats.slice(0, 3);
@@ -408,7 +408,7 @@ test("the before-shot scripts open on a page with nothing of ours on it", async 
  * about the button and the button is on screen for it.
  */
 test("the upgrade script opens with the button on, because that is the pitch", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   assert.equal(template.listingExplorer, "prefer-present");
   assert.equal(template.beats[0].scene, "listing-button");
   assert.match(template.beats[0].text, /You already have School Explorer/);

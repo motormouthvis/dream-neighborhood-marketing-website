@@ -86,6 +86,10 @@
         (template.listingExplorer === "prefer-present"
           ? '<br /><strong>For customers who already have School Explorer.</strong>'
           : "") +
+        // Which of these are yours, in the place you pick one. A script saved
+        // in this browser reads differently from one that ships with the tool,
+        // and the picker is where that matters.
+        (template.savedHere ? '<br /><span class="choice__note">Saved in this browser only</span>' : "") +
         (template.notes ? "<br />" + D.escapeHtml(template.notes) : "") +
         "</span></span></span>";
       wrap.appendChild(label);
@@ -389,8 +393,25 @@
       return;
     }
 
+    /*
+     * The script goes with the job when it is one of this browser's own.
+     *
+     * The server has the shipped scripts and nothing else - custom and edited
+     * ones live in localStorage - so an id it could not look up is no use. The
+     * whole script is posted instead and validated on arrival, exactly as a
+     * shipped one is.
+     */
+    var picked = D.state.templates.filter(function (entry) {
+      return entry.id === templateId;
+    })[0];
+    if (!picked) {
+      D.showMessage(el("form-error"), "That script is not in the list any more. Pick another one.");
+      return;
+    }
+
     var payload = {
       templateId: templateId,
+      template: picked.savedHere ? picked.template : null,
       firstName: el("firstName").value.trim(),
       company: el("company").value.trim(),
       websiteUrl: el("websiteUrl").value.trim(),
@@ -431,6 +452,9 @@
       ? postForm(
           API + "/jobs",
           Object.assign({}, payload, addressPicker.value(), {
+            // Every field on a multipart post is a string, so the script goes
+            // over as JSON text and the server parses it back.
+            template: payload.template ? JSON.stringify(payload.template) : null,
             listingHasNoExplorer: el("listingHasNoExplorer").checked ? "yes" : "",
           }),
           file,

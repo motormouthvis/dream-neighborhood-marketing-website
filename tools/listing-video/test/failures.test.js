@@ -38,7 +38,7 @@ const options = noChrome ? { skip: "no Chrome or Chromium on this machine" } : {
 /** Run a job that is going to fail, and hand back the job as it was left. */
 async function failingJob(routes, { company = "Fixture Realty", listingPath = "" } = {}) {
   const { server, origin } = await fixture.listen(routes);
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
     firstName: "Bill",
@@ -132,7 +132,7 @@ test("a 403 is written down as a 403, and a refusal that had no status has none"
  */
 test("a timed-out capture is still written down, and still gives up on time", options, async () => {
   const { server, origin } = await fixture.listen(fixture.SLOW_SITE);
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
     firstName: "Bill",

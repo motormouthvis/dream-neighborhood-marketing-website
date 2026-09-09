@@ -90,7 +90,7 @@ async function explorerShotsFor(outDir) {
  * there.
  */
 async function drawTheScript(templateId, { beats } = {}) {
-  const template = await templates.getTemplate(templateId);
+  const template = await templates.getDefault(templateId);
   const outDir = await fsp.mkdtemp(path.join(dataDir, `${templateId}-`));
   const screenshot = await uploadedScreenshot(outDir);
   const shots = await explorerShotsFor(outDir);
@@ -293,7 +293,7 @@ test("no shipped script asks for the Neighborhood Explorer on a listing beat", a
     explorerShots: Object.fromEntries(NE_TABS.map((tab) => [tab, ["/tmp/ne-1.jpg"]])),
   };
 
-  for (const summary of await templates.listTemplates()) {
+  for (const summary of await templates.listDefaults()) {
     const beats = templates.renderBeats(summary, { firstName: "Bill", company: "Scott Rodgers Real Estate" });
     beats.forEach((beat, index) => {
       for (const spec of specsForBeat(beat, context, { sePosition: 0 })) {
@@ -319,7 +319,7 @@ test("no shipped script asks for the Neighborhood Explorer on a listing beat", a
 
 test("the house button on a listing beat is the School Explorer's", async () => {
   for (const id of ["vanessa-se-only-v11", "vanessa-se-ne-v11", "se-to-ne-upgrade"]) {
-    const template = await templates.getTemplate(id);
+    const template = await templates.getDefault(id);
     const beats = templates.renderBeats(template, { firstName: "Bill", company: "Scott Rodgers Real Estate" });
     for (const beat of beats.filter((entry) => BUTTON_LISTING_SCENES.has(entry.scene))) {
       const spec = specForBeat(beat, {

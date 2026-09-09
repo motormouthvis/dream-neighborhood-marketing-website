@@ -295,80 +295,88 @@ app.get(`${TOOL_PATH}/api/places`, auth.requireSession, async (req, res) => {
 });
 
 /* ---------------------------------------------------------------- */
-/* script templates - editable, saved on disk under the data dir    */
+/* script templates                                                 */
+/*                                                                  */
+/* The server ships the defaults and checks anything the browser     */
+/* wrote. It does not keep custom scripts: those live in the         */
+/* browser that wrote them, which is the only place a Heroku deploy  */
+/* cannot reach. See public/js/script-store.js.                      */
 /* ---------------------------------------------------------------- */
-app.get(`${TOOL_PATH}/api/templates`, auth.requireSession, async (req, res) => {
+
+/** The shipped scripts, out of code. Read-only, and the same on every dyno. */
+app.get(`${TOOL_PATH}/api/templates`, auth.requireSession, (req, res) => {
   try {
-    const all = await templates.listTemplates();
-    return res.json({ templates: all.map(templates.summary) });
+    const defaults = templates.listDefaults();
+    return res.json({
+      // Whole scripts, not summaries: the browser has to be able to open a
+      // shipped script in the editor without a second round trip, and it builds
+      // its own merged list out of these plus what it has saved.
+      templates: defaults,
+      summaries: defaults.map(templates.summary),
+      storage: "browser",
+    });
   } catch (error) {
     return fail(res, error);
   }
 });
 
-app.get(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
+app.get(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, (req, res) => {
   try {
-    const template = await templates.getTemplate(req.params.id);
+    const template = templates.getDefault(req.params.id);
     return res.json({ template, totalSeconds: templates.totalSeconds(template) });
   } catch (error) {
     return fail(res, error);
   }
 });
 
-// The whole script as one block of words, for the teleprompter.
-app.get(`${TOOL_PATH}/api/templates/:id/script`, auth.requireSession, async (req, res) => {
+/**
+ * Check a script the browser is about to keep, and hand back the tidy version.
+ *
+ * The browser is the only copy, but it is not the judge of what a script may
+ * contain: the scene names, the tab names, the durations and "School Explorer
+ * comes first" are all decided here, in the same code a shipped script goes
+ * through, so the Scripts page cannot save something a render would then refuse
+ * - and the messages Bill reads come from one place.
+ *
+ * Nothing is written on this side. The answer goes straight back.
+ */
+app.post(`${TOOL_PATH}/api/templates-validate`, auth.requireSession, (req, res) => {
   try {
-    const template = await templates.getTemplate(req.params.id);
-    const beats = templates.renderBeats(template, {
-      firstName: String(req.query.firstName || "").trim(),
-      company: String(req.query.company || "").trim(),
+    const body = req.body || {};
+    const clean = templates.cleanTemplate(
+      { ...body, builtIn: templates.isDefaultId(body.id) },
+      { id: body.id }
+    );
+    return res.json({
+      template: clean,
+      summary: templates.summary(clean),
+      totalSeconds: templates.totalSeconds(clean),
     });
-    return res.json({ id: template.id, name: template.name, text: templates.beatsToText(beats), beats });
   } catch (error) {
     return fail(res, error);
   }
 });
 
-app.post(`${TOOL_PATH}/api/templates`, auth.requireSession, async (req, res) => {
+/**
+ * The scripts that were on this box's disk before scripts moved to the browser.
+ *
+ * Read-only, and offered as an import so nothing anybody wrote is lost in the
+ * move. The files are never touched: deleting Bill's scripts is the thing this
+ * whole change exists to stop, and it would be a poor joke to do it here.
+ *
+ * On a dyno that has been deployed since, there are none, and the Scripts page
+ * says nothing about it.
+ */
+app.get(`${TOOL_PATH}/api/legacy-templates`, auth.requireSession, async (req, res) => {
   try {
-    const saved = await templates.createTemplate(req.body || {});
-    return res.status(201).json({ template: saved });
-  } catch (error) {
-    return fail(res, error);
-  }
-});
-
-app.put(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
-  try {
-    const saved = await templates.updateTemplate(req.params.id, req.body || {});
-    return res.json({ template: saved });
-  } catch (error) {
-    return fail(res, error);
-  }
-});
-
-app.post(`${TOOL_PATH}/api/templates/:id/duplicate`, auth.requireSession, async (req, res) => {
-  try {
-    const saved = await templates.duplicateTemplate(req.params.id);
-    return res.status(201).json({ template: saved });
-  } catch (error) {
-    return fail(res, error);
-  }
-});
-
-app.delete(`${TOOL_PATH}/api/templates/:id`, auth.requireSession, async (req, res) => {
-  try {
-    const removed = await templates.deleteTemplate(req.params.id);
-    return res.json({ deleted: true, id: removed.id, name: removed.name });
-  } catch (error) {
-    return fail(res, error);
-  }
-});
-
-app.post(`${TOOL_PATH}/api/templates-restore-defaults`, auth.requireSession, async (req, res) => {
-  try {
-    const restored = await templates.restoreDefaults();
-    return res.json({ restored });
+    const found = await templates.legacyTemplates();
+    return res.json({
+      templates: found,
+      // The ones worth importing: the shipped scripts sitting there untouched
+      // would only clutter a browser with a copy of what it already has.
+      importable: found.filter((template) => !template.matchesShipped).map((template) => template.id),
+      whereTheyWere: templates.dir(),
+    });
   } catch (error) {
     return fail(res, error);
   }
@@ -393,6 +401,14 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
   const listingRaw = String(body.listingUrl || "").trim();
   const customerEmail = String(body.customerEmail || "").trim();
   const templateId = String(body.templateId || "").trim();
+  /*
+   * The script itself, when it is one of theirs.
+   *
+   * Custom and edited scripts live in the browser, so the browser posts the
+   * whole thing rather than an id nothing here could look up. It arrives as a
+   * JSON string on the multipart path, where every field is a string.
+   */
+  const templateJson = body.template;
   const fromId = config.fromAddresses.some((entry) => entry.id === body.fromId) ? body.fromId : "marketing";
   // Checked against what the account actually offers, so a stale page cannot
   // book a voice that would fail at render time.
@@ -406,15 +422,24 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
   if (problems.length) {
     return refuse(400, `Please fill in: ${problems.join(", ")}.`);
   }
-  if (!templateId) {
+  if (!templateId && !templateJson) {
     return refuse(400, "Pick a script template first.");
   }
 
   let template;
   try {
-    template = await templates.getTemplate(templateId);
+    // A script from the browser is checked here exactly as a shipped one is;
+    // one that only names an id has to be a shipped one, because nothing else
+    // exists on this side.
+    template = templateJson ? templates.fromBrowser(templateJson) : templates.getDefault(templateId);
   } catch (error) {
     await discardUpload(req.file);
+    if (error instanceof SyntaxError) {
+      return refuse(
+        400,
+        "That script did not come through in one piece. Open the Scripts tab, check it is still there, and try again."
+      );
+    }
     return fail(res, error);
   }
 
@@ -871,12 +896,26 @@ app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use((req, res) => res.status(404).send("Not found"));
 
 if (require.main === module) {
+  /*
+   * Nothing is seeded onto disk at boot any more.
+   *
+   * Seeding was how the shipped scripts got onto the dyno, and the same code
+   * path is why every deploy left Bill looking at three shipped scripts and
+   * none of his own: the disk it wrote to does not survive a slug replace, so
+   * "seed what is missing" meant "seed everything, every time". The defaults
+   * are served straight out of code now and custom scripts live in the browser.
+   */
   templates
-    .ensureSeeded()
-    .then((seeded) => {
-      if (seeded.length) console.log(`Seeded script templates: ${seeded.join(", ")}`);
+    .legacyTemplates()
+    .then((found) => {
+      if (found.length) {
+        console.log(
+          `${found.length} script${found.length === 1 ? "" : "s"} from before scripts moved to the browser are still in ` +
+            `${templates.dir()}. The Scripts tab offers them as an import. Nothing here deletes them.`
+        );
+      }
     })
-    .catch((error) => console.error(`Could not seed the script templates: ${error.message}`));
+    .catch(() => {});
 
   app.listen(config.port, () => {
     const voices = availableVoiceEngines();
@@ -884,7 +923,7 @@ if (require.main === module) {
     if (config.accessTokenIsGenerated) {
       console.log(`No LISTING_VIDEO_TOKEN was set. Temporary password for this run: ${config.accessToken}`);
     }
-    console.log(`Scripts and videos live in ${config.dataDir}`);
+    console.log(`Videos live in ${config.dataDir}. Scripts live in the browser and survive a deploy.`);
     console.log(`AI voice: ${voices.length ? voices[0].label : "not connected (record your own voice)"}`);
     console.log(`Mailbox: ${mail.mailStatus().connected ? "connected" : "not connected"}`);
   });

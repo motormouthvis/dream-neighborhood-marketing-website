@@ -37,7 +37,7 @@ const context = {
 };
 
 test("every Neighborhood Explorer beat draws the real screenshot of its own tab", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   const beats = templates.renderBeats(template, { firstName: "Patty", company: "Patty Realty" });
   const specs = beats.map((beat) => ({ scene: beat.scene, tab: beat.neTabName, ...specForBeat(beat, context) }));
 
@@ -160,7 +160,7 @@ test("the label beside the house button says schools, and names the house it is 
  * screen, and the popup arrived from nowhere.
  */
 test("the house button is in frame right before the first Neighborhood Explorer popup", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO Realty" });
 
   const firstPopup = beats.findIndex((beat) => beat.scene === "ne");

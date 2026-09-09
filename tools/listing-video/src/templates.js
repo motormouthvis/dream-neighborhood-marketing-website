@@ -1,14 +1,33 @@
 "use strict";
 
 /**
- * Script templates, stored as plain JSON on disk under the data dir so Bill and
- * Myles can create, edit and keep their own scripts from the Scripts page
- * without anyone touching this repo.
+ * Script templates: what one is, and the ones this repo ships.
  *
- * One file per template: <dataDir>/templates/<id>.json
+ * WHERE SCRIPTS LIVE, AND WHY IT IS NOT HERE ANY MORE
+ *
+ * They used to be one JSON file each under <dataDir>/templates. Heroku replaces
+ * the whole slug on every deploy and the dyno's disk goes with it, so every
+ * ship wiped Bill's scripts and reseeded the shipped three - months of edits
+ * gone, repeatedly, with nothing in the interface saying it would happen.
+ *
+ * Custom and edited scripts now live in the browser, in localStorage, one copy
+ * per person. See public/js/script-store.js. That is Bill's call and it fits
+ * how the tool is used: he and Myles want different scripts, and neither wants
+ * the other's turning up in their picker. It also means a deploy cannot touch
+ * them, because a deploy never touches their browser.
+ *
+ * What is left on this side:
+ *
+ *   the shipped defaults   read out of src/default-templates.js, never written
+ *                          anywhere. GET /api/templates serves them.
+ *   validation             cleanTemplate is the one place that says what a
+ *                          script may contain, and it runs on anything the
+ *                          browser sends before a video is made from it.
+ *   the old files          read-only, so scripts written before this change can
+ *                          be pulled into a browser once. Nothing deletes them.
  *
  * A template is:
- *   id         slug, also the file name
+ *   id         slug, and the reference every video keeps
  *   name       what shows in the picker
  *   explorers  "se"    - School Explorer only, no Neighborhood Explorer at all
  *              "se-ne" - School Explorer first, then the Neighborhood Explorer tabs
@@ -19,13 +38,9 @@
  *                                 Explorer, for an upgrade pitch. A listing
  *                                 without one is accepted as a fallback.
  *   notes      free text for whoever edits it next
- *   beats[]    ordered list of { scene, seconds, text, caption, tab }
- *
- * The shipped templates are seeded from src/default-templates.js and can be
- * edited, duplicated or deleted from there like any other template.
+ *   beats[]    ordered list of { scene, seconds, autoSeconds, text, caption, tab }
  */
 
-const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const config = require("./config");
@@ -101,8 +116,11 @@ const LISTING_EXPLORER_LABELS = {
 const MIN_BEAT_SECONDS = 0.5;
 const MAX_BEAT_SECONDS = 120;
 const MAX_TOTAL_SECONDS = 900;
+// The bookkeeping file the old on-disk seeding kept beside the scripts. Nothing
+// writes it any more; it is named here so the legacy reader skips over it.
 const SEED_MARKER = ".seeded.json";
 
+/** Where scripts used to be kept. Read for the one-time import, never written. */
 function dir() {
   return path.join(config.dataDir, "templates");
 }
@@ -286,18 +304,8 @@ function cleanTemplate(raw, { id } = {}) {
 }
 
 /* ---------------------------------------------------------------- */
-/* disk                                                             */
+/* the shipped defaults - read out of code, written nowhere          */
 /* ---------------------------------------------------------------- */
-
-function ensureDir() {
-  fs.mkdirSync(dir(), { recursive: true });
-}
-
-async function writeTemplate(template) {
-  ensureDir();
-  await fsp.writeFile(fileFor(template.id), `${JSON.stringify(template, null, 2)}\n`, "utf8");
-  return template;
-}
 
 /*
  * The two chips the product renamed, and how a script should now read.
@@ -312,12 +320,13 @@ const RENAMED_TABS = [
 ];
 
 /**
- * Bring a script saved before the chips were renamed up to date.
+ * Bring a script written before the chips were renamed up to date.
  *
- * Seeding never overwrites a saved script, so a staging data dir still holds the
- * scripts as they were first written - naming Mobility and Points of Interest in
- * their tab pins, their spoken lines and their captions. The pins would still
- * find the right chip, but the voice would name a chip that is no longer there.
+ * Only used on scripts coming in from somewhere older than this code - the disk
+ * files below, or an exported file being imported - because those still name
+ * Mobility and Points of Interest in their tab pins, their spoken lines and
+ * their captions. The pins would still find the right chip; the voice would
+ * name a chip that is no longer on screen.
  *
  * Only the two old names are touched, and only where they still appear, so any
  * rewording already done by hand is left exactly as it is.
@@ -349,172 +358,125 @@ function renameTabsIn(template) {
     }
     return next;
   });
-  return touched ? { ...template, beats } : null;
+  return touched ? { ...template, beats } : template;
 }
 
 /**
- * Put the shipped templates on disk.
+ * The scripts this repo ships, as the browser is given them.
  *
- * The marker records which ones have been offered before, one id at a time
- * rather than a single "seeded" flag. So a data dir that already has the two
- * v11 scripts picks up a newly shipped third one on the next boot, while a
- * default that somebody deleted stays deleted.
+ * Built fresh from src/default-templates.js every call and never written to
+ * disk, so a deploy updates them and there is nothing for it to overwrite. A
+ * copy somebody has edited lives in their browser under the same id and wins
+ * there; this is only ever the shipped original.
  */
-async function ensureSeeded() {
-  ensureDir();
-  const marker = path.join(dir(), SEED_MARKER);
-
-  let offered = [];
-  try {
-    const parsed = JSON.parse(await fsp.readFile(marker, "utf8"));
-    if (Array.isArray(parsed.ids)) offered = parsed.ids.map(String);
-  } catch (_) {
-    offered = [];
-  }
-
-  const seeded = [];
-  for (const template of DEFAULT_TEMPLATES) {
-    if (offered.includes(template.id)) continue;
-    if (!fs.existsSync(fileFor(template.id))) {
-      await writeTemplate(stamp(cleanTemplate({ ...template, builtIn: true }, { id: template.id })));
-      seeded.push(template.id);
-    }
-    offered.push(template.id);
-  }
-
-  await renameTabsOnDisk();
-
-  const missing = DEFAULT_TEMPLATE_IDS.some((id) => !offered.includes(id));
-  if (seeded.length || missing || !fs.existsSync(marker)) {
-    await fsp.writeFile(
-      marker,
-      `${JSON.stringify({ seededAt: new Date().toISOString(), ids: offered }, null, 2)}\n`,
-      "utf8"
-    );
-  }
-  return seeded;
+function listDefaults() {
+  return DEFAULT_TEMPLATES.map((template) =>
+    cleanTemplate({ ...template, builtIn: true }, { id: template.id })
+  );
 }
 
-/** Apply the chip rename to every script already on disk. Returns the ids changed. */
-async function renameTabsOnDisk() {
+function getDefault(id) {
+  const found = listDefaults().find((template) => template.id === String(id || ""));
+  if (!found) throw notFound(id);
+  return found;
+}
+
+function isDefaultId(id) {
+  return DEFAULT_TEMPLATE_IDS.includes(String(id || ""));
+}
+
+/**
+ * A script the browser sent, checked before anything is filmed from it.
+ *
+ * The browser holds the only copy of a custom script, so it posts the whole
+ * thing with the job rather than an id the server could look up. Everything it
+ * sends goes through the same validation a shipped script does - the scene
+ * names, the tab names, the durations, School Explorer coming first - so a
+ * hand-edited localStorage entry cannot get a video made out of it that the
+ * Scripts page would have refused to save.
+ */
+function fromBrowser(raw) {
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!parsed || typeof parsed !== "object") throw badRequest("That script did not come through. Reload the page and try again.");
+  const clean = cleanTemplate({ ...parsed, builtIn: isDefaultId(parsed.id) }, { id: parsed.id });
+  return clean;
+}
+
+/* ---------------------------------------------------------------- */
+/* the scripts that were on disk before scripts moved to the browser */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The old <dataDir>/templates files, read and never written.
+ *
+ * These are whatever survived on the box between the last deploy and now. They
+ * are offered to the Scripts page as an import, once, so nothing anybody wrote
+ * is lost in the move - and they are left exactly where they are afterwards,
+ * because this code deleting Bill's scripts is the failure mode it exists to
+ * end. On a fresh dyno there are simply none, and the import is not offered.
+ *
+ * A file that no longer parses, or that no longer validates, is skipped rather
+ * than taking the list down; it stays on disk for somebody to look at.
+ */
+async function legacyTemplates() {
   let names = [];
   try {
     names = await fsp.readdir(dir());
   } catch (_) {
     return [];
   }
-  const changed = [];
+
+  const found = [];
   for (const name of names) {
     if (!name.endsWith(".json") || name === SEED_MARKER) continue;
     const id = name.replace(/\.json$/, "");
-    let saved;
+    if (!/^[a-z0-9-]{1,60}$/.test(id)) continue;
+    let parsed;
     try {
-      saved = JSON.parse(await fsp.readFile(fileFor(id), "utf8"));
+      parsed = JSON.parse(await fsp.readFile(fileFor(id), "utf8"));
     } catch (_) {
       continue;
     }
-    const renamed = renameTabsIn(saved);
-    if (!renamed) continue;
-    await writeTemplate(renamed);
-    changed.push(id);
+    try {
+      const clean = cleanTemplate(renameTabsIn({ ...parsed, builtIn: false }), { id });
+      found.push({
+        ...clean,
+        createdAt: parsed.createdAt || null,
+        updatedAt: parsed.updatedAt || null,
+        // Whether this is one of the shipped scripts sitting on disk unchanged,
+        // in which case importing it would only clutter somebody's browser with
+        // a copy of something they already have.
+        matchesShipped: isDefaultId(id) && sameScript(clean, safeDefault(id)),
+      });
+    } catch (_) {
+      continue;
+    }
   }
-  return changed;
+  return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Put the shipped templates back, exactly as they ship. */
-async function restoreDefaults() {
-  ensureDir();
-  const restored = [];
-  for (const template of DEFAULT_TEMPLATES) {
-    await writeTemplate(stamp(cleanTemplate({ ...template, builtIn: true }, { id: template.id })));
-    restored.push(template.id);
-  }
-  return restored;
-}
-
-function stamp(template, previous) {
-  const now = new Date().toISOString();
-  return {
-    ...template,
-    createdAt: (previous && previous.createdAt) || now,
-    updatedAt: now,
-  };
-}
-
-async function listTemplates() {
-  await ensureSeeded();
-  let names = [];
+function safeDefault(id) {
   try {
-    names = await fsp.readdir(dir());
+    return getDefault(id);
   } catch (_) {
-    return [];
-  }
-  const out = [];
-  for (const name of names) {
-    if (!name.endsWith(".json") || name === SEED_MARKER) continue;
-    const loaded = await readTemplate(name.replace(/\.json$/, ""));
-    if (loaded) out.push(loaded);
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-async function readTemplate(id) {
-  if (!/^[a-z0-9-]{1,60}$/.test(String(id || ""))) return null;
-  try {
-    const parsed = JSON.parse(await fsp.readFile(fileFor(id), "utf8"));
-    const clean = cleanTemplate(parsed, { id });
-    return { ...clean, createdAt: parsed.createdAt || null, updatedAt: parsed.updatedAt || null };
-  } catch (_) {
-    // A hand-edited file that no longer parses should not take the whole page
-    // down; it is just skipped and stays on disk for someone to fix.
     return null;
   }
 }
 
-async function getTemplate(id) {
-  await ensureSeeded();
-  const template = await readTemplate(id);
-  if (!template) throw notFound(id);
-  return template;
+/** Are these two scripts the same words, scenes and timings? */
+function sameScript(a, b) {
+  if (!a || !b) return false;
+  const shape = (template) =>
+    JSON.stringify({
+      name: template.name,
+      explorers: template.explorers,
+      listingExplorer: template.listingExplorer,
+      notes: template.notes,
+      beats: template.beats,
+    });
+  return shape(a) === shape(b);
 }
 
-async function createTemplate(input) {
-  await ensureSeeded();
-  const clean = cleanTemplate({ ...input, builtIn: false });
-  const id = await freeId(clean.id);
-  return writeTemplate(stamp({ ...clean, id }));
-}
-
-async function updateTemplate(id, input) {
-  const previous = await getTemplate(id);
-  // The id is the file name and the saved reference on every video, so renaming
-  // a template keeps its id.
-  const clean = cleanTemplate({ ...input, builtIn: previous.builtIn }, { id: previous.id });
-  return writeTemplate(stamp(clean, previous));
-}
-
-async function duplicateTemplate(id) {
-  const source = await getTemplate(id);
-  const name = `${source.name} copy`.slice(0, 90);
-  const clean = cleanTemplate({ ...source, name, builtIn: false }, { id: slugify(name) });
-  const freeSlug = await freeId(clean.id);
-  return writeTemplate(stamp({ ...clean, id: freeSlug }));
-}
-
-async function deleteTemplate(id) {
-  const template = await getTemplate(id);
-  await fsp.rm(fileFor(template.id), { force: true });
-  return template;
-}
-
-async function freeId(base) {
-  let candidate = base;
-  for (let suffix = 2; suffix < 200; suffix += 1) {
-    if (!fs.existsSync(fileFor(candidate))) return candidate;
-    candidate = `${base}-${suffix}`.slice(0, 60);
-  }
-  throw badRequest("Too many templates with that name already. Pick a different name.");
-}
 
 /* ---------------------------------------------------------------- */
 /* turning a template into the beats a render uses                  */
@@ -565,7 +527,13 @@ function totalSeconds(template) {
   return Math.round(template.beats.reduce((sum, beat) => sum + beat.seconds, 0) * 10) / 10;
 }
 
-/** What the picker and the Scripts list need, without the whole script. */
+/**
+ * What the picker and the Scripts list need, without the whole script.
+ *
+ * The browser builds the same object for its own scripts, off the same labels,
+ * which is why the label maps go out with the session - see
+ * public/js/script-store.js.
+ */
 function summary(template) {
   return {
     id: template.id,
@@ -596,15 +564,12 @@ module.exports = {
   MIN_BEAT_SECONDS,
   MAX_BEAT_SECONDS,
   dir,
-  ensureSeeded,
-  renameTabsOnDisk,
-  restoreDefaults,
-  listTemplates,
-  getTemplate,
-  createTemplate,
-  updateTemplate,
-  duplicateTemplate,
-  deleteTemplate,
+  listDefaults,
+  getDefault,
+  isDefaultId,
+  fromBrowser,
+  legacyTemplates,
+  renameTabsIn,
   renderBeats,
   beatsToText,
   totalSeconds,

@@ -345,8 +345,7 @@ const { trimFinishedVideo } = require("../src/render");
 /** A job with a finished video on disk, ready for the final review. */
 async function readyJob(durations) {
   const templates = require("../src/templates");
-  await templates.ensureSeeded();
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
     firstName: "Bill",

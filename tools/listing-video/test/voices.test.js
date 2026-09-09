@@ -310,7 +310,6 @@ test("the form is offered the voices, male and female", async () => {
 
 test("picking a male voice keeps a male voiceId on the job", async () => {
   stubElevenLabs();
-  await templates.ensureSeeded();
   const offered = await voices.listVoices({ fresh: true });
   const man = offered.find((voice) => voice.sex === "male");
 
@@ -326,7 +325,6 @@ test("picking a male voice keeps a male voiceId on the job", async () => {
 
 test("picking a female voice keeps that one instead", async () => {
   stubElevenLabs();
-  await templates.ensureSeeded();
   const offered = await voices.listVoices({ fresh: true });
   const women = offered.filter((voice) => voice.sex === "female");
   const notTheDefault = women[1];
@@ -344,7 +342,6 @@ test("picking a female voice keeps that one instead", async () => {
 
 test("a voice this plan cannot use is not booked onto a job", async () => {
   stubElevenLabs();
-  await templates.ensureSeeded();
   const tool = await signedIn();
   try {
     // Rachel is a Voice Library voice, so the form should not have offered her.

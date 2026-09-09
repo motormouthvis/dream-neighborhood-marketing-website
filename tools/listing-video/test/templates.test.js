@@ -1,7 +1,18 @@
 "use strict";
 
-/* Templates are the thing Bill and Myles edit, so load/save/duplicate/delete
-   and the two shipped v11 scripts are checked here. */
+/*
+ * The shipped scripts, and the rules any script has to obey.
+ *
+ * Creating, editing, duplicating and deleting are not here any more: those
+ * happen in the browser now, because keeping them on the Heroku disk is what
+ * wiped Bill's work on every deploy. See test/script-store.test.js for that
+ * half, and test/script-persistence.test.js for the promise that this side
+ * never writes anything.
+ *
+ * What is here is what the server still owns: the three scripts the repo ships,
+ * and cleanTemplate, which is the only thing that decides what a script may
+ * contain - wherever it came from.
+ */
 
 const os = require("os");
 const path = require("path");
@@ -16,19 +27,21 @@ process.env.LISTING_VIDEO_TOKEN = "test-token";
 const templates = require("../src/templates");
 const { NE_TABS } = require("../src/ne-tabs");
 
-test("first run seeds all three shipped templates", async () => {
-  const seeded = await templates.ensureSeeded();
-  assert.deepEqual(seeded.sort(), ["se-to-ne-upgrade", "vanessa-se-ne-v11", "vanessa-se-only-v11"]);
-  assert.ok(fs.existsSync(path.join(dataDir, "templates", "vanessa-se-only-v11.json")));
-  assert.ok(fs.existsSync(path.join(dataDir, "templates", "se-to-ne-upgrade.json")));
-
-  const list = await templates.listTemplates();
-  assert.equal(list.length, 3);
+test("the three shipped scripts come out of code, and nothing is written to disk", async () => {
+  const list = await templates.listDefaults();
+  assert.deepEqual(
+    list.map((template) => template.id).sort(),
+    ["se-to-ne-upgrade", "vanessa-se-ne-v11", "vanessa-se-only-v11"]
+  );
   assert.ok(list.every((template) => template.builtIn));
+
+  // The wipe-on-deploy bug was seeding these onto the dyno's disk. There is no
+  // longer anywhere for a deploy to overwrite, because nothing is written.
+  assert.equal(fs.existsSync(path.join(dataDir, "templates")), false, "no templates directory is created");
 });
 
 test("the school-only script never mentions Neighborhood Explorer", async () => {
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   assert.equal(template.explorers, "se");
   assert.ok(!template.beats.some((beat) => beat.scene === "ne"));
 
@@ -44,7 +57,7 @@ test("the school-only script never mentions Neighborhood Explorer", async () => 
  * not in the chip it pins, not in what the voice says, not in the caption.
  */
 test("no shipped script names a chip the product no longer has", async () => {
-  for (const template of await templates.listTemplates()) {
+  for (const template of await templates.listDefaults()) {
     const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" });
 
     for (const beat of beats) {
@@ -70,7 +83,7 @@ test("no shipped script names a chip the product no longer has", async () => {
  * says "and", because that is how anybody reads it aloud.
  */
 test("the voice says Walk and Bike while the Walk & Bike chip is showing", async () => {
-  const upgrade = await templates.getTemplate("se-to-ne-upgrade");
+  const upgrade = await templates.getDefault("se-to-ne-upgrade");
   const beats = templates.renderBeats(upgrade, { firstName: "Vanessa", company: "DOMO" });
 
   const walk = beats.find((beat) => beat.neTabName === "Walk & Bike");
@@ -84,8 +97,8 @@ test("the voice says Walk and Bike while the Walk & Bike chip is showing", async
   assert.equal(nearby.caption.headline, "What's Nearby.");
 });
 
-test("a script saved with Bill's spelling points at the same chip", async () => {
-  const mine = await templates.createTemplate({
+test("a script saved with Bill's spelling points at the same chip", () => {
+  const mine = templates.cleanTemplate({
     name: "Bill's spelling",
     explorers: "se-ne",
     beats: [
@@ -95,28 +108,25 @@ test("a script saved with Bill's spelling points at the same chip", async () => 
       { scene: "ne", tab: "POI", seconds: 3, text: "What's Nearby." },
     ],
   });
-  try {
-    // Stored under the name the product uses, however it was typed in.
-    assert.equal(mine.beats[2].tab, "Walk & Bike");
-    assert.equal(mine.beats[3].tab, "What's Nearby");
 
-    const beats = templates.renderBeats(mine, { firstName: "Vanessa", company: "DOMO" });
-    const tabs = beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName);
-    assert.deepEqual(tabs, ["Walk & Bike", "What's Nearby"]);
-  } finally {
-    await templates.deleteTemplate(mine.id);
-  }
+  // Stored under the name the product uses, however it was typed in.
+  assert.equal(mine.beats[2].tab, "Walk & Bike");
+  assert.equal(mine.beats[3].tab, "What's Nearby");
+
+  const beats = templates.renderBeats(mine, { firstName: "Vanessa", company: "DOMO" });
+  const tabs = beats.filter((beat) => beat.scene === "ne").map((beat) => beat.neTabName);
+  assert.deepEqual(tabs, ["Walk & Bike", "What's Nearby"]);
 });
 
 test("the shipped scripts keep the approved words and the v11 durations", async () => {
-  const schoolOnly = await templates.getTemplate("vanessa-se-only-v11");
+  const schoolOnly = await templates.getDefault("vanessa-se-only-v11");
   const spoken = templates.beatsToText(templates.renderBeats(schoolOnly, { firstName: "Vanessa", company: "DOMO" }));
   assert.ok(spoken.startsWith("Hey Vanessa, Claire from Dream Neighborhood. I was looking at DOMO."));
   assert.ok(spoken.includes("You'll save $95 to $800 a month versus other school data providers."));
   assert.ok(spoken.includes("Become not just the home expert, but the school expert as well. Give us a call!"));
   assert.equal(templates.totalSeconds(schoolOnly), 61.7);
 
-  const both = await templates.getTemplate("vanessa-se-ne-v11");
+  const both = await templates.getDefault("vanessa-se-ne-v11");
   assert.equal(both.explorers, "se-ne");
   assert.equal(templates.totalSeconds(both), 65.4);
 
@@ -130,7 +140,7 @@ test("the shipped scripts keep the approved words and the v11 durations", async 
 });
 
 test("Neighborhood Explorer beats get the tabs in order", async () => {
-  const both = await templates.getTemplate("vanessa-se-ne-v11");
+  const both = await templates.getDefault("vanessa-se-ne-v11");
   const rendered = templates.renderBeats(both, { firstName: "Vanessa", company: "DOMO" });
   const tabs = rendered.filter((beat) => beat.scene === "ne").map((beat) => beat.neTab);
   assert.deepEqual(tabs, [0, 1, 2, 3, 4, 5, 6]);
@@ -138,14 +148,23 @@ test("Neighborhood Explorer beats get the tabs in order", async () => {
 });
 
 test("placeholders are filled in, with fallbacks when a field is blank", async () => {
-  const template = await templates.getTemplate("vanessa-se-only-v11");
+  const template = await templates.getDefault("vanessa-se-only-v11");
   const blank = templates.renderBeats(template, {});
   assert.ok(blank[0].text.startsWith("Hey there, Claire from Dream Neighborhood."));
   assert.ok(blank[0].text.includes("I was looking at your website."));
 });
 
-test("a third custom script can be created, edited, duplicated and deleted", async () => {
-  const created = await templates.createTemplate({
+/*
+ * A script the browser holds, on its way to being filmed.
+ *
+ * The browser keeps the only copy, so it posts the whole script with the job.
+ * fromBrowser is the door that takes it, and it applies the same validation a
+ * shipped script goes through - a hand-edited localStorage entry gets exactly
+ * the treatment the Scripts page would have given it.
+ */
+test("a script the browser sends is tidied and checked like any other", () => {
+  const sent = templates.fromBrowser({
+    id: "quick-20-second-cut",
     name: "Quick 20 second cut",
     explorers: "se",
     notes: "Trade show version.",
@@ -155,50 +174,58 @@ test("a third custom script can be created, edited, duplicated and deleted", asy
       { scene: "se", seconds: 6, text: "Schools, right on your site." },
     ],
   });
-  assert.equal(created.id, "quick-20-second-cut");
-  assert.equal(created.builtIn, false);
-  assert.equal(templates.totalSeconds(created), 14);
 
-  const reloaded = await templates.getTemplate("quick-20-second-cut");
-  assert.equal(reloaded.beats.length, 3);
-  assert.equal(reloaded.beats[1].caption, null);
+  assert.equal(sent.id, "quick-20-second-cut");
+  assert.equal(sent.builtIn, false, "it is not one of ours, whatever it claims");
+  assert.equal(templates.totalSeconds(sent), 14);
+  assert.equal(sent.beats.length, 3);
+  assert.equal(sent.beats[1].caption, null);
+  // The old scene name is understood, so a script written before the three
+  // listing looks existed still films.
+  assert.equal(sent.beats[1].scene, "listing-button");
 
-  const edited = await templates.updateTemplate("quick-20-second-cut", {
-    ...reloaded,
-    name: "Quick cut, renamed",
-    beats: reloaded.beats.map((beat, index) => (index === 0 ? { ...beat, seconds: 7.5 } : beat)),
-  });
-  assert.equal(edited.id, "quick-20-second-cut", "renaming keeps the id every video refers to");
-  assert.equal(edited.name, "Quick cut, renamed");
-  assert.equal(edited.beats[0].seconds, 7.5);
-
-  const copy = await templates.duplicateTemplate("quick-20-second-cut");
-  assert.equal(copy.id, "quick-cut-renamed-copy");
-  assert.equal(copy.name, "Quick cut, renamed copy");
-
-  assert.equal((await templates.listTemplates()).length, 5);
-
-  await templates.deleteTemplate(copy.id);
-  await templates.deleteTemplate("quick-20-second-cut");
-  assert.equal((await templates.listTemplates()).length, 3);
-  assert.ok(!fs.existsSync(path.join(dataDir, "templates", "quick-20-second-cut.json")));
+  // It arrives as JSON text on the multipart path, and that works too.
+  assert.deepEqual(templates.fromBrowser(JSON.stringify(sent)), sent);
 });
 
-test("a deleted shipped template stays deleted, even across another boot", async () => {
-  await templates.deleteTemplate("vanessa-se-only-v11");
-  assert.equal((await templates.listTemplates()).length, 2);
+test("a browser cannot pass its own script off as a shipped one", () => {
+  const faked = templates.fromBrowser({
+    id: "bills-own",
+    name: "Bill's own",
+    explorers: "se",
+    builtIn: true,
+    beats: [{ scene: "listing", seconds: 4, text: "Hello." }],
+  });
+  assert.equal(faked.builtIn, false);
 
-  // Booting again must not quietly put it back.
-  assert.deepEqual(await templates.ensureSeeded(), []);
-  assert.equal((await templates.listTemplates()).length, 2);
+  // A script sent under a shipped id keeps the badge, because an edited default
+  // is what that is - and it is checked exactly the same way.
+  const edited = templates.fromBrowser({
+    id: "vanessa-se-only-v11",
+    name: "School only (v11), Bill's cut",
+    explorers: "se",
+    beats: [{ scene: "listing", seconds: 4, text: "Hello." }],
+  });
+  assert.equal(edited.builtIn, true);
+  assert.equal(edited.name, "School only (v11), Bill's cut");
+});
 
-  const restored = await templates.restoreDefaults();
-  assert.deepEqual(restored.sort(), ["se-to-ne-upgrade", "vanessa-se-ne-v11", "vanessa-se-only-v11"]);
-  assert.equal((await templates.listTemplates()).length, 3);
+test("a script the browser sends that breaks a rule is refused, not filmed", () => {
+  assert.throws(
+    () =>
+      templates.fromBrowser({
+        id: "sneaky",
+        name: "Sneaky",
+        explorers: "se",
+        beats: [{ scene: "ne", seconds: 3, text: "Neighborhood Explorer." }],
+      }),
+    /cannot contain a Neighborhood Explorer beat/
+  );
+  assert.throws(() => templates.fromBrowser(null), /did not come through/);
 });
 
 test("the upgrade script opens on School Explorer, then walks every tab in order", async () => {
-  const template = await templates.getTemplate("se-to-ne-upgrade");
+  const template = await templates.getDefault("se-to-ne-upgrade");
   assert.equal(template.explorers, "se-ne");
   // This one is pitched at customers who already have School Explorer, so the
   // listing it films is allowed to have it.
@@ -247,7 +274,7 @@ test("the upgrade script opens on School Explorer, then walks every tab in order
 });
 
 test("a beat can pin its Neighborhood Explorer tab, and the v11 script still runs in order", async () => {
-  const pinned = await templates.createTemplate({
+  const pinned = templates.cleanTemplate({
     name: "Tabs out of order",
     explorers: "se-ne",
     beats: [
@@ -269,9 +296,8 @@ test("a beat can pin its Neighborhood Explorer tab, and the v11 script still run
 
   // A tab on a beat that is not a Neighborhood Explorer beat is meaningless.
   assert.equal(beats[0].neTab, null);
-  await templates.deleteTemplate(pinned.id);
 
-  const v11 = await templates.getTemplate("vanessa-se-ne-v11");
+  const v11 = await templates.getDefault("vanessa-se-ne-v11");
   assert.ok(v11.beats.filter((beat) => beat.scene === "ne").every((beat) => beat.tab === null));
   assert.deepEqual(
     templates.renderBeats(v11, {}).filter((beat) => beat.scene === "ne").map((beat) => beat.neTab),
@@ -279,10 +305,10 @@ test("a beat can pin its Neighborhood Explorer tab, and the v11 script still run
   );
 });
 
-test("a tab that does not exist is refused by name", async () => {
-  await assert.rejects(
+test("a tab that does not exist is refused by name", () => {
+  assert.throws(
     () =>
-      templates.createTemplate({
+      templates.cleanTemplate({
         name: "Made up tab",
         explorers: "se-ne",
         beats: [
@@ -294,17 +320,17 @@ test("a tab that does not exist is refused by name", async () => {
   );
 });
 
-test("bad templates are refused with a message a person can act on", async () => {
-  await assert.rejects(() => templates.createTemplate({ name: "", explorers: "se", beats: [] }), /Give the template a name/);
+test("bad templates are refused with a message a person can act on", () => {
+  assert.throws(() => templates.cleanTemplate({ name: "", explorers: "se", beats: [] }), /Give the template a name/);
 
-  await assert.rejects(
-    () => templates.createTemplate({ name: "No beats", explorers: "se", beats: [] }),
+  assert.throws(
+    () => templates.cleanTemplate({ name: "No beats", explorers: "se", beats: [] }),
     /at least one beat/
   );
 
-  await assert.rejects(
+  assert.throws(
     () =>
-      templates.createTemplate({
+      templates.cleanTemplate({
         name: "Bad scene",
         explorers: "se",
         beats: [{ scene: "drone-flyover", seconds: 4, text: "Hello." }],
@@ -312,9 +338,9 @@ test("bad templates are refused with a message a person can act on", async () =>
     /unknown scene/
   );
 
-  await assert.rejects(
+  assert.throws(
     () =>
-      templates.createTemplate({
+      templates.cleanTemplate({
         name: "Too fast",
         explorers: "se",
         beats: [{ scene: "listing", seconds: 0.1, text: "Hello." }],
@@ -322,9 +348,9 @@ test("bad templates are refused with a message a person can act on", async () =>
     /suggested duration between/
   );
 
-  await assert.rejects(
+  assert.throws(
     () =>
-      templates.createTemplate({
+      templates.cleanTemplate({
         name: "Sneaky NE",
         explorers: "se",
         beats: [{ scene: "ne", seconds: 3, text: "Neighborhood Explorer." }],
@@ -332,9 +358,9 @@ test("bad templates are refused with a message a person can act on", async () =>
     /cannot contain a Neighborhood Explorer beat/
   );
 
-  await assert.rejects(
+  assert.throws(
     () =>
-      templates.createTemplate({
+      templates.cleanTemplate({
         name: "NE before SE",
         explorers: "se-ne",
         beats: [
