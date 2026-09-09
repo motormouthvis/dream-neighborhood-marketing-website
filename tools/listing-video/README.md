@@ -30,8 +30,10 @@ Three tabs: **Make a video**, **Library**, **Scripts**.
 
 ### 1. Pick a script
 
-Every script is a file on this box, editable from the **Scripts** tab. Three ship
-by default:
+The picker shows the three scripts that ship with the tool plus anything saved in
+your browser, all editable from the **Scripts** tab. Scripts you write or edit
+live in your browser and survive every deploy — see
+[Where scripts are kept](#where-scripts-are-kept). Three ship by default:
 
 | Script | Who it is for | What is in it |
 | --- | --- | --- |
@@ -39,11 +41,17 @@ by default:
 | `vanessa-se-ne-v11` | A new customer | School Explorer first, then the seven Neighborhood Explorer tabs. |
 | `se-to-ne-upgrade` | Somebody who **already has** the free School Explorer | Opens on their listing with School Explorer on it, then the same button becomes Neighborhood Explorer and walks every tab in order. |
 
-The line about the same button upgrading plays on a **`listing-tap`** beat, so the
-house button is in frame and being pressed while the words are said, and the
+The line about the same button upgrading plays on a **`listing-button`** beat, so
+the house button is in frame and being pressed while the words are said, and the
 Neighborhood Explorer popup arrives from the button rather than from nowhere. It
 used to play over a School Explorer card, which covers the button — so the button
 the line is about was never seen. Same words, different scene.
+
+The two before-and-after scripts open on **`listing`** beats, which are the
+customer's page with *nothing of ours on it at all* — no house button, no label,
+no popup. That is what makes "there's nothing here about schools" true on screen
+as well as in the voice. See
+[The four scenes, and the three listing ones](#the-four-scenes-and-the-three-listing-ones).
 
 The first two are the approved v11 videos and are a before-and-after: they need a
 listing with nothing on it yet. The upgrade script is the opposite — it wants a
@@ -536,9 +544,9 @@ audio track at all**:
 
 #### Nothing about the Neighborhood Explorer goes on a listing frame
 
-A `listing` or `listing-tap` beat is the **customer's own page**. Our popups open
-on their own beats — School Explorer on an `se` beat, Neighborhood Explorer on an
-`ne` beat — and nothing about either belongs on the page underneath. On a
+A `listing` or `listing-button` beat is the **customer's own page**. Our popups
+open on their own beats — School Explorer on an `se` beat, Neighborhood Explorer
+on an `ne` beat — and nothing about either belongs on the page underneath. On a
 before-shot script the listing has no Explorer on it at all; that is the point of
 the shot.
 
@@ -561,15 +569,16 @@ drawn and before the shutter**, and refused if:
 
 | What is on screen | Where |
 | --- | --- |
-| "Neighborhood Explorer", "explore the neighborhood" | a `listing` or `listing-tap` frame |
-| a Neighborhood Explorer popup | a `listing` or `listing-tap` frame |
+| "Neighborhood Explorer", "explore the neighborhood" | a `listing` or `listing-button` frame |
+| a Neighborhood Explorer popup | a `listing` or `listing-button` frame |
 | anything naming the Neighborhood Explorer | any frame of a `se` script |
+| the house button, any popup, the dim behind one, or our label | a `listing` frame, which is meant to be their page and nothing else |
 
 So a caption, a label, a popup header, or something a later change starts drawing
 is caught the same way, on the upload path exactly as on the live one, and the job
 fails loudly with the scene number rather than quietly shipping the video. See
-`wrongExplorerOnScreen` in `src/frames.js` and
-`test/before-shot-frames.test.js`.
+`wrongExplorerOnScreen` and `bareListingChromeOnScreen` in `src/frames.js`, and
+`test/before-shot-frames.test.js` and `test/listing-scenes.test.js`.
 
 #### Filming the Explorers
 
@@ -797,6 +806,28 @@ well — see [How long the finished video is](#how-long-the-finished-video-is).
 
 You can also upload an mp3, wav, m4a or webm. That becomes a take like any
 other, so it can be tried against the pictures before you commit to it.
+
+#### The way back, if the silent video is not the one you wanted
+
+This step used to be a one-way door. The video arrived and the only thing on the
+page was a record button, so a wrong script, a wrongly chosen listing or a
+picture that simply looked off had no answer except recording something you did
+not want, waiting for it to be muxed, and starting again from an empty form.
+
+Two ways out sit above the recorder, before anything is recorded:
+
+- **Change the script, customer or listing** goes back to step 1 with every
+  answer still in the boxes. It is the same page, so nothing was cleared, and
+  `remember.js` has the answers besides. The video you were looking at is left
+  alone and stays in the Library.
+- **Film it again, same answers** re-captures the same job, for when nothing
+  needs changing and the picture just came out wrong — the crawl found a listing
+  that was not their best one, or the page had not settled. It is hidden for a
+  job drawn from an uploaded screenshot, where it would redraw the same thing.
+
+**Change the script, customer or listing** is on the final review step too. A
+finished video that is wrong is usually wrong in the script rather than the take,
+and nothing has been sent.
 
 ### 6. Add the audio to the video
 
@@ -1289,7 +1320,7 @@ A script is a list of **beats**. Each beat has:
 | Field | What it is |
 | --- | --- |
 | Words you say | The teleprompter line. `{firstName}` and `{company}` are filled in. |
-| Scene | `listing`, `listing-tap`, `se` or `ne`. These four are the only scenes. |
+| What is on screen | `listing`, `listing-button`, `se` or `ne`. These four are the only scenes — see below. |
 | Suggested seconds | How long that picture is held. Follows the words as you write them, and can be held at a number of your own — see below. |
 | Top caption | Two optional lines for the top bar. |
 | Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
@@ -1297,6 +1328,40 @@ A script is a list of **beats**. Each beat has:
 Plus a name, a notes field, whether the script is *School Explorer only* or
 *School Explorer, then Neighborhood Explorer*, and what their listing should
 already have on it.
+
+### The four scenes, and the three listing ones
+
+| Scene | What is drawn |
+| --- | --- |
+| `listing` | **Just their listing page.** No house button, no label, no popup, no dim. The only scene that is purely the customer's own website. |
+| `listing-button` | Their page with the **School Explorer house button** in the bottom right, being tapped, and its "Click here to explore the schools around …" label beside it. The popup has not opened. |
+| `se` | Their page with the **School Explorer popup** open over it — a photograph of the real product at this listing's address. |
+| `ne` | Their page with the **Neighborhood Explorer popup** open over it, on the tab the beat names. |
+
+There used to be one listing scene and a tap variant of it, and both of them
+drew the house button. That is why the before-and-after scripts said "there's
+nothing here about schools" over a page with our schools button sitting in the
+corner — reported three times, and fixed at the wrong layer twice. Splitting it
+means a beat has to *say* it wants the button.
+
+Which of the first two a beat uses is the whole before-and-after. In the shipped
+before-shot scripts the opening beats are bare and the button appears on the line
+that introduces it ("The popup icon hovers in the bottom right corner"), not a
+beat earlier. The upgrade script is the exception and opens with the button on,
+because its pitch is that they already have it.
+
+Two things keep a bare listing bare, and both of them are downstream of the
+script being right:
+
+- `views/frame.html` refuses to draw the button, a card or the dim while a frame
+  is marked bare, whatever else the spec asks for, and empties the markup too.
+- `src/frames.js` reads the drawn stage back **before the shutter** and throws
+  `CHROME_ON_BARE_LISTING` if a bare listing frame has the button, a card, the
+  dim or our label on it. A caption is not chrome in this sense: it is the
+  script's own words and belongs on every beat.
+
+`listing-tap`, the old name, still means `listing-button` everywhere — in a saved
+script, in an exported file, and in a job filmed before the rename.
 
 ### The suggested seconds follow the words
 
@@ -1327,11 +1392,26 @@ that is the formula being right rather than wrong. Those were written as floors
 and left deliberately short, because an Explorer beat is a still and the voice is
 what should decide how long it stays up.
 
-**Typing a number holds it.** That beat stops following and the hint under the
-box says so. **Emptying the box hands it back** and it starts following again.
-Opening a saved script only lets a beat follow if it is already sitting at exactly
-the suggested length — a duration somebody chose is left alone, so editing an old
-script never silently retimes it.
+**It updates on every keystroke, and says so.** The line under the box reads
+`~5.8s from 69 characters (clears if you type a number)` and is rewritten as you
+type. That line is there because the number alone was not enough: a character or
+two only shifts the suggestion by a hundredth of a second, so the rounded figure
+sits still for a few letters at a time and the field reads as stuck. The
+character count in the hint ticks with every single keystroke, so you can see it
+is alive.
+
+**Typing a number holds it.** That beat stops following, and the hint changes to
+`Held at 12s. Empty the box to follow the words again: ~5.8s from 69 characters.`
+— the live suggestion is still shown while it is being overruled, so the way back
+is a figure you can see. **Emptying the box hands it back.**
+
+Whether a beat follows its words is **saved with the beat**, as `autoSeconds`.
+It used to be worked out by asking whether the saved number happened to equal the
+suggestion, which is the other half of "it only updates sometimes": every shipped
+beat was hand-timed against the reference video, so none of them match, and
+opening one of those scripts gave a box that never moved again. Scripts written
+before `autoSeconds` existed get the old guess once and record the answer the
+next time they are saved.
 
 Getting it close matters in both directions but is not fatal either way: too short
 and `src/audio.js` stretches the beat to fit the recorded line, too long and the
@@ -1358,13 +1438,83 @@ Bad edits are refused with a message you can act on: a Neighborhood Explorer
 beat in a school-only script, a Neighborhood Explorer beat before School
 Explorer, an unknown scene, or a duration outside 0.5-120s.
 
-Scripts live in `<data dir>/templates/*.json`, one file per script. The shipped
-scripts are seeded on boot, one id at a time: a data dir that already has the two
-v11 scripts picks up a newly shipped third one the next time the server starts,
-and the startup log says which ones it added. A default that somebody deleted
-stays deleted, because the marker records what has already been offered.
-**Put the shipped scripts back** on the Scripts tab restores all of them exactly
-as they ship.
+## Where scripts are kept
+
+**Scripts you write or edit are saved in your browser, in `localStorage`. They
+are not on the server, and a deploy cannot touch them.**
+
+### Why not on the server
+
+They used to be one JSON file each under the data dir. Heroku replaces the whole
+slug on every deploy and the dyno's disk goes with it, so **every ship wiped
+every custom script and every edit** and reseeded the shipped three. Nothing in
+the interface said that would happen. Bill lost months of work to it, more than
+once.
+
+The browser was chosen over Postgres or S3 deliberately, and not only because it
+needs no addon. Bill and Myles want **different** scripts: a shared store puts
+each of their working drafts in the other's picker. `localStorage` is one copy
+per person by construction. Cookies were the other suggestion and do not fit —
+one is about 4KB and the shipped upgrade script alone is several times that.
+
+### What lives where
+
+| | Where | Updated by a deploy? |
+| --- | --- | --- |
+| The three shipped scripts | The server, out of `src/default-templates.js`, read-only | Yes — that is the point of leaving them there |
+| A script you wrote | Your browser | No |
+| A shipped script you edited | Your browser, under the shipped script's own id | No. The shipped original is untouched and can be put back |
+| A shipped script you deleted | Your browser, as a tombstone | No. It does not come back on the next deploy |
+
+The list you see is every shipped script that has neither an override nor a
+tombstone, plus everything in your browser. A local script always wins over a
+shipped one with the same id. **Nothing on the server ever overwrites anything in
+your browser.**
+
+**Put the shipped one back** is per script, asked for by name, and touches only
+that script. The old server-side *restore defaults* rewrote every shipped script
+on the box for everybody in one press, which was a second way to lose an edit.
+
+Validation still belongs to the server. The Scripts page posts a script to
+`POST /api/templates-validate` before keeping it, so what a script may contain is
+decided in `src/templates.js` and nowhere else, and the page cannot save
+something a render would refuse an hour later. A job carries the whole script
+rather than an id, because the browser has the only copy, and it goes through the
+same validation on arrival.
+
+### The catch, and what to do about it
+
+`localStorage` is per browser, so it is also **per browser to lose**: clearing
+this site's data clears the scripts, and there is no server copy to fall back on.
+**Export my scripts** on the Scripts tab writes them to a JSON file. That is the
+backup, and it is also how a script gets onto another machine or over to Myles —
+**Import scripts from a file** takes it at the other end. Importing a script whose
+id is already there makes a second copy rather than flattening the one being
+worked on.
+
+### Scripts written before this change
+
+A dyno that has not been recycled since still has `<data dir>/templates/*.json`
+on it. Those are read — never written, never deleted; there is no route that
+could — and the Scripts tab offers them as a one-off import so nothing anybody
+wrote is stranded. Shipped scripts sitting there untouched are not offered, since
+importing one would only put a copy of what you already have in your browser. A
+script naming `Mobility` or `Points of Interest` is brought up to date on the way
+out, because the product renamed those chips.
+
+If staging has scripts worth keeping, **import them before the next deploy**.
+The startup log says how many are there.
+
+    3 scripts from before scripts moved to the browser are still in
+    /app/tools/listing-video/data/templates. The Scripts tab offers them as an
+    import. Nothing here deletes them.
+
+### Nothing to configure
+
+There is no `DATABASE_URL`, no bucket, no addon, and no new environment variable
+for any of this. The data dir is still where **videos** live and still ephemeral;
+that is fine, because a video is made, watched and sent in one sitting, and the
+Library is explicitly a list of what is on this box now.
 
 ## Voice
 
@@ -1548,7 +1698,7 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `LISTING_VIDEO_TOKEN` | The shared password for the tool. **Set this.** Without it the server generates a throwaway password and prints it at startup, so the page is never left open to the public. |
 | `LISTING_VIDEO_PUBLIC_URL` | Public origin used to build the share link, e.g. `https://staging.dreamneighborhood.com`. Falls back to the request host. |
 | `LISTING_VIDEO_COOKIE_SECRET` | Signing key for the sign-in cookie. Set it so sessions survive a restart. |
-| `LISTING_VIDEO_DATA_DIR` | Where scripts, jobs and finished mp4s are written. Defaults to `tools/listing-video/data` (git-ignored). |
+| `LISTING_VIDEO_DATA_DIR` | Where jobs and finished mp4s are written. Defaults to `tools/listing-video/data` (git-ignored). **Scripts are not written here** — they live in the browser, because this directory does not survive a Heroku deploy. See [Where scripts are kept](#where-scripts-are-kept). |
 | `PORT` | Defaults to `8788`. |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | Hosted AI voice. |
 | `OPENAI_API_KEY`, `OPENAI_TTS_VOICE` | Hosted AI voice, second choice. |
@@ -1610,6 +1760,10 @@ finished mp4s go with it. The tool copes rather than hanging — a poll that com
 back 404 now says the server restarted and offers to start again — but a watch
 link for a video made before a restart will 404.
 
+**Scripts used to be on this disk too, and that is why they kept disappearing.**
+They are in the browser now, so a deploy no longer takes them. See
+[Where scripts are kept](#where-scripts-are-kept).
+
 ### Putting it behind the staging site
 
 Run the service on the staging box and point staging at it. Nothing is added to
@@ -1628,10 +1782,12 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | Route | Who can reach it |
 | --- | --- |
 | `GET /tools/listing-video` | Bill and Myles, after the password |
-| `GET/POST/PUT/DELETE /tools/listing-video/api/templates...` | Signed in only |
+| `GET /tools/listing-video/api/templates` | Signed in only. The shipped scripts, read-only. There is no route that writes, edits or deletes a script: they live in the browser |
+| `POST /tools/listing-video/api/templates-validate` | Signed in only. Checks a script the browser is about to keep and hands back the tidy version. Saves nothing |
+| `GET /tools/listing-video/api/legacy-templates` | Signed in only. Scripts left on this box from before scripts moved to the browser, for the one-off import. Read-only |
 | `GET /tools/listing-video/api/places?q=` | Signed in only. The Neighborhood Explorer's own address suggestions, proxied so the tool stays one origin |
-| `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields |
-| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. Goes back to the live site, dropping any uploaded screenshot |
+| `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields. A shipped script can be named by `templateId`; one out of the browser is sent whole as `template` |
+| `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. With a listing URL, goes back to the live site and drops any uploaded screenshot. Without one, it is "film it again, same answers" and keeps the screenshot |
 | `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
@@ -1650,7 +1806,7 @@ No `/popup/{address}` routes are added, and no product code is changed.
 
 ```
 server.js                    routes, sign-in gate, uploads, one-at-a-time queue
-src/templates.js             script templates on disk: load, save, validate, render
+src/templates.js             what a script may contain, the shipped ones, the old files
 src/default-templates.js     the three shipped scripts
 src/browser.js               Chrome, kept small, and killed for certain
 src/persona.js               the user agent, client hints and language, all agreeing
@@ -1672,6 +1828,7 @@ src/geocode.js               the listing's address as coordinates, checked again
 views/frame.html             the frame: top caption bar, popup button, SE and NE cards
 public/js/place-picker.js    the address box: the Explorer's suggestions as you type
 public/js/beat-timing.js     how long a beat should be, from the words in it
+public/js/script-store.js    scripts in the browser, where a deploy cannot reach them
 public/                      the three tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
@@ -1679,6 +1836,9 @@ test/client.test.js          the front end in Chrome: a lost job must not hang
 test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
 test/persona.test.js         the persona's rules, with no browser needed to check them
 test/beat-timing.test.js     the suggested seconds, against the hand-timed scripts
+test/listing-scenes.test.js  the three listing looks, and the bare one staying bare
+test/script-store.test.js    a deploy cannot take a script out of the browser
+test/script-persistence.test.js  the server writes no scripts and deletes none
 test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
 test/places.test.js          the address is a place the Explorer named, not free text
 test/site-account.test.js    the QUAL account, and what it must not be used for
