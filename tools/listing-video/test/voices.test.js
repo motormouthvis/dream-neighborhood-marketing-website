@@ -42,6 +42,9 @@ const PREMADE = [
   { voice_id: "JBFqnCBsd6RMkjVDRZzb", name: "George", category: "premade", labels: { gender: "male" } },
   { voice_id: "nPczCjzI2devNBz1zQrb", name: "Brian", category: "premade", labels: { gender: "male" } },
   { voice_id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", category: "premade", labels: { gender: "male" } },
+  // The two the picker used to land on, because alphabetical order picked them.
+  { voice_id: "pNInz6obpgDQGcFmaJgB", name: "Adam", category: "premade", labels: { gender: "male" } },
+  { voice_id: "pqHfZKP75CvOlQylNhV4", name: "Bill", category: "premade", labels: { gender: "male" } },
   // A Voice Library voice: a paid plan only, so it must never be offered.
   { voice_id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", category: "professional", labels: { gender: "female" } },
   { voice_id: "XB0fDUnXU5powFXDhCwa", name: "Charlotte", category: "cloned", labels: { gender: "female" } },
@@ -114,6 +117,87 @@ test("Jessica is the default, because she is the one known to work", async () =>
   assert.equal(offered[0].sex, "female");
   // Nobody picking anything gets her.
   assert.equal(await voices.resolveVoiceId(""), voices.PREFERRED_FEMALE_ID);
+});
+
+/* ---------------------------------------------------------------- */
+/* the men Bill asked for, by id                                     */
+/* ---------------------------------------------------------------- */
+
+/*
+ * The men used to be whichever two the account listed first, and the account
+ * lists them alphabetically - so the picker offered Adam and Bill, and Bill
+ * liked neither. These two are named choices now.
+ *
+ * The second is called Adam as well, and is not the same voice: the old one was
+ * pNInz6obpgDQGcFmaJgB and this is wBXNqKUATyqu0RtYt25i. The id is what the
+ * test pins, because the name is the part that is confusing.
+ */
+const DAN = "PGqDc9SLzJTxDTy8SjYb";
+const ADAM = "wBXNqKUATyqu0RtYt25i";
+
+test("the two men are the ones asked for by id, in that order", async () => {
+  stubElevenLabs();
+  const men = (await voices.listVoices({ fresh: true })).filter((voice) => voice.sex === "male");
+  assert.deepEqual(men.map((voice) => voice.id), [DAN, ADAM], JSON.stringify(men));
+});
+
+test("the men the alphabet used to choose are no longer offered", async () => {
+  stubElevenLabs();
+  const offered = await voices.listVoices({ fresh: true });
+
+  // The old Adam and Bill are still on the account and still come back first
+  // alphabetically. Being first is no longer what decides it.
+  assert.ok(!offered.some((voice) => voice.id === "pNInz6obpgDQGcFmaJgB"), "the old Adam is gone");
+  assert.ok(!offered.some((voice) => voice.id === "pqHfZKP75CvOlQylNhV4"), "and so is Bill");
+  assert.ok(!offered.some((voice) => voice.id === "JBFqnCBsd6RMkjVDRZzb"), "no room for George either");
+});
+
+test("a voice asked for by id is offered even when the account does not list it", async () => {
+  // The account's own list is what says whether a voice can be spoken with, and
+  // it does not always carry one. Dropping a voice somebody chose by name
+  // because a list came back short is the failure worth avoiding here; a plan
+  // that cannot really speak with it says so with a 401, and that is what
+  // blocks it - see the test below.
+  stubElevenLabs({ list: PREMADE.filter((voice) => voice.labels.gender !== "male") });
+  const men = (await voices.listVoices({ fresh: true })).filter((voice) => voice.sex === "male");
+  assert.deepEqual(men.map((voice) => voice.id), [DAN, ADAM]);
+  assert.deepEqual(men.map((voice) => voice.name), ["Dan", "Adam"], "named from what is written down");
+});
+
+test("the account gets to say what a voice is called", async () => {
+  // A rename upstream should show up on the radio button without a deploy, so
+  // the written-down name is only a label of last resort.
+  stubElevenLabs({
+    list: PREMADE.concat([{ voice_id: DAN, name: "Daniel Renamed", category: "premade", labels: { gender: "male" } }]),
+  });
+  const men = (await voices.listVoices({ fresh: true })).filter((voice) => voice.sex === "male");
+  assert.equal(men[0].id, DAN);
+  assert.equal(men[0].name, "Daniel Renamed");
+});
+
+test("one of them being refused leaves the other, and fills the gap from the account", async () => {
+  stubElevenLabs();
+  voices.blockVoice(DAN);
+
+  const men = (await voices.listVoices({ fresh: true })).filter((voice) => voice.sex === "male");
+  assert.equal(men.length, 2);
+  assert.equal(men[0].id, ADAM, "the other pinned man moves up");
+  assert.ok(!men.some((voice) => voice.id === DAN), "and the refused one is gone for good");
+  assert.notEqual(await voices.resolveVoiceId(DAN), DAN);
+});
+
+test("picking one of them by id is what the job gets", async () => {
+  stubElevenLabs();
+  assert.equal(await voices.resolveVoiceId(ADAM), ADAM);
+  assert.equal(await voices.resolveVoiceId(DAN), DAN);
+  // And the labels used in a log line say who they are.
+  assert.equal(await voices.labelFor(DAN), "Dan (male)");
+});
+
+test("the fallback list offers them too, for an account that cannot be asked", async () => {
+  stubElevenLabs({ listStatus: 500 });
+  const men = (await voices.listVoices({ fresh: true })).filter((voice) => voice.sex === "male");
+  assert.deepEqual(men.map((voice) => voice.id), [DAN, ADAM]);
 });
 
 test("a Voice Library voice is never offered on this plan", async () => {

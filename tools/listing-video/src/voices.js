@@ -11,6 +11,10 @@
  * A short list on purpose: two male, two female. This is a picker on a form, not
  * a voice browser.
  *
+ * Three of those four are named choices rather than whatever the account listed
+ * first - see PINNED. The account is still asked, because it is what says
+ * whether a voice can be spoken with and what it is called.
+ *
  * Worth knowing: ElevenLabs' Default voices expire on 31 December 2026, and are
  * only available to accounts created before March 2026. When they go, this asks
  * the account what it has and offers that instead of breaking - which is the main
@@ -34,18 +38,37 @@ const CACHE_MS = 10 * 60 * 1000;
 const PREFERRED_FEMALE_ID = "cgSgspJ2msm6clMCkdW9";
 
 /*
+ * The voices Bill asked for, by id, in the order he wants them offered.
+ *
+ * The men used to be whichever two the account happened to return first, which
+ * is alphabetical - so the picker offered Adam and Bill, and Bill did not like
+ * either of them. These two are named choices rather than an accident of
+ * sorting, so they are pinned to the front of their sex and the alphabet only
+ * decides what fills any slot left over.
+ *
+ * The second man really is called Adam. It is not the Adam that was there
+ * before: that was the old premade voice pNInz6obpgDQGcFmaJgB, and this is
+ * wBXNqKUATyqu0RtYt25i, a different recording of a different person. Worth
+ * knowing before somebody "fixes" the name back.
+ *
+ * A name here is only a label of last resort. When the account lists the voice
+ * it is called whatever the account calls it, so a rename upstream shows up in
+ * the picker on its own.
+ */
+const PINNED = [
+  { id: PREFERRED_FEMALE_ID, name: "Jessica", sex: "female" },
+  { id: "PGqDc9SLzJTxDTy8SjYb", name: "Dan", sex: "male" },
+  { id: "wBXNqKUATyqu0RtYt25i", name: "Adam", sex: "male" },
+];
+
+/*
  * Only used when the account cannot be asked - no key, or the call fails.
  *
- * These are premade voices with confirmed IDs, so the picker still offers
- * something sensible rather than nothing. Anything here that turns out not to
- * work gets dropped the first time it answers 401 or 402.
+ * The pinned voices plus one more woman, so the picker still offers something
+ * sensible rather than nothing. Anything here that turns out not to work gets
+ * dropped the first time it answers 401 or 402.
  */
-const FALLBACK = [
-  { id: PREFERRED_FEMALE_ID, name: "Jessica", sex: "female" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", sex: "female" },
-  { id: "JBFqnCBsd6RMkjVDRZzb", name: "George", sex: "male" },
-  { id: "nPczCjzI2devNBz1zQrb", name: "Brian", sex: "male" },
-];
+const FALLBACK = [...PINNED, { id: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", sex: "female" }];
 
 /* Voices this account has refused. Remembered so a dead voice is offered once, not every time. */
 const blocked = new Set();
@@ -119,17 +142,30 @@ async function fetchFromElevenLabs() {
     .filter((voice) => voice.name && voice.sex);
 }
 
-/** Two of each, women first, with the known-good female at the front. */
+/**
+ * Two of each, women first, with the pinned voices at the front of their sex.
+ *
+ * A pinned voice is offered whether or not the account listed it. That is the
+ * point of pinning: these were asked for by name, and a picker that quietly
+ * dropped one because the account's own list came back a bit different is a
+ * picker that stops offering the voice somebody chose. If the plan turns out
+ * not to be able to speak with it, the 401 at render time blocks it and it
+ * leaves the picker for good - which is the check that belongs here, rather
+ * than guessing in advance.
+ */
 function shortlist(all) {
-  const pick = (sex) =>
-    all
-      .filter((voice) => voice.sex === sex && !isBlocked(voice.id))
-      .sort((a, b) => {
-        if (a.id === PREFERRED_FEMALE_ID) return -1;
-        if (b.id === PREFERRED_FEMALE_ID) return 1;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, WANTED_PER_SEX);
+  const named = new Map(all.map((voice) => [voice.id, voice.name]));
+
+  const pick = (sex) => {
+    const pinned = PINNED.filter((voice) => voice.sex === sex && !isBlocked(voice.id)).map((voice) => ({
+      ...voice,
+      name: named.get(voice.id) || voice.name,
+    }));
+    const rest = all
+      .filter((voice) => voice.sex === sex && !isBlocked(voice.id) && !pinned.some((one) => one.id === voice.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return pinned.concat(rest).slice(0, WANTED_PER_SEX);
+  };
 
   return pick("female").concat(pick("male"));
 }
@@ -188,6 +224,7 @@ module.exports = {
   statusMeansNoAccess,
   reset,
   PREFERRED_FEMALE_ID,
+  PINNED,
   FALLBACK,
   WANTED_PER_SEX,
 };
