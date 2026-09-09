@@ -391,8 +391,28 @@ const POPUP_BUTTON_CSS =
  * manager has run. A fixture with the snippet written into the page would be
  * spotted by reading the source and would test nothing.
  */
+/*
+ * Both stand-ins hang off the same "has the first photo really arrived?".
+ *
+ * A `load` listener on its own is a race the fixture loses under load: if the
+ * photo finished before this file did, `load` has already been and gone and the
+ * Explorer never arrives at all - so the shot comes out clean and the test reads
+ * as the check having failed when nothing was ever there to find.
+ *
+ * "Really arrived" is the load event OR an image that is already complete *with
+ * pixels in it*. The pixels matter: the crawl aborts the photo requests, and an
+ * aborted image is `complete` too, with a naturalWidth of zero. Without that
+ * part the Explorer would turn up on the crawl load as well, and the gap between
+ * the two loads - which is the whole point of this fixture - would close.
+ */
+const WHEN_THE_PHOTO_ARRIVES = `
+  var photo = document.querySelectorAll('img.photo')[0];
+  if (photo.complete && photo.naturalWidth > 0) arrived();
+  else photo.addEventListener('load', arrived);
+`;
+
 const TAG_MANAGER_JS = `
-  document.querySelectorAll('img.photo')[0].addEventListener('load', function () {
+  function arrived() {
     if (document.getElementById('dn-popup-button')) return;
     var tag = document.createElement('script');
     tag.src = 'https://app.dreamneighborhood.com/explorer/sdk.js';
@@ -403,19 +423,21 @@ const TAG_MANAGER_JS = `
     button.textContent = 'School Explorer';
     button.style.cssText = '${POPUP_BUTTON_CSS}';
     document.body.appendChild(button);
-  });
+  }
+  ${WHEN_THE_PHOTO_ARRIVES}
 `;
 
 /** The same thing, but the widget renders itself into a shadow root. */
 const TAG_MANAGER_SHADOW_JS = `
-  document.querySelectorAll('img.photo')[0].addEventListener('load', function () {
+  function arrived() {
     if (document.getElementById('dn-host')) return;
     var host = document.createElement('div');
     host.id = 'dn-host';
     document.body.appendChild(host);
     host.attachShadow({ mode: 'open' }).innerHTML =
       '<div id="dn-popup-button" style="${POPUP_BUTTON_CSS}">School Explorer</div>';
-  });
+  }
+  ${WHEN_THE_PHOTO_ARRIVES}
 `;
 
 const EXPLORER_ARRIVES_WITH_THE_PHOTOS = MAIN_ST.replace(
