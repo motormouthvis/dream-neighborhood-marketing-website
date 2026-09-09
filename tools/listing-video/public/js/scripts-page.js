@@ -38,14 +38,21 @@
   /*
    * A beat off a saved script.
    *
-   * Whether its duration goes on following the words depends on what is already
-   * there: a beat sitting at exactly the suggested length was never held at
-   * anything, so it keeps up with edits, while one somebody timed by hand is
-   * left at the number they chose. Opening an old script must not silently
-   * retime it.
+   * Whether its duration goes on following the words is SAVED WITH THE BEAT, as
+   * autoSeconds, rather than guessed at by comparing the number to the words.
+   * The guess is what Bill hit: a beat a tenth of a second off the suggestion -
+   * or one edited before the suggestion existed - was read as held, so the
+   * number sat still while he typed and the field looked broken.
+   *
+   * A script saved before autoSeconds existed still gets the old guess, once.
+   * Saving it writes the answer down.
    */
   function loadedBeat(beat) {
-    return Object.assign({}, beat, { followsText: timing().isSuggested(beat.seconds, beat.text) });
+    var follows =
+      beat.autoSeconds === undefined || beat.autoSeconds === null
+        ? timing().isSuggested(beat.seconds, beat.text)
+        : Boolean(beat.autoSeconds);
+    return Object.assign({}, beat, { followsText: follows });
   }
 
   function listingExplorerModes() {
@@ -306,10 +313,10 @@
       '<label class="beatrow__field"><span class="beatrow__lbl">Words you say</span>' +
       '<textarea class="input" rows="3" data-role="text"></textarea></label>' +
       '<div class="beatrow__grid">' +
-      '<label class="beatrow__field"><span class="beatrow__lbl">Scene</span>' +
+      '<label class="beatrow__field"><span class="beatrow__lbl">What is on screen</span>' +
       '<select class="input" data-role="scene">' +
       options +
-      "</select></label>" +
+      '</select><span class="hint" data-role="sceneHint"></span></label>' +
       '<label class="beatrow__field"><span class="beatrow__lbl">Suggested seconds</span>' +
       '<input class="input" type="number" min="0.5" max="120" step="0.1" data-role="seconds" />' +
       '<span class="hint" data-role="secondsHint"></span></label>' +
@@ -333,6 +340,7 @@
     var tab = row.querySelector('[data-role="tab"]');
     var tabField = row.querySelector('[data-role="tabField"]');
     var secondsHint = row.querySelector('[data-role="secondsHint"]');
+    var sceneHint = row.querySelector('[data-role="sceneHint"]');
 
     text.value = beat.text || "";
     seconds.value = beat.seconds;
@@ -340,23 +348,33 @@
     subline.value = (beat.caption && beat.caption.subline) || "";
 
     /*
-     * The duration follows the words until somebody says otherwise.
+     * The duration follows the words until somebody types a number.
      *
-     * followsText is remembered per beat and never saved: the payload below
-     * picks its fields by name, so this stays in the editor where it belongs.
+     * Both halves of this run on every keystroke, on purpose:
+     *
+     *   retime      puts the new suggestion in the box, so the number moves as
+     *               characters are added and taken away rather than waiting for
+     *               the field to lose focus.
+     *   showTiming  rewrites the line under the box - "~5.8s from 69
+     *               characters" - even for a beat being held at a number of its
+     *               own. That line is how you can see the suggestion is alive:
+     *               the character count ticks with what you type either way.
      */
     var showTiming = function () {
       D.setText(
         secondsHint,
         beat.followsText
-          ? "Following the words above. Type a number here to hold it."
-          : "Held at " + beat.seconds + "s. Clear the box to follow the words again."
+          ? timing().describeSuggestion(beat.text)
+          : timing().describeHeld(beat.seconds, beat.text)
       );
+      secondsHint.classList.toggle("hint--live", Boolean(beat.followsText));
     };
     var retime = function () {
       if (!beat.followsText) return;
       beat.seconds = timing().suggestSeconds(beat.text);
-      seconds.value = beat.seconds;
+      // Only written when it really changed, so the caret is not moved about in
+      // a box somebody might be standing in.
+      if (String(seconds.value) !== String(beat.seconds)) seconds.value = beat.seconds;
       updateTotal();
     };
     showTiming();
@@ -366,6 +384,21 @@
       D.show(tabField, scene.value === "ne");
     };
     syncTabField();
+
+    /*
+     * What the picked scene actually draws, said in a line under the box.
+     *
+     * There are three listing looks now and the difference between them is the
+     * whole before-and-after, so the dropdown cannot be the only place it is
+     * explained.
+     */
+    var showScene = function () {
+      var picked = scenes().filter(function (entry) {
+        return entry.id === scene.value;
+      })[0];
+      D.setText(sceneHint, (picked && picked.hint) || "");
+    };
+    showScene();
 
     text.addEventListener("input", function () {
       beat.text = text.value;
@@ -379,6 +412,7 @@
       beat.scene = scene.value;
       if (scene.value !== "ne") beat.tab = "";
       syncTabField();
+      showScene();
     });
     seconds.addEventListener("input", function () {
       // An emptied box is the way back: nobody is holding a number any more, so
@@ -466,6 +500,9 @@
         return {
           scene: beat.scene,
           seconds: Number(beat.seconds),
+          // Saved, so re-opening the script knows this beat follows its words
+          // rather than working it out from whether the number happens to match.
+          autoSeconds: Boolean(beat.followsText),
           text: beat.text,
           caption: beat.caption || null,
           tab: beat.scene === "ne" ? beat.tab || "" : "",

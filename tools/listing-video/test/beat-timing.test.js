@@ -83,7 +83,10 @@ test("it reproduces the hand-timed durations of the shipped listing beats", () =
   const off = [];
   for (const template of DEFAULT_TEMPLATES) {
     for (const beat of template.beats) {
-      if (beat.scene !== "listing") continue;
+      // Both listing looks: splitting "their listing page" into a bare page and
+      // a page with the button on it did not change a single spoken word, so
+      // the same beats are still the evidence.
+      if (beat.scene !== "listing" && beat.scene !== "listing-button") continue;
       const gap = Math.abs(timing.suggestSeconds(beat.text) - beat.seconds);
       off.push({ gap, seconds: beat.seconds, characters: beat.text.length, template: template.id });
     }
@@ -111,4 +114,55 @@ test("a duration is recognised as the suggested one, or as somebody's own", () =
   // A beat whose words changed under a following duration is no longer at it,
   // which is exactly the state the editor is about to correct.
   assert.equal(timing.isSuggested(timing.suggestSeconds("short"), "a very much longer line than that"), false);
+});
+
+/* ---------------------------------------------------------------- */
+/* the line under the box                                            */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill's report was that the suggested seconds "don't update in real time". The
+ * number did move; nothing on screen said so, and nothing said where it came
+ * from, so a field that changed by a tenth looked like a field that was stuck.
+ *
+ * This is the sentence that fixes that. It is rewritten on every keystroke, so
+ * the character count in it ticks with the typing whether or not the number
+ * beside it happens to change.
+ */
+test("the hint says where the number came from and what stops it", () => {
+  const said = timing.describeSuggestion("She taps the little house in the corner,");
+
+  assert.match(said, /^~\d+\.\ds /, said);
+  assert.match(said, /from 40 characters/, said);
+  assert.match(said, /clears if you type a number/, said);
+  assert.ok(said.includes(timing.suggestSeconds("She taps the little house in the corner,").toFixed(1)), said);
+});
+
+test("the hint counts characters the way the suggestion does", () => {
+  assert.equal(timing.countCharacters("  padded  "), 6);
+  assert.equal(timing.countCharacters(""), 0);
+  assert.equal(timing.countCharacters(null), 0);
+
+  // One character is one character, not "1 characters".
+  assert.match(timing.describeSuggestion("a"), /from 1 character \(/);
+  assert.match(timing.describeSuggestion(""), /from 0 characters/);
+});
+
+test("every keystroke changes the hint, even when the rounded number does not", () => {
+  // Two lines a character apart round to the same tenth. The number holds still
+  // and the hint does not, which is the whole point of having the hint.
+  const shorter = line(41);
+  const longer = line(42);
+  assert.equal(timing.suggestSeconds(shorter), timing.suggestSeconds(longer), "same number");
+  assert.notEqual(timing.describeSuggestion(shorter), timing.describeSuggestion(longer), "different hint");
+});
+
+test("a beat held at a number still shows the live suggestion beside it", () => {
+  const held = timing.describeHeld(12, "A short line.");
+
+  assert.match(held, /^Held at 12s\./, held);
+  assert.match(held, /Empty the box to follow the words again/, held);
+  // The suggestion is in there too, so the way back is a number you can see.
+  assert.match(held, /~2\.5s from 13 characters/, held);
+  assert.doesNotMatch(held, /clears if you type a number/, "it already has one");
 });

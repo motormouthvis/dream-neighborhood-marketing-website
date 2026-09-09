@@ -102,6 +102,13 @@ legend.label { padding: 0; }
 .opt { font-size: 14px; font-weight: 600; color: var(--ink-soft); }
 textarea.input { resize: vertical; line-height: 1.5; }
 .hint--above { margin-top: -2px; margin-bottom: 12px; }
+/*
+ * A line that is rewritten as you type, so it reads as a readout rather than a
+ * caption somebody wrote once. The suggested-seconds hint under a beat is one:
+ * its character count ticks with every keystroke, which is how you can see the
+ * number in the box beside it is following the words.
+ */
+.hint--live { color: #14714a; font-weight: 600; font-variant-numeric: tabular-nums; }
 /* A second heading inside one field, for the address that goes with an upload. */
 .label--sub { font-size: 17px; margin-top: 20px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; }
