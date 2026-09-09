@@ -73,6 +73,18 @@ async function useUploadedListing(job, workDir, log) {
   const uploaded = job.input.uploadedListing;
   const picture = await prepareListingImage({ sourcePath: uploaded.file, outDir: workDir, log });
 
+  /*
+   * Nothing here can check the picture for an Explorer.
+   *
+   * On the live path capture refuses a listing that already has one when the
+   * script is a before-and-after, right up to the moment of the shot. There is
+   * no page to ask on this path - it is an image - and reading one off the
+   * pixels would be guessing. So it is said plainly instead, next to the video,
+   * to whoever can see the screenshot and settle it in a second.
+   */
+  const beforeShot = ((job.template && job.template.listingExplorer) || "absent") === "absent";
+  if (beforeShot) log("Nothing can check an uploaded picture for an Explorer - worth a look in the review");
+
   return {
     screenshot: picture.file,
     // The address was typed in by whoever took the screenshot. Nothing was read
@@ -89,6 +101,11 @@ async function useUploadedListing(job, workDir, log) {
       }, not a capture of their site. The address behind the Explorer popups is the one you typed: ${
         [uploaded.address.street, uploaded.address.cityState, uploaded.address.zip].filter(Boolean).join(", ")
       }. Check the map in the review.`,
+      ...(beforeShot
+        ? [
+            "This script is the before shot, and nothing checked your screenshot for an Explorer - that check needs a live page, and there is not one here. If the listing you photographed already has School Explorer or Neighborhood Explorer on it, this is the wrong picture for this script and the \u201cSE to NE upgrade\u201d one is the right script.",
+          ]
+        : []),
     ],
     tookSeconds: 0,
   };

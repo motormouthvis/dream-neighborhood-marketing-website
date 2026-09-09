@@ -669,6 +669,67 @@ test("a pasted listing that already has School Explorer suits the upgrade script
   assert.deepEqual(shot.notes, [], "nothing was added; that listing already has it");
 });
 
+/*
+ * The before shot, checked on the page that is actually photographed.
+ *
+ * Bill picked "a listing with no Explorer on it yet" and the finished video
+ * opened on a listing with the Neighborhood Explorer sitting on it. The check
+ * was real and it was in the wrong place: it ran during the crawl, which loads
+ * the page cheaply with images, fonts and every analytics host blocked, and
+ * then the page was loaded AGAIN with nothing blocked and photographed without
+ * anybody looking a second time. His site installs our snippet through a tag
+ * manager, and a tag manager is on the blocked list.
+ *
+ * So the two loads saw two different pages, and the one nobody checked is the
+ * one in the video.
+ */
+test("a listing whose Explorer only arrives with the photos is refused, not filmed", options, async () => {
+  // Walked to from the homepage, not pasted: a pasted single listing is loaded
+  // with its photos from the start, so there is no second load to differ from
+  // and no gap to fall through. The crawl is where the two loads are.
+  const shot = await capture(fixture.EXPLORER_APPEARS_LATE);
+
+  assert.ok(shot.error, "the page in the picture had an Explorer on it, so it is not a before shot");
+  assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
+  // The refusal has to make sense to somebody who watched that page load clean.
+  assert.match(shot.error.message, /fully loaded/i, shot.error.message);
+  assert.match(shot.error.message, /SE to NE upgrade/, "and it names the script that does fit");
+});
+
+test("that same listing is what the upgrade script wants, with nothing drawn on", options, async () => {
+  const shot = await capture(fixture.EXPLORER_APPEARS_LATE, { explorerRule: "prefer-present" });
+
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  // The crawl saw no School Explorer and lined up a note saying one would be
+  // drawn onto the shot. By the shutter the real one was there, so that note
+  // would have told the reviewer the opposite of what they are looking at.
+  assert.deepEqual(shot.notes, [], `nothing should have been added: ${JSON.stringify(shot.notes)}`);
+});
+
+/*
+ * A widget in a shadow root is the version of the page a light-DOM check walks
+ * straight past: querySelectorAll does not reach into one and neither does
+ * body.innerText.
+ */
+test("an Explorer rendered into a shadow root is still found", options, async () => {
+  const shot = await capture(fixture.EXPLORER_IN_SHADOW_SITE, { listingUrl: "/listings/123-main-st" });
+  assert.ok(shot.error, "a widget in a shadow root is still a widget on the page");
+  assert.equal(shot.error.code, "LISTING_HAS_EXPLORER");
+});
+
+/*
+ * The other half of the fix: this must not become "refuse anything that says
+ * the words". The fixture's listings sit on a site whose pages talk about
+ * schools, and a listing is not disqualified by its own copy.
+ */
+test("a clean listing is still filmed, and the last look does not invent an Explorer", options, async () => {
+  const shot = await capture(fixture.ROUTES, { listingUrl: "/listings/123-main-st" });
+  assert.equal(shot.error, null, shot.error ? shot.error.message : "");
+  assert.equal(new URL(shot.pageUrl).pathname, "/listings/123-main-st");
+  const filmed = shot.checked.find((entry) => new URL(entry.url).pathname === "/listings/123-main-st");
+  assert.equal(filmed.explorer, null, "nothing of ours was on that page");
+});
+
 /* ---------------------------------------------------------------- */
 /* the budget, and letting go of Chrome                             */
 /* ---------------------------------------------------------------- */

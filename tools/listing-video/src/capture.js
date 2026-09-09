@@ -676,6 +676,15 @@ const EXPLORER_ALREADY_THERE =
   "Otherwise paste one of their listings that does not have it yet.";
 
 /*
+ * Added when the Explorer was not there during the crawl and was there at the
+ * shutter - usually a tag manager, which is blocked while we are looking around
+ * and allowed for the shot. Worth saying out loud, because otherwise the
+ * refusal reads as nonsense to somebody who watched the page load clean.
+ */
+const APPEARED_LATE =
+  "It was not there while their site was being looked over and appeared once the page had fully loaded, which is what a tag manager does - so the page can look clean and still be carrying one.";
+
+/*
  * The advice at the end of a refusal that was the site's choice.
  *
  * It used to stop at "paste that URL", and for Scott Rodgers Real Estate that
@@ -1356,29 +1365,49 @@ function readPageFacts() {
  * appearing in the page copy is only a hint.
  */
 function readExplorer() {
-  const sources = [];
-  for (const el of Array.from(document.querySelectorAll("script[src], iframe[src], link[href]"))) {
-    sources.push(el.getAttribute("src") || el.getAttribute("href") || "");
-  }
-  for (const el of Array.from(document.querySelectorAll("[id], [class]"))) {
-    sources.push(`${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`);
-  }
-  for (const el of Array.from(document.querySelectorAll("*"))) {
-    for (const name of el.getAttributeNames ? el.getAttributeNames() : []) {
-      if (name.startsWith("data-dn-") && name !== "data-dn-hidden") sources.push(name);
+  /*
+   * Our own embed, however a realtor installed it. Both snippets we hand out
+   * carry the domain in a script src - explorer/sdk.js for the popup and
+   * explorer/inline.js for the in-page one - and the inline one also leaves a
+   * #dn-explorer container behind.
+   */
+  const EMBED = /dreamneighborhood|dream-neighborhood|dn-explorer|dn-popup|data-dn-/i;
+  /* What our widgets put on screen. Only a hint: a page can say these words. */
+  const ON_SCREEN = /(School Explorer|Neighborhood Explorer|Find Your Dream School)/i;
+  /* src and href are only evidence on the tags that load something. A footer link to our site is not an install. */
+  const LOADS = { SCRIPT: 1, IFRAME: 1, LINK: 1, EMBED: 1, OBJECT: 1 };
+
+  /*
+   * Open shadow roots are walked as well as the page itself. A floating widget
+   * that renders into a shadow root is invisible to a plain querySelectorAll
+   * and to body.innerText, and a popup button in the corner of the page is
+   * exactly the sort of thing built that way.
+   */
+  const roots = [document];
+  for (let at = 0; at < roots.length && at < 400; at += 1) {
+    for (const el of Array.from(roots[at].querySelectorAll("*"))) {
+      if (el.shadowRoot) roots.push(el.shadowRoot);
+
+      if (LOADS[el.tagName]) {
+        const src = el.getAttribute("src") || el.getAttribute("href") || "";
+        if (src && EMBED.test(src)) return { found: true, how: "embed" };
+        if (el.tagName === "SCRIPT" && !src && EMBED.test((el.textContent || "").slice(0, 200000))) {
+          return { found: true, how: "embed" };
+        }
+      }
+      if (EMBED.test(`${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`)) {
+        return { found: true, how: "embed" };
+      }
+      for (const name of el.getAttributeNames ? el.getAttributeNames() : []) {
+        if (name.startsWith("data-dn-") && name !== "data-dn-hidden") return { found: true, how: "embed" };
+      }
     }
   }
-  const inline = Array.from(document.querySelectorAll("script:not([src])"))
-    .map((el) => el.textContent || "")
-    .join(" ")
-    .slice(0, 200000);
 
-  if (/dreamneighborhood|dream-neighborhood|dn-explorer|dn-popup|data-dn-/i.test(`${sources.join(" ")} ${inline}`)) {
-    return { found: true, how: "embed" };
-  }
-  if (/(School Explorer|Neighborhood Explorer|Find Your Dream School)/i.test(document.body.innerText || "")) {
-    return { found: true, how: "text" };
-  }
+  let words = document.body ? document.body.innerText || "" : "";
+  for (let at = 1; at < roots.length; at += 1) words += ` ${roots[at].textContent || ""}`;
+  if (ON_SCREEN.test(words)) return { found: true, how: "text" };
+
   return { found: false, how: null };
 }
 /* eslint-enable no-undef */
@@ -1843,6 +1872,65 @@ async function captureListing({
     return finishShot(verdict, notes);
   };
 
+  /**
+   * Look for our own Explorer one more time, on the page being photographed.
+   *
+   * This is the check that matters, and until now it was the one that was not
+   * being made. The Explorer was looked for during the crawl - a small window,
+   * with images, fonts and every analytics host blocked - and then the page was
+   * loaded AGAIN, at full size with nothing blocked, and photographed without
+   * anybody looking again.
+   *
+   * Everything in that gap is a way for the Explorer to be in the picture
+   * having been absent from the check. The clearest is a tag manager: our
+   * snippet is often installed through Google Tag Manager, googletagmanager.com
+   * is in JUNK_HOSTS and is blocked during the crawl, so the crawl sees a clean
+   * listing - and then the shot loads GTM, GTM injects the Explorer, and the
+   * "before" video opens on a listing that already has one. Which is what Bill
+   * got. A widget that loads late, or only once its images are allowed, or only
+   * below the fold, all land the same way.
+   *
+   * So the page is asked once more, here, after everything has loaded and the
+   * overlays have been cleared, one line before the shutter. What is in this
+   * picture is the only thing "the before shot" can mean.
+   *
+   * A refusal needs hard evidence - an actual embed. The words "School
+   * Explorer" in a page's own copy are a hint worth recording during the crawl,
+   * when there was still a choice of pages, but they are not a reason to throw
+   * away a listing that is otherwise ready to photograph.
+   */
+  const lastLookForOurOwnExplorer = async (notes) => {
+    const now = await detectExplorer(page);
+
+    // The pages-checked list is what the failure panel shows, so it should say
+    // what was true at the shutter rather than what was true minutes earlier.
+    const note = checked.find((entry) => sameTarget(entry.url, page.url()));
+    if (note && now.found && !note.explorer) {
+      note.explorer = now.how;
+      if (note.kind === "detail") tally.withExplorer += 1;
+    }
+
+    if (!wantExplorer) {
+      if (now.how === "embed") {
+        log("The Explorer is on that listing after all - it only appeared once the page fully loaded");
+        throw captureError("LISTING_HAS_EXPLORER", `${EXPLORER_ALREADY_THERE} ${APPEARED_LATE}`);
+      }
+      if (now.found) log("That listing mentions an Explorer in its own words, but does not have one on it");
+      return;
+    }
+
+    /*
+     * The upgrade script wants one, and one turned up. The note saying we would
+     * draw School Explorer onto the shot was written before the page had
+     * finished loading, so it is no longer true and would tell whoever reviews
+     * the video the opposite of what they are looking at.
+     */
+    if (now.how === "embed" && notes.length) {
+      notes.length = 0;
+      log("School Explorer is on that listing after all - filming it as it is, nothing added");
+    }
+  };
+
   /** Clear the late overlays, then take the picture. */
   const finishShot = async (verdict, notes) => {
     await settle(page, { forShot: true });
@@ -1902,6 +1990,9 @@ async function captureListing({
       );
     }
 
+    const allNotes = [...(notes || [])];
+    await lastLookForOurOwnExplorer(allNotes);
+
     const shotPath = path.join(outDir, "site.png");
     await page.screenshot({ path: shotPath, type: "png", captureBeyondViewport: false });
     log(`Filmed ${address.street}`);
@@ -1911,7 +2002,6 @@ async function captureListing({
      * page a signed-in visitor sees is not always the page the public sees, and
      * whoever reviews this should know which one they are looking at.
      */
-    const allNotes = [...(notes || [])];
     if (accountUsed) {
       allNotes.push(
         `Their site would not show this listing without an account, so it was filmed signed in with the QUAL account${
