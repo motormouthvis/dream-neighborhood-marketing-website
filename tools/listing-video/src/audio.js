@@ -516,6 +516,12 @@ async function buildAiVoiceTrack({ beats, workDir, log, voiceId = "" }) {
  * with the picture and nothing is re-stretched. Dead air is trimmed off the
  * front and a known 0.6s of silence is put back, so the first word is never
  * clipped by a player that starts slow.
+ *
+ * Those two trims are also why `align` comes back. The voice in the finished
+ * video is not the whole recording, it is a window onto the middle of it, and
+ * anything else that was recorded at the same time - the camera, when the take
+ * carried one - has to be cut to the same window or it stops matching the words.
+ * Measured off the files rather than guessed at: see src/webcam.js.
  */
 async function buildRecordedTrack({ uploadPath, workDir, log }) {
   log("Preparing your recording");
@@ -529,7 +535,9 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
       "That audio could not be read. It may be empty, or not really an audio file. Record the take again, or upload an mp3, wav, m4a or webm."
     );
   }
+  const rawSeconds = await probeDuration(converted).catch(() => 0);
   const trimmed = await trimLeadingSilence(converted, path.join(workDir, "take-trimmed.wav"));
+  const afterLeadSeconds = await probeDuration(trimmed).catch(() => rawSeconds);
   /*
    * Room tone left running after the last word goes too, so a take that was
    * stopped late does not make the finished video longer than the script. It
@@ -537,6 +545,7 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
    * nothing is added after the last word.
    */
   const tightened = await trimTrailingSilence(trimmed, path.join(workDir, "take-tight.wav"));
+  const keptSeconds = await probeDuration(tightened).catch(() => afterLeadSeconds);
   const lead = await makeSilence(LEAD_SILENCE_SECONDS, path.join(workDir, "lead.wav"));
   const joined = await concatWavs([lead, tightened], path.join(workDir, "take-joined.wav"), workDir);
   const finalTrack = await normalizeLoudness(joined, path.join(workDir, "voice.wav"));
@@ -545,6 +554,18 @@ async function buildRecordedTrack({ uploadPath, workDir, log }) {
     audioFile: finalTrack,
     totalDuration: await probeDuration(finalTrack),
     voice: { mode: "recorded", engine: "recorded", label: "Your recorded voice" },
+    /*
+     * Which slice of the raw take survived, and where it lands.
+     *
+     *   skipSeconds   how much was cut off the front
+     *   keepSeconds   how much of it is in the finished track
+     *   startSeconds  where the first of it plays, which is after the lead silence
+     */
+    align: {
+      skipSeconds: Math.max(0, rawSeconds - afterLeadSeconds),
+      keepSeconds: keptSeconds,
+      startSeconds: LEAD_SILENCE_SECONDS,
+    },
   };
 }
 

@@ -226,6 +226,18 @@ function wantsCaptions(body) {
   return ticked((body || {}).showCaptions);
 }
 
+/**
+ * Does this take want the marketer's face in the corner?
+ *
+ * Asked of the take rather than of the job, and off unless it says so. The same
+ * rule as the caption bar and for a stronger reason: a face in a video is a
+ * person, and one only goes in because somebody put it there on purpose for that
+ * recording. See src/webcam.js for where it lands and why it can only land there.
+ */
+function wantsWebcam(body) {
+  return ticked((body || {}).webcam);
+}
+
 /** Move an accepted screenshot into the job's own folder, with its address. */
 async function keepUploadedListing(jobId, file, address, { noExplorerConfirmed = false } = {}) {
   const kept = path.join(store.jobDir(jobId), `listing-upload${path.extname(file.filename) || ".png"}`);
@@ -323,6 +335,9 @@ app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
       maxMegabytes: Math.round(uploadedVideo.MAX_UPLOADED_VIDEO_BYTES / (1024 * 1024)),
       maxMinutes: Math.round(uploadedVideo.MAX_UPLOADED_VIDEO_SECONDS / 60),
     },
+    // Whether the record step may offer the camera at all. Off on a box that is
+    // not staging, and the toggle is simply not there.
+    webcam: { allowed: config.webcam.allowed, corner: "bottom-left" },
     scenes: templates.SCENES.map((id) => ({
       id,
       label: templates.SCENE_LABELS[id],
@@ -849,9 +864,28 @@ app.post(
     const kept = path.join(store.jobDir(job.id), `take${path.extname(req.file.filename) || ".webm"}`);
     await fsp.rename(req.file.path, kept);
 
+    /*
+     * Did this take ask for the camera card?
+     *
+     * The answer travels with the take rather than with the job, because it is a
+     * decision about this take: a re-record with the camera off has to be able to
+     * take the face away again, and it does - see attachAudio.
+     *
+     * A box with the camera switched off ignores the field rather than refusing
+     * the upload. The take is good either way, and losing somebody's recording
+     * over a setting they cannot see would be the worse answer.
+     */
+    const askedForWebcam = wantsWebcam(req.body);
+    const withWebcam = askedForWebcam && config.webcam.allowed;
+    job.input.webcam = withWebcam;
+    await store.persist(job);
+    if (askedForWebcam && !withWebcam) {
+      store.logProgress(job, "The camera card is switched off on this server - burning the voice on its own");
+    }
+
     store.logProgress(job, "Got your take - putting it on the video");
     enqueue(() =>
-      attachAudio(job, { source: "recorded", uploadPath: kept })
+      attachAudio(job, { source: "recorded", uploadPath: kept, withWebcam })
         .catch(() => {})
         .finally(() => fsp.rm(kept, { force: true }).catch(() => {}))
     );
@@ -874,6 +908,15 @@ app.post(`${TOOL_PATH}/api/jobs/:id/ai-voice`, auth.requireSession, async (req, 
         "The AI voice is not connected on this server. Record your own voice over the silent video, or ask an engineer to finish the voice setup.",
     });
   }
+
+  /*
+   * Nobody was in the room when an AI line was spoken, so there is no face to
+   * put in the corner. If the last take had one, this is where it goes: the
+   * finished cut is rebuilt from the stills and the new track, and the camera
+   * card is simply not part of it.
+   */
+  job.input.webcam = false;
+  await store.persist(job);
 
   store.logProgress(job, "Building the AI voice track");
   enqueue(() => attachAudio(job, { source: "ai" }).catch(() => {}));
