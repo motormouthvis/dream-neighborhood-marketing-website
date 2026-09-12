@@ -5,6 +5,7 @@ const path = require("path");
 const config = require("./config");
 const { run } = require("./exec");
 const { probeDuration } = require("./audio");
+const { pipFilter } = require("./webcam");
 
 /*
  * How long the finished video is: whatever the scene lengths handed in add up to.
@@ -108,8 +109,14 @@ async function buildSilentVideo({ frames, durations, workDir, outFile, log }) {
  *
  * Making a finished video shorter than it was built is a person's decision,
  * taken on the final review with "Trim Remainder of Video" - see trimVideoAt.
+ *
+ * `webcam`, when there is one, is the camera card: a clip from src/webcam.js
+ * that gets composited into the bottom left corner for as long as it lasts. It
+ * is an overlay and nothing more - it does not touch the scene lengths, it does
+ * not touch the audio, and a video built without one comes out byte for byte the
+ * same as it did before any of this existed.
  */
-async function buildVideo({ frames, durations, audioFile, workDir, outFile, log }) {
+async function buildVideo({ frames, durations, audioFile, workDir, outFile, log, webcam = null }) {
   if (frames.length !== durations.length) {
     throw new Error("Internal error: frame count and beat count do not match.");
   }
@@ -123,7 +130,21 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
 
   const listFile = await writeConcatList({ frames, durations: scenes, workDir, name: "frames-voiced.txt" });
 
-  log("Rendering the video with your audio");
+  /*
+   * The stills, and then the camera card on top of them if there is one.
+   *
+   * Without a camera this is the one pass over a list of JPEGs it has always
+   * been, written as a filtergraph rather than a -vf so that both paths encode
+   * through the same code. With one there is a second video input and the
+   * pictures are a background the card is composited onto - see src/webcam.js
+   * for the card itself and for why it can only ever go bottom left.
+   */
+  const scaleStills = "[0:v]fps=30,scale=1920:1080:flags=lanczos[base]";
+  const filter = webcam
+    ? `${scaleStills};${pipFilter({ input: "2:v", base: "base", out: "v", startSeconds: webcam.startSeconds || 0 })}`
+    : `${scaleStills};[base]format=yuv420p[v]`;
+
+  log(webcam ? "Rendering the video with your audio and camera" : "Rendering the video with your audio");
   await run(
     config.ffmpegPath,
     [
@@ -136,8 +157,11 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
       listFile,
       "-i",
       audioFile,
+      ...(webcam ? ["-i", webcam.file] : []),
+      "-filter_complex",
+      filter,
       "-map",
-      "0:v:0",
+      "[v]",
       "-map",
       "1:a:0",
       "-t",
@@ -146,8 +170,6 @@ async function buildVideo({ frames, durations, audioFile, workDir, outFile, log 
       // with silence to the end. The picture holds; the audio has finished.
       "-af",
       "apad",
-      "-vf",
-      "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p",
       ...ENCODE,
       "-crf",
       "21",

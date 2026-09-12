@@ -128,6 +128,22 @@ const config = {
   },
 
   /*
+   * The camera card - the marketer's face in the corner of their own video.
+   *
+   * On for the same reason the upload is: this whole service is staging-only and
+   * never sits in front of a customer. LISTING_VIDEO_WEBCAM=off takes the toggle
+   * off the record step and makes the route refuse, and that is what goes on any
+   * box that is not staging.
+   *
+   * Switching this on does not put a face in anything. The toggle on the record
+   * step is off every time that step is opened, so a video only has somebody in
+   * it because somebody ticked the box for that take. See src/webcam.js.
+   */
+  webcam: {
+    allowed: bool(process.env.LISTING_VIDEO_WEBCAM, true),
+  },
+
+  /*
    * The live Neighborhood Explorer.
    *
    * Videos film the real product: the widget is opened at the listing's

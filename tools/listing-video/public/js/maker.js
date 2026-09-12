@@ -24,6 +24,9 @@
     take: null,
     takeName: "take.webm",
     takeUrl: null,
+    /* Whether the take being held has a camera track in it, not whether one was
+       asked for: an uploaded audio file never has one. */
+    takeHasWebcam: false,
     together: false,
     ticker: null,
     tickerStart: 0,
@@ -699,6 +702,18 @@
       fromAPicture ? "This one was drawn from the screenshot you uploaded, so filming it again would draw the same thing." : ""
     );
 
+    /*
+     * The camera is offered only where it can be delivered.
+     *
+     * Two answers have to agree: the server has to allow it at all - it is off on
+     * anything that is not staging - and this browser has to be able to open a
+     * camera in the first place.
+     */
+    var camera = (D.state.session && D.state.session.webcam) || {};
+    var canFilm = Boolean(camera.allowed) && Boolean(navigator.mediaDevices && window.MediaRecorder);
+    D.show(el("webcamField"), canFilm);
+    if (canFilm) el("webcamToggle").checked = false;
+
     resetTake();
     step("record");
   }
@@ -746,12 +761,18 @@
     if (mine.takeUrl) URL.revokeObjectURL(mine.takeUrl);
     mine.takeUrl = null;
     mine.take = null;
+    mine.takeHasWebcam = false;
     el("takePlayback").removeAttribute("src");
+    var preview = el("webcamPreview");
+    preview.removeAttribute("src");
+    D.show(preview, false);
+    D.show(el("takeWebcamNote"), false);
     D.show(el("takeWrap"), false);
   }
 
   function resetTake() {
     stopTicker();
+    stopLiveCamera();
     dropTake();
     D.setText(el("recBtn"), "Record while it plays");
     el("recBtn").disabled = false;
@@ -764,12 +785,25 @@
     D.setText(el("keepTakeBtn"), "Keep this take and add the audio to the video");
   }
 
-  function holdTake(blob, name, how) {
+  function holdTake(blob, name, how, hasWebcam) {
     dropTake();
     mine.take = blob;
     mine.takeName = name;
+    mine.takeHasWebcam = Boolean(hasWebcam);
     mine.takeUrl = URL.createObjectURL(blob);
     el("takePlayback").src = mine.takeUrl;
+    /*
+     * A take with the camera in it is one file with both tracks, so the same
+     * blob is the preview. Muted, because the sound is the audio element's job -
+     * two copies of the same voice a frame apart is the worst of both.
+     */
+    if (mine.takeHasWebcam) {
+      var preview = el("webcamPreview");
+      preview.src = mine.takeUrl;
+      preview.muted = true;
+      D.show(preview, true);
+    }
+    D.show(el("takeWebcamNote"), mine.takeHasWebcam);
     D.show(el("takeWrap"), true);
     D.setText(el("syncState"), "");
     D.setText(el("recState"), how);
@@ -783,6 +817,52 @@
 
   /* ---- recording ---- */
 
+  /** Is the camera asked for, and is this a browser and a box that can offer it? */
+  function webcamAsked() {
+    var camera = (D.state.session && D.state.session.webcam) || {};
+    return Boolean(camera.allowed) && !el("webcamField").hidden && el("webcamToggle").checked;
+  }
+
+  /** The self-view, off. Called on every path out of recording, including errors. */
+  function stopLiveCamera() {
+    var live = el("webcamLive");
+    live.pause();
+    live.srcObject = null;
+    D.show(live, false);
+  }
+
+  /**
+   * Open the microphone, and the camera too when it was asked for.
+   *
+   * A refused camera does not cost the take. The microphone is asked for again
+   * on its own and the recording goes ahead without a face, because somebody
+   * about to read a script wants to record, not to debug a permission prompt.
+   */
+  function openRecordingStream(wantsCamera) {
+    var mic = { echoCancellation: true, noiseSuppression: true };
+    if (!wantsCamera) return navigator.mediaDevices.getUserMedia({ audio: mic });
+
+    return navigator.mediaDevices
+      .getUserMedia({
+        audio: mic,
+        // 4:3 to match the card it ends up in, so the crop takes as little of
+        // the person as it can. See src/webcam.js.
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+      })
+      .catch(function () {
+        D.showMessage(
+          el("recError"),
+          "The camera could not be opened, so this take is voice only. Check the camera permission for this site and record again if you want to be in it."
+        );
+        return navigator.mediaDevices.getUserMedia({ audio: mic });
+      });
+  }
+
+  /** What to call the file, from what the browser actually recorded it as. */
+  function takeFileName(mimeType) {
+    return /mp4/i.test(String(mimeType || "")) ? "take.mp4" : "take.webm";
+  }
+
   function startRecording() {
     D.showMessage(el("recError"), "");
     stopTogether();
@@ -793,28 +873,50 @@
       return;
     }
 
-    navigator.mediaDevices
-      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+    openRecordingStream(webcamAsked())
       .then(function (stream) {
         mine.stream = stream;
+        /*
+         * One recorder over both tracks, not one each.
+         *
+         * A MediaRecorder handed a stream with a camera on it writes a single
+         * file with the picture and the voice already interleaved, which is the
+         * whole sync problem solved by not having it: the server pulls the words
+         * out of exactly the same file the face came from. See src/webcam.js.
+         */
+        var filming = stream.getVideoTracks().length > 0;
         var chunks = [];
         var recorder = new MediaRecorder(stream);
         mine.recorder = recorder;
+
+        if (filming) {
+          var live = el("webcamLive");
+          live.srcObject = stream;
+          live.muted = true;
+          D.show(live, true);
+          Promise.resolve(live.play()).catch(function () {
+            /* a self-view that will not start is not worth stopping a take for */
+          });
+        }
 
         recorder.ondataavailable = function (event) {
           if (event.data && event.data.size) chunks.push(event.data);
         };
         recorder.onstop = function () {
           stopTicker();
+          stopLiveCamera();
           stream.getTracks().forEach(function (track) {
             track.stop();
           });
           el("silentPlayer").pause();
           D.setText(el("recBtn"), "Record while it plays");
           holdTake(
-            new Blob(chunks, { type: recorder.mimeType || "audio/webm" }),
-            "take.webm",
-            "Take recorded. Play it against the pictures, then keep it or record again."
+            new Blob(chunks, { type: recorder.mimeType || (filming ? "video/webm" : "audio/webm") }),
+            takeFileName(recorder.mimeType),
+            filming
+              ? "Take recorded, with you in it. Play it against the pictures to see the corner, then keep it or record again."
+              : "Take recorded. Play it against the pictures, then keep it or record again.",
+            filming
           );
         };
 
@@ -835,7 +937,10 @@
               D.setText(el("recTimer"), D.clock((Date.now() - mine.tickerStart) / 1000));
             }, 250);
             D.setText(el("recBtn"), "Stop recording");
-            D.setText(el("recState"), "Recording. Talk along with the video.");
+            D.setText(
+              el("recState"),
+              filming ? "Recording, and you are in shot bottom left. Talk along with the video." : "Recording. Talk along with the video."
+            );
           });
 
         player.onended = function () {
@@ -843,6 +948,7 @@
         };
       })
       .catch(function () {
+        stopLiveCamera();
         D.showMessage(el("recError"), "No microphone permission. Upload an audio file instead.");
       });
   }
@@ -865,6 +971,7 @@
     var audio = el("takePlayback");
     video.pause();
     audio.pause();
+    el("webcamPreview").pause();
     D.setText(el("playBothBtn"), "Play the video and this take together");
     D.setText(el("syncState"), "");
   }
@@ -879,15 +986,33 @@
 
     var video = el("silentPlayer");
     var audio = el("takePlayback");
+    var preview = el("webcamPreview");
     video.muted = true;
     video.currentTime = 0;
     audio.currentTime = 0;
     mine.together = true;
     D.setText(el("playBothBtn"), "Stop them both");
-    D.setText(el("syncState"), "Playing the pictures and your take together.");
+    D.setText(
+      el("syncState"),
+      mine.takeHasWebcam
+        ? "Playing the pictures, your take and your camera together - the corner is where it will be burned in."
+        : "Playing the pictures and your take together."
+    );
+
+    /*
+     * The camera plays as a third thing, and is not allowed to be the reason
+     * this fails. It is a preview of a corner; the take is the take.
+     */
+    if (mine.takeHasWebcam) {
+      preview.currentTime = 0;
+      Promise.resolve(preview.play()).catch(function () {
+        /* no self-view this time round; the timing is still judgeable */
+      });
+    }
 
     Promise.all([Promise.resolve(video.play()), Promise.resolve(audio.play())]).catch(function () {
       mine.together = false;
+      preview.pause();
       D.setText(el("playBothBtn"), "Play the video and this take together");
       D.showMessage(el("recError"), "The browser would not start both at once. Press play on each one instead.");
     });
@@ -901,6 +1026,12 @@
     var audio = el("takePlayback");
     if (audio.duration && Math.abs(audio.currentTime - video.currentTime) > 0.3) {
       audio.currentTime = Math.min(video.currentTime, audio.duration - 0.05);
+    }
+    // The face follows the voice rather than the pictures, because that is the
+    // pair that has to stay together: they were recorded in the same file.
+    var preview = el("webcamPreview");
+    if (mine.takeHasWebcam && preview.duration && Math.abs(preview.currentTime - audio.currentTime) > 0.3) {
+      preview.currentTime = Math.min(audio.currentTime, preview.duration - 0.05);
     }
   });
 
@@ -920,7 +1051,10 @@
     var file = event.target.files && event.target.files[0];
     if (!file) return;
     D.setText(el("fileState"), "Using " + file.name);
-    holdTake(file, file.name, "Using your uploaded file as the take. Play it against the pictures before you keep it.");
+    // An uploaded file is a voice and nothing else, whatever the toggle says:
+    // there was no camera open when it was made. The server checks the file
+    // rather than the box for exactly this reason.
+    holdTake(file, file.name, "Using your uploaded file as the take. Play it against the pictures before you keep it.", false);
   });
 
   /* ---- keeping a take: this is the only thing that muxes ---- */
@@ -933,6 +1067,12 @@
     D.setText(el("keepTakeBtn"), "Uploading the take...");
 
     var data = new FormData();
+    // Ahead of the file, so the field is already parsed by the time anything
+    // touches the upload. What this take actually has in it decides, not what
+    // the toggle happens to say now: a file uploaded with the box still ticked
+    // has nobody in it, and saying otherwise would have the review step
+    // promising a face that is not there.
+    data.append("webcam", mine.takeHasWebcam ? "on" : "off");
     data.append("audio", mine.take, mine.takeName);
     fetch(API + "/jobs/" + mine.jobId + "/audio", { method: "POST", body: data, credentials: "same-origin" })
       .then(function (response) {
@@ -982,7 +1122,23 @@
 
     var bits = [job.template.name, job.result.voice.label, D.runtime(job.result.durationSeconds)];
     if (job.input && job.input.showCaptions) bits.push("green caption bar on");
+    /*
+     * Whether there is a person in this cut.
+     *
+     * A face changes what the review is for - it is no longer only "do the words
+     * land on the right pictures", it is also "is this somebody I am happy to
+     * send to a realtor" - so it is named here rather than left to be noticed.
+     * And when one was asked for and did not arrive, that is named too: it is
+     * the case somebody would otherwise send without looking.
+     */
+    var camera = job.result.webcam || {};
+    if (camera.shown) bits.push("you in the bottom-left corner for " + D.runtime(camera.seconds));
     var text = bits.join(" \u00b7 ") + ".";
+    if (camera.asked && !camera.shown) {
+      text +=
+        " You asked for the camera on this take and there is no camera in the finished video - the recording had no" +
+        " picture in it. Record again with the camera allowed, or send it as it is.";
+    }
     // What the AI voice cost, when it was used and lines were reused.
     var voice = job.result.voice || {};
     if (voice.reusedLines) {

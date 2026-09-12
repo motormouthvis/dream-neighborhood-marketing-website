@@ -355,6 +355,37 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .steps li:last-child::before { background: var(--green); }
 
 .player { width: 100%; border-radius: 14px; background: #000; display: block; margin: 8px 0 22px; }
+
+/*
+ * The camera card, previewed over the pictures.
+ *
+ * Sized as a fraction of the player rather than in pixels, because it is
+ * standing in for something ffmpeg draws on a 1920x1080 frame and the player is
+ * whatever width the column is. The numbers are src/webcam.js's, as fractions:
+ * a 280x214 card 38px in from the left and 38px up from the bottom.
+ *
+ * The margin under .player is the stage's, so the card measures from the bottom
+ * of the picture and not from the bottom of the gap below it.
+ */
+.stage { position: relative; margin: 8px 0 22px; }
+.stage .player { margin: 0; }
+.pip {
+  position: absolute;
+  left: 1.98%;
+  bottom: 3.52%;
+  width: 14.58%;
+  aspect-ratio: 280 / 214;
+  object-fit: cover;
+  background: #111;
+  border: 3px solid #fff;
+  border-radius: 12px;
+  /* The hairline the burn draws outside the white edge, so the preview is not a
+     flatteringly cleaner version of what comes out. */
+  outline: 1px solid rgba(20, 40, 31, 0.45);
+  box-shadow: 0 6px 18px rgba(8, 20, 14, 0.35);
+  /* The controls under the picture belong to the player, not to this. */
+  pointer-events: none;
+}
 .share { margin-top: 24px; }
 .share__row { display: flex; gap: 12px; flex-wrap: wrap; }
 .share__row .input { flex: 1 1 240px; }

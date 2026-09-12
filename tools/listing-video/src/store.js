@@ -349,6 +349,10 @@ function publicView(job) {
           voice: job.result.voice,
           templateName: job.result.templateName,
           sceneCount: job.result.sceneCount,
+          // Whether there is a face in the corner of this cut, and whether one
+          // was asked for. A job burned before the camera existed has neither,
+          // which reads the same as a job that did not ask.
+          webcam: job.result.webcam || null,
           // Only on a video that arrived finished: what the file was called and
           // what is in it. No server path - the file itself is served by route.
           uploaded: job.result.uploaded || null,
@@ -368,6 +372,10 @@ function publicView(job) {
       // Whether the green caption bar was burned into this video's frames. Off
       // unless the form asked, including on jobs made before the toggle existed.
       showCaptions: Boolean(job.input.showCaptions),
+      // What the last take asked for about the camera. A record of what was
+      // asked, not a setting to restore: the toggle on the record step is off
+      // every time that step is opened, however this job was last burned.
+      webcam: Boolean(job.input.webcam),
       // What was uploaded and the address that came with it, without the server
       // path the file sits at.
       uploadedListing: job.input.uploadedListing

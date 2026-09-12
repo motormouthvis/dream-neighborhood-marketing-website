@@ -311,9 +311,46 @@
                right, so whoever is recording can watch both at once. -->
           <div class="record-split">
             <div class="record-split__main">
-          <video id="silentPlayer" class="player" controls playsinline muted preload="auto"></video>
+          <!--
+            The pictures, with the corner the camera card lands in drawn on top
+            of them.
+
+            Two camera elements, never both at once: the live one while a take is
+            being recorded, so whoever is talking can see they are in shot, and
+            the played-back one while the take is played against the pictures, so
+            the corner can be judged before anything is burned. Both sit exactly
+            where src/webcam.js will put the real thing - bottom LEFT, because
+            bottom right is the School Explorer house button.
+          -->
+          <div class="stage" id="recordStage">
+            <video id="silentPlayer" class="player" controls playsinline muted preload="auto"></video>
+            <video id="webcamLive" class="pip" playsinline muted hidden></video>
+            <video id="webcamPreview" class="pip" playsinline muted hidden></video>
+          </div>
 
           <div class="recorder">
+            <!--
+              The camera, off every time this step is opened.
+
+              Not remembered and not defaulted on: a video with somebody's face
+              in it is a different thing from a video without one, and it only
+              ever happens because it was asked for on the take being recorded.
+            -->
+            <div id="webcamField" hidden>
+              <label class="check">
+                <input type="checkbox" id="webcamToggle" />
+                <span>
+                  <strong>Include webcam.</strong> Film me while I talk and put me in the bottom-left corner of the
+                  finished video.
+                </span>
+              </label>
+              <span class="hint" id="webcamHint">
+                The camera records alongside your microphone, so your face and your words stay together. It goes bottom
+                left - the Dream Neighborhood house button lives in the bottom right and nothing is allowed to cover it.
+                The AI voice cannot use this: there is nobody to film.
+              </span>
+            </div>
+
             <div class="recorder__row">
               <button type="button" class="btn btn--primary" id="recBtn">Record while it plays</button>
               <span class="recorder__timer" id="recTimer">0:00</span>
@@ -337,6 +374,19 @@
                 <button type="button" class="btn btn--dark" id="playBothBtn">Play the video and this take together</button>
                 <span class="recorder__state" id="syncState"></span>
               </div>
+              <!--
+                The one thing the preview cannot show, said rather than hidden:
+                the burn trims the dead air off the front of a take and puts a
+                known 0.6s of silence back. Voice and face move together by the
+                same amount, so what is judged here - do the words and the face
+                land on the right pictures - is what comes out. It is a frame or
+                two, and it is better written down than discovered.
+              -->
+              <p class="hint" id="takeWebcamNote" hidden>
+                Your camera is on this take, shown here where it will be burned in: bottom left, clear of the house
+                button. The finished cut trims the silence at the front of a take, so the card starts with your first
+                word rather than with the recording.
+              </p>
               <label class="take__label">The take on its own</label>
               <audio id="takePlayback" class="recorder__player" controls></audio>
               <div class="recorder__row recorder__row--wrap">

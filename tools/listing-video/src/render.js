@@ -12,6 +12,7 @@ const { prepareListingImage } = require("./listing-image");
 const { renderFrames, spreadDurations } = require("./frames");
 const { buildAiVoiceTrack, buildRecordedTrack } = require("./audio");
 const { buildSilentVideo, buildVideo, buildPoster, trimVideoAt } = require("./video");
+const { prepareWebcamClip } = require("./webcam");
 const store = require("./store");
 
 /**
@@ -411,8 +412,14 @@ async function renderSilent(job, { budgetMs } = {}) {
  * Runs again from scratch every time the take is replaced, so re-recording is
  * always safe. The finished mp4 replaces the previous one and the review flag
  * is cleared, because a new take has not been reviewed yet.
+ *
+ * `withWebcam` is the camera card, and it is safe for the same reason. The clip
+ * is cut out of the take that arrived with this call and nothing else, so a
+ * second take replaces the face along with the voice, and a second take recorded
+ * with the camera switched off leaves no face behind at all. The old clip is
+ * deleted before the new one is cut rather than trusted to be overwritten.
  */
-async function attachAudio(job, { source, uploadPath }) {
+async function attachAudio(job, { source, uploadPath, withWebcam = false }) {
   const dir = store.jobDir(job.id);
   const workDir = path.join(dir, "work");
   const log = (message) => store.logProgress(job, message);
@@ -430,6 +437,8 @@ async function attachAudio(job, { source, uploadPath }) {
   job.error = null;
   job.review = { reviewed: false, at: null, how: null };
   await store.persist(job);
+  // Whatever the last take left behind goes now, before anything reads it.
+  await fsp.rm(path.join(workDir, "webcam.mp4"), { force: true }).catch(() => {});
 
   try {
     const beats = job.beats;
@@ -458,6 +467,18 @@ async function attachAudio(job, { source, uploadPath }) {
       track = await buildRecordedTrack({ uploadPath, workDir, log });
     }
 
+    /*
+     * The camera card, and only off a take somebody recorded.
+     *
+     * The AI voice has no camera and never will: nobody was sitting there when
+     * it was spoken, so there is no face to put in the corner and asking for one
+     * is not a thing this path can answer. It goes on without one.
+     */
+    let webcam = null;
+    if (source !== "ai" && withWebcam) {
+      webcam = await prepareWebcamClip({ takePath: uploadPath, workDir, align: track.align, log });
+    }
+
     // Render beside the live file and swap at the end. A link already sent to a
     // customer keeps playing the previous cut while a new take is being made,
     // and never serves a half-written mp4.
@@ -471,6 +492,7 @@ async function attachAudio(job, { source, uploadPath }) {
       workDir,
       outFile: pendingPath,
       log,
+      webcam,
     });
     await fsp.rename(pendingPath, videoPath);
 
@@ -485,6 +507,18 @@ async function attachAudio(job, { source, uploadPath }) {
       templateName: job.template.name,
       explorers: job.template.explorers,
       sceneCount: job.silent.frames.length,
+      /*
+       * Whether there is a face in this cut, said out loud rather than left to
+       * be spotted. It is written down even when the answer is no and one was
+       * asked for, because "I ticked the box and there is nobody there" is the
+       * thing the review step has to be able to explain.
+       */
+      webcam: {
+        asked: source !== "ai" && Boolean(withWebcam),
+        shown: Boolean(webcam),
+        seconds: webcam ? Math.round(webcam.seconds * 10) / 10 : 0,
+        corner: "bottom-left",
+      },
     };
     job.status = "ready";
     log("Done - review it, then send it");
@@ -504,9 +538,16 @@ async function attachAudio(job, { source, uploadPath }) {
   return job;
 }
 
-/** Frames are kept for re-records; the wav scratch files are not. */
+/**
+ * Frames are kept for re-records; the wav scratch files are not.
+ *
+ * The camera clip goes with them. It is cut out of whichever take is being
+ * burned on, so keeping it would only leave the last face on disk for a take
+ * that may not have had one - see attachAudio.
+ */
 async function cleanTempAudio(workDir) {
   try {
+    await fsp.rm(path.join(workDir, "webcam.mp4"), { force: true });
     for (const name of await fsp.readdir(workDir)) {
       if (/\.(wav|mp3|webm|m4a|txt)$/i.test(name)) {
         await fsp.rm(path.join(workDir, name), { force: true });
