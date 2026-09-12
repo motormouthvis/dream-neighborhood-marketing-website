@@ -19,6 +19,7 @@ const voiceUsage = require("./src/voice-usage");
 const { normalizeUrl } = require("./src/capture");
 const { addressFromFields, confirmAddress } = require("./src/geocode");
 const places = require("./src/places");
+const uploadedVideo = require("./src/uploaded-video");
 
 const TOOL_PATH = "/tools/listing-video";
 const uploadsDir = path.join(config.dataDir, "uploads");
@@ -64,6 +65,51 @@ const listingImageUpload = multer({
     return cb(new Error("Only a PNG or JPG screenshot can be uploaded."));
   },
 });
+
+/*
+ * A finished video, uploaded rather than made.
+ *
+ * Myles already has videos - a screen recording, something a phone shot,
+ * something cut in another editor - and what he wants from this box is the part
+ * that has nothing to do with making one: a /v/{id} link, a card in the Library,
+ * and the same send step. So an mp4 can be uploaded and hosted as it is. See
+ * src/uploaded-video.js for what is checked, and why nothing is re-encoded.
+ *
+ * The extension is kept for the temp name only. What the file actually is gets
+ * decided by its bytes, well after multer has finished with it.
+ */
+const finishedVideoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const ext = /\.(mp4|m4v|mov)$/i.test(file.originalname || "")
+        ? path.extname(file.originalname).toLowerCase()
+        : ".mp4";
+      cb(null, `finished-${Date.now()}-${Math.random().toString(16).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: uploadedVideo.MAX_UPLOADED_VIDEO_BYTES, files: 1 },
+});
+
+/**
+ * Take the finished video, and turn a refusal into something readable.
+ *
+ * The size limit is the one that gets hit, so it says the number and what to do
+ * about it rather than multer's "File too large".
+ */
+function acceptFinishedVideo(req, res, next) {
+  finishedVideoUpload.single("video")(req, res, (error) => {
+    if (!error) return next();
+    const tooBig = error.code === "LIMIT_FILE_SIZE";
+    return res.status(400).json({
+      error: tooBig
+        ? `That video is bigger than ${Math.round(
+            uploadedVideo.MAX_UPLOADED_VIDEO_BYTES / (1024 * 1024)
+          )}MB, which is as much as this box will take in one upload. Export it at 1080p rather than 4K, or cut it shorter.`
+        : `That video did not upload: ${error.message}`,
+    });
+  });
+}
 
 /**
  * Take the screenshot if there is one, and turn a refusal into something
@@ -270,6 +316,13 @@ app.get(`${TOOL_PATH}/api/session`, async (req, res) => {
         ? { available: true, label: engines[0].label, voices: choices, defaultVoiceId: choices.length ? choices[0].id : "" }
         : { available: false, voices: [] },
     fromAddresses: config.fromAddresses,
+    // Whether a finished video can be uploaded and hosted here, so the tab is
+    // simply not there on a box that has it switched off.
+    videoUpload: {
+      allowed: config.uploadedVideos.allowed,
+      maxMegabytes: Math.round(uploadedVideo.MAX_UPLOADED_VIDEO_BYTES / (1024 * 1024)),
+      maxMinutes: Math.round(uploadedVideo.MAX_UPLOADED_VIDEO_SECONDS / 60),
+    },
     scenes: templates.SCENES.map((id) => ({
       id,
       label: templates.SCENE_LABELS[id],
@@ -644,6 +697,131 @@ app.get(`${TOOL_PATH}/api/jobs/:id`, auth.requireSession, async (req, res) => {
   if (!job) return res.status(404).json({ error: "That video was not found." });
   return res.json({ ...store.publicView(job), watchUrl: watchUrlFor(req, job.id) });
 });
+
+/* ---------------------------------------------------------------- */
+/* a finished video, uploaded rather than made                      */
+/* ---------------------------------------------------------------- */
+
+/**
+ * Host a video that was made somewhere else.
+ *
+ * Nothing on this path films, draws or speaks: no Chrome is opened, no listing is
+ * looked for, no Explorer is photographed and no voice is laid on. An mp4 arrives
+ * with the three things the Library and the email need - who it is for, their
+ * company and where it would be sent - and it comes back as a `/v/{id}` link.
+ *
+ * Answered inline rather than queued, and deliberately so. There is no render to
+ * wait behind and nothing here re-encodes: the file is checked, remuxed with its
+ * index at the front, and a poster is cut from it, which is seconds rather than
+ * minutes. Putting it in the queue would mean an upload sitting behind somebody
+ * else's capture and timing out on Heroku's router for no reason at all.
+ *
+ * The link is public the moment this answers, like every other finished video
+ * here. Sending it to the customer is still a separate, gated step: the review
+ * has to be ticked first, exactly as it does for a video this tool built.
+ */
+app.post(
+  `${TOOL_PATH}/api/uploaded-videos`,
+  auth.requireSession,
+  (req, res, next) => {
+    if (config.uploadedVideos.allowed) return next();
+    return res.status(403).json({
+      error: "Uploading a finished video is switched off on this server.",
+    });
+  },
+  acceptFinishedVideo,
+  async (req, res) => {
+    const body = req.body || {};
+    const refuse = async (status, error) => {
+      await discardUpload(req.file);
+      return res.status(status).json({ error });
+    };
+
+    const firstName = String(body.firstName || "").trim();
+    const company = String(body.company || "").trim();
+    const customerEmail = String(body.customerEmail || "").trim();
+    const fromId = config.fromAddresses.some((entry) => entry.id === body.fromId) ? body.fromId : "marketing";
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No video came through. Pick an mp4 and try again." });
+    }
+
+    /*
+     * The same three answers the Library and the email need, asked for the same
+     * reasons: the card has to say who the video is for, and the email has to
+     * have somewhere to go. Nothing else is asked - there is no script, no
+     * listing and no address on this path.
+     */
+    const problems = [];
+    if (!firstName) problems.push("Customer first name");
+    if (!company) problems.push("Company name");
+    if (!EMAIL_RE.test(customerEmail)) problems.push("Customer email");
+    if (problems.length) {
+      return refuse(400, `Please fill in: ${problems.join(", ")}.`);
+    }
+
+    /*
+     * The folder is claimed before the file is checked, because the checking
+     * writes into it. If the file turns out not to be a video, the folder goes
+     * and no job was ever listed - see store.reserveJob.
+     */
+    const reserved = await store.reserveJob();
+    const notes = [];
+    let prepared;
+    try {
+      prepared = await uploadedVideo.prepareUploadedVideo({
+        sourcePath: req.file.path,
+        jobDir: reserved.dir,
+        log: (message) => notes.push(message),
+      });
+    } catch (error) {
+      await store.releaseJob(reserved.id);
+      return refuse(error.status || 400, error.message || "That video was not accepted.");
+    } finally {
+      // The remux read it and wrote its own copy, so the upload itself is done
+      // with either way.
+      await discardUpload(req.file);
+    }
+
+    const job = await store.createUploadedVideoJob({
+      id: reserved.id,
+      input: {
+        firstName,
+        company,
+        customerEmail,
+        fromId,
+        // Said out loud on the review and in the Library, so a video that was
+        // uploaded never looks like one this tool made.
+        source: "uploaded-video",
+        originalName: String(req.file.originalname || "").slice(0, 120),
+        bytes: req.file.size || 0,
+        // The fields a made video carries, empty rather than absent, so nothing
+        // downstream has to ask whether they exist.
+        websiteUrl: "",
+        listingUrl: "",
+        templateId: store.UPLOADED_VIDEO_TEMPLATE.id,
+        voiceId: "",
+        showCaptions: false,
+      },
+      video: prepared,
+      notes: [
+        `This video was uploaded, not made here${
+          req.file.originalname ? ` (${String(req.file.originalname).slice(0, 120)})` : ""
+        }. Nothing was filmed, no Explorer was photographed and no voice was added - it plays exactly as it arrived.`,
+      ],
+    });
+
+    for (const message of notes) store.logProgress(job, message);
+    store.logProgress(job, "Uploaded and ready - the watch link works now");
+
+    return res.status(201).json({
+      id: job.id,
+      watchUrl: watchUrlFor(req, job.id),
+      durationSeconds: job.result.durationSeconds,
+      job: store.publicView(job),
+    });
+  }
+);
 
 /* ---------------------------------------------------------------- */
 /* step 2: the voice, laid over the picture that was already drawn   */

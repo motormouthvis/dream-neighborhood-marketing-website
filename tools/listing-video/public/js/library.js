@@ -43,6 +43,10 @@
       if (video.durationSeconds) meta.push(D.runtime(video.durationSeconds));
 
       var flags = [];
+      // Which of these this box made, and which arrived finished. The two are
+      // sent the same way, so the difference has to be on the card rather than
+      // left to be worked out from the script name.
+      if (video.uploaded) flags.push('<span class="pill">Uploaded, not made here</span>');
       if (video.emailSent) flags.push('<span class="pill pill--ok">Sent to ' + D.escapeHtml(video.emailTo) + "</span>");
       else if (video.reviewed) flags.push('<span class="pill">Reviewed, not sent</span>');
 

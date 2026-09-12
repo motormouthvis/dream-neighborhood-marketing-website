@@ -131,7 +131,7 @@ window.DNLV = (function () {
   }
 
   /* ------------------------------------------------------------ */
-  /* the three tabs                                                */
+  /* the tabs                                                      */
   /* ------------------------------------------------------------ */
   var onEnter = {};
 
@@ -139,9 +139,12 @@ window.DNLV = (function () {
     onEnter[name] = handler;
   }
 
+  /* Every tab, in the order they sit in the bar. */
+  var VIEWS = ["make", "upload", "library", "scripts"];
+
   function goTo(name) {
     state.view = name;
-    ["make", "library", "scripts"].forEach(function (view) {
+    VIEWS.forEach(function (view) {
       show(el("view-" + view), view === name);
     });
     Array.prototype.forEach.call(document.querySelectorAll("#tabs .tab"), function (tab) {
@@ -255,6 +258,7 @@ window.DNLV = (function () {
     escapeHtml: escapeHtml,
     registerView: registerView,
     goTo: goTo,
+    VIEWS: VIEWS,
     loadTemplates: loadTemplates,
   };
 })();

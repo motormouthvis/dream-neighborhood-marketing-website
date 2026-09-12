@@ -1019,6 +1019,28 @@
     if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");
     D.setText(el("reviewSummary"), text);
 
+    /*
+     * A video that was uploaded rather than made has no way back.
+     *
+     * There is no silent cut to record over again and no script or listing to
+     * change, so both doors out of this step would land on an empty record
+     * screen. The rest of it - the player, the link, the review gate and the
+     * send - is the same, which is the whole reason an uploaded video is a job
+     * like any other. See the Upload a video tab.
+     */
+    var uploaded = Boolean(job.uploaded);
+    D.show(el("redoAudioBtn"), !uploaded);
+    D.show(el("reviewEditInputsBtn"), !uploaded);
+    // Trimming still works on an uploaded video - it is one ffmpeg pass over the
+    // finished file - but the reason it exists here has nothing to do with the
+    // way this tool times a voice, so it does not claim to.
+    if (uploaded) {
+      D.setText(
+        el("trimWhy"),
+        "This video was uploaded as it is. To end it sooner, pause the player exactly where you want it to finish and trim. This cannot be undone, and the file you uploaded is not kept anywhere else here."
+      );
+    }
+
     el("reviewPlayer").src = API + "/jobs/" + job.id + "/video.mp4?t=" + Date.now();
     el("shareLink").value = job.watchUrl;
     el("emailTo").value = job.input.customerEmail;
