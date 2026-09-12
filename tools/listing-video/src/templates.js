@@ -491,8 +491,22 @@ function fill(value, vars) {
 /**
  * The beats a render actually draws: placeholders filled in, and each
  * Neighborhood Explorer beat given the tab it should highlight, in order.
+ *
+ * THE CAPTION IS OFF UNLESS THE JOB ASKED FOR IT, and the default here is off.
+ *
+ * The green bar across the top of every frame is the script's own words burned
+ * into the picture, and that made the spoken script unchangeable: Myles cannot
+ * reword a line without the words on screen contradicting him, and he is the
+ * one writing the lines. So a caption is now something a job opts into on the
+ * form, and a script may carry caption text without that text being drawn.
+ *
+ * Off is the default rather than the exception because a forgotten caller
+ * should draw nothing of ours over the customer's page - the same way round as
+ * every other piece of furniture in src/frames.js. When it is off the caption
+ * comes through empty, which is the `#stage.no-caption` path views/frame.html
+ * has always had, so nothing downstream had to learn a new state.
  */
-function renderBeats(template, vars = {}) {
+function renderBeats(template, vars = {}, { showCaptions = false } = {}) {
   let neSeen = 0;
   return template.beats.map((beat, index) => {
     const rendered = {
@@ -500,9 +514,10 @@ function renderBeats(template, vars = {}) {
       scene: beat.scene,
       seconds: beat.seconds,
       text: fill(beat.text, vars),
-      caption: beat.caption
-        ? { headline: fill(beat.caption.headline, vars), subline: fill(beat.caption.subline, vars) }
-        : { headline: "", subline: "" },
+      caption:
+        showCaptions && beat.caption
+          ? { headline: fill(beat.caption.headline, vars), subline: fill(beat.caption.subline, vars) }
+          : { headline: "", subline: "" },
       neTab: null,
       neTabName: "",
     };

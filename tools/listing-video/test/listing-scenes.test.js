@@ -190,7 +190,7 @@ async function flatPicture(outDir, name, colour, size) {
 }
 
 /** Draw a script for real and hand back the frames with what was on them. */
-async function draw(beats, { explorers = "se-ne" } = {}) {
+async function draw(beats, { explorers = "se-ne", showCaptions = false } = {}) {
   const outDir = await fsp.mkdtemp(path.join(dataDir, "draw-"));
   const screenshot = await flatPicture(outDir, "listing.png", "0x2f6fae", "1920x1400");
   const shot = await flatPicture(outDir, "shot.png", "0xfafbfa", "1600x700");
@@ -204,6 +204,7 @@ async function draw(beats, { explorers = "se-ne" } = {}) {
       address: ADDRESS,
       company: "Scott Rodgers Real Estate",
       explorers,
+      showCaptions,
       schoolExplorerShots: [shot, shot],
       explorerShots: Object.fromEntries(NE_TABS.map((tab) => [tab, [shot]])),
       outDir,
@@ -253,15 +254,22 @@ test("the three looks really are three different pictures", needsChrome, async (
  * was there.
  */
 test("nothing of ours is photographed on a bare listing frame", needsChrome, async () => {
-  const drawn = await draw([
-    beat("listing", { caption: { headline: "A mom opens it.", subline: "There is nothing here about schools." } }),
-  ]);
+  /*
+   * The caption is asked for here on purpose. The bar is off by default now, so
+   * a frame drawn without it has nothing on it at all - and what this test is
+   * about is our own furniture staying off a bare listing even when there ARE
+   * words across the top for it to hide behind.
+   */
+  const drawn = await draw(
+    [beat("listing", { caption: { headline: "A mom opens it.", subline: "There is nothing here about schools." } })],
+    { showCaptions: true }
+  );
 
   assert.equal(drawn.frameText.length, 1);
   assert.doesNotMatch(drawn.frameText[0], /Click here to explore/i);
   assert.doesNotMatch(drawn.frameText[0], /School Explorer/i);
   assert.doesNotMatch(drawn.frameText[0], /Neighborhood Explorer/i);
-  // The caption is the script's own words, so it is still there.
+  // The caption is the script's own words, so with the bar on it is still there.
   assert.match(drawn.frameText[0], /There is nothing here about schools/);
 });
 

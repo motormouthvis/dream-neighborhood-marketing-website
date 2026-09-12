@@ -66,12 +66,19 @@
         var who = DATA.firstName ? DATA.firstName + ", " : "";
         var company = DATA.company || "your website";
         document.title = "A short video for " + company + " - Dream Neighborhood";
+        /*
+         * A made video is always School Explorer on their own listing, so the
+         * heading says so. A video that was uploaded could be about anything -
+         * it is whatever Myles recorded - so it does not claim otherwise.
+         */
+        var about = DATA.uploaded
+          ? "here is a short video for the " + escapeHtml(company) + " team"
+          : "here is a quick look at School Explorer on the " + escapeHtml(company) + " website";
         card.innerHTML =
           "<h1>" +
           escapeHtml(who) +
-          "here is a quick look at School Explorer on the " +
-          escapeHtml(company) +
-          " website</h1>" +
+          about +
+          "</h1>" +
           '<p class="sub">' + runtime(DATA.durationSeconds) + " Sound on.</p>" +
           '<video controls playsinline preload="metadata" poster="' +
           escapeHtml(DATA.posterUrl) +

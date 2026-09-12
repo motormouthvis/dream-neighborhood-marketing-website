@@ -110,8 +110,9 @@ function wrongExplorerOnScreen({ scene, explorers, card, onScreen }) {
  * else, and the three ways that stops being true are all read back off the
  * stage: the house button being displayed, a popup card being displayed, and
  * any words at all inside the chrome we draw over their page. The caption bar
- * is not chrome in this sense - it is the script's own words and belongs on
- * every beat - so it is deliberately not part of what is read.
+ * is not chrome in this sense - it is the script's own words rather than our
+ * product - so it is deliberately not part of what is read. Whether the bar may
+ * be there at all is its own question, asked by captionOnScreen.
  *
  * @param {object} args
  * @param {string} args.scene which beat this frame belongs to
@@ -132,6 +133,33 @@ function bareListingChromeOnScreen({ scene, chrome }) {
 }
 
 /**
+ * Why this frame must not be photographed with a caption on it, or "" if it is
+ * fine.
+ *
+ * The green bar across the top is the script's own words burned into the
+ * picture, and it is off unless the job asked for it - see renderBeats in
+ * src/templates.js. Myles rewrites the spoken lines constantly, and a video
+ * whose on-screen copy says one thing while the voice says another is worse than
+ * a video with no copy at all, so the bar is opt-in and this is the receipt.
+ *
+ * Read off the drawn stage rather than off the spec, for the same reason the
+ * bare-listing gate is: a shipped script still carries caption text, the editor
+ * still saves it, and the thing that must not happen is that text being drawn
+ * anyway because some path forgot to blank it.
+ *
+ * @param {object} args
+ * @param {boolean} args.showCaptions whether this job asked for the caption bar
+ * @param {object} args.caption what was read back off the stage
+ */
+function captionOnScreen({ showCaptions, caption }) {
+  if (showCaptions) return "";
+  const drawn = caption && typeof caption === "object" ? caption : {};
+  if (!drawn.shown) return "";
+  const words = String(drawn.text || "").replace(/\s+/g, " ").trim();
+  return words ? `the top caption bar is drawn on it, reading "${words.slice(0, 90)}"` : "the top caption bar is drawn on it";
+}
+
+/**
  * The School Explorer picture for this beat.
  *
  * A script has more than one School Explorer beat, and the walk photographs the
@@ -147,12 +175,17 @@ function schoolShotFor(context, position) {
 }
 
 /**
- * The parts of a frame every beat has: their page, and the script's caption.
+ * The parts of a frame every beat has: their page, and the caption if the job
+ * asked for one.
  *
  * Everything of ours is off by default and switched on by the scene, so a new
  * scene that forgets to say draws the customer's page and nothing else. That is
  * the safe way round: the bug this replaces was the button being on unless a
  * beat remembered to turn it off.
+ *
+ * The caption arrives already decided. renderBeats blanks it unless the job
+ * asked for the bar, so an empty headline and subline here is the ordinary case
+ * and views/frame.html drops the bar with them.
  */
 function baseSpec(beat, context) {
   return {
@@ -260,6 +293,12 @@ async function renderFrames({
   schoolExplorerShots,
   // Which Explorers this script is allowed to show at all, off the template.
   explorers = "se-ne",
+  /*
+   * Whether this job asked for the green caption bar. Off by default, because a
+   * caption locks the spoken script to the words on screen and Myles is the one
+   * rewriting the script. See captionOnScreen.
+   */
+  showCaptions = false,
   outDir,
   log,
 }) {
@@ -298,6 +337,12 @@ async function renderFrames({
    * bare-listing gate judges, and what its tests read.
    */
   const frameChrome = [];
+  /*
+   * Whether the caption bar was on each still, and what it said. Kept so the
+   * gate above and the tests that police it read the bar that was really drawn
+   * rather than the words a spec was carrying.
+   */
+  const frameCaptions = [];
   // Which School Explorer beat this is, so each gets its own picture of the list.
   let sePosition = 0;
   try {
@@ -325,6 +370,7 @@ async function renderFrames({
           const button = document.getElementById("popup");
           const card = document.getElementById("card");
           const scrim = document.getElementById("scrim");
+          const caption = document.getElementById("caption");
           return {
             text: words(document.getElementById("stage")),
             chrome: {
@@ -333,9 +379,29 @@ async function renderFrames({
               dimmed: Boolean(scrim) && Number(window.getComputedStyle(scrim).opacity) > 0.01,
               text: [shown(button) ? words(button) : "", shown(card) ? words(card) : ""].join(" ").trim(),
             },
+            // The caption bar on its own, because it is the one thing on the
+            // stage that a job can switch off - see captionOnScreen.
+            caption: { shown: shown(caption), text: shown(caption) ? words(caption) : "" },
           };
         });
         const onScreen = read.text;
+
+        /*
+         * A frame that was not asked for a caption must not have one.
+         *
+         * Same shape as the bare-listing gate below, and there for the same
+         * reason: the words are blanked upstream, and this is what catches them
+         * being drawn anyway. A job with captions switched on skips it.
+         */
+        const captioned = captionOnScreen({ showCaptions, caption: read.caption });
+        if (captioned) {
+          const error = new Error(
+            `Scene ${index + 1} of this video was made with the top captions switched off, but ${captioned}, so this video was not made. ` +
+              `Tick \u201cShow the green caption bar\u201d on the form if the words are meant to be burned into the picture.`
+          );
+          error.code = "CAPTION_ON_FRAME";
+          throw error;
+        }
 
         /*
          * A bare listing frame is refused before it is photographed.
@@ -390,6 +456,7 @@ async function renderFrames({
         frameBeats.push(index);
         frameText.push(onScreen);
         frameChrome.push(read.chrome);
+        frameCaptions.push(read.caption);
       }
       if ((index + 1) % 4 === 0 || index === beats.length - 1) {
         log(`Drew ${index + 1} of ${beats.length} scenes`);
@@ -399,7 +466,7 @@ async function renderFrames({
     await page.close().catch(() => {});
   }
 
-  return { frames, frameBeats, frameText, frameChrome };
+  return { frames, frameBeats, frameText, frameChrome, frameCaptions };
 }
 
 /**
@@ -431,6 +498,7 @@ module.exports = {
   spreadDurations,
   wrongExplorerOnScreen,
   bareListingChromeOnScreen,
+  captionOnScreen,
   LISTING_SCENES,
   BARE_LISTING_SCENES,
   BUTTON_LISTING_SCENES,

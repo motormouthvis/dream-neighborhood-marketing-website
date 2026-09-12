@@ -291,6 +291,16 @@ async function renderSilent(job, { budgetMs } = {}) {
        * because it is the template that decides.
        */
       explorers: (job.template && job.template.explorers) || "se-ne",
+      /*
+       * Whether the green caption bar goes on these frames.
+       *
+       * Off unless the form asked for it, and the beats were already blanked to
+       * match when the job was made - this is the gate that refuses a frame with
+       * a bar on it anyway. A job made before the toggle existed has no answer
+       * recorded and gets the new default, which is what Myles asked for: the
+       * on-screen copy stops contradicting a reworded script.
+       */
+      showCaptions: Boolean(job.input && job.input.showCaptions),
       outDir: workDir,
       log,
     });

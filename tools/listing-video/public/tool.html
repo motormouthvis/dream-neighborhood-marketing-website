@@ -19,6 +19,7 @@
       </div>
       <nav class="tabs" id="tabs" hidden>
         <button type="button" class="tab is-on" data-view="make">Make a video</button>
+        <button type="button" class="tab" data-view="upload" hidden>Upload a video</button>
         <button type="button" class="tab" data-view="library">Library</button>
         <button type="button" class="tab" data-view="scripts">Scripts</button>
       </nav>
@@ -80,6 +81,46 @@
               </span>
               <div class="choices choices--big" id="templateChoices" role="radiogroup" aria-required="true"></div>
               <p class="pickfirst" id="templatePrompt">Pick a script to turn on <strong>Make the silent video</strong>.</p>
+            </fieldset>
+
+            <!--
+              The green bar across the top of every frame, and it is OFF.
+
+              It is the script's own words burned into the picture, so the moment
+              Myles reworded a spoken line the copy on screen disagreed with him.
+              He writes the lines, so the words on screen are the ones that go:
+              the script can keep its caption fields for the day somebody wants
+              them, and nothing is drawn unless this says so.
+            -->
+            <fieldset class="field" id="captionField">
+              <legend class="label">The green caption bar across the top</legend>
+              <span class="hint hint--above">
+                Off is the normal way. With it off you can reword the spoken script as much as you like and nothing on
+                screen can contradict you. Turn it on only when you want the script's caption lines burned into the
+                picture as well.
+              </span>
+              <div class="choices" role="radiogroup" id="captionChoices">
+                <label class="choice">
+                  <input type="radio" name="showCaptions" value="off" checked />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">No captions</strong>
+                      <span class="choice__note">
+                        Just the listing, the button and the Explorer popups. Say whatever you like over it.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="showCaptions" value="on" />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">Show the green caption bar</strong>
+                      <span class="choice__note">
+                        Each beat's two caption lines are drawn across the top, so the spoken words have to match them.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+              </div>
             </fieldset>
 
             <label class="field">
@@ -383,7 +424,7 @@
 
           <div class="trim" id="trimBox">
             <span class="label">Ending too late?</span>
-            <p class="hint">
+            <p class="hint" id="trimWhy">
               An AI take is cut to the voice, so the picture moves on when the line does and the video is
               usually shorter than the silent cut. A take you recorded keeps the silent cut's timing, so
               there the picture holds after your voice stops.
@@ -515,11 +556,114 @@
       </section>
 
       <!-- ============================================================ -->
+      <!-- ===================== UPLOAD A VIDEO ====================== -->
+      <!-- ============================================================ -->
+      <!--
+        A finished video that was made somewhere else.
+
+        Everything on the Make tab builds a video: it finds a listing, films the
+        Explorers, draws the scenes and lays a voice over them. This is the other
+        half of what that is for - the shareable link, the Library card and the
+        send step - for a video that already exists. Nothing is filmed here and
+        nothing is recorded.
+      -->
+      <section id="view-upload" class="view" hidden>
+        <div id="uploadVideoForm">
+          <h1 class="h1">Upload a video you already made</h1>
+          <p class="lede">
+            Got a video from somewhere else - a screen recording, something off a phone, something cut in another
+            editor? Put the mp4 here and it gets the same public watch link as a video made on this box, and the same
+            card in the Library.
+          </p>
+          <p class="hint">
+            Nothing is filmed, nothing is recorded and nothing is re-encoded. The file plays exactly as it arrived.
+          </p>
+
+          <form id="uploadVideoFields" class="stack" autocomplete="off">
+            <div class="field">
+              <span class="label">The video</span>
+              <span class="hint hint--above" id="uploadVideoLimits">
+                An mp4 with H.264 video and AAC audio, which is what every editor and phone exports by default.
+              </span>
+              <input class="input" id="finishedVideo" type="file" accept="video/mp4,video/quicktime,.mp4,.m4v,.mov" />
+              <span class="hint">
+                A .webm is deliberately not accepted: Safari will not play one, so the link would work for you and not
+                for the customer you sent it to.
+              </span>
+            </div>
+
+            <label class="field">
+              <span class="label">Customer first name</span>
+              <input class="input" id="uploadFirstName" placeholder="e.g. Vanessa" required />
+              <span class="hint">Goes on the Library card and into the email.</span>
+            </label>
+
+            <label class="field">
+              <span class="label">Company name</span>
+              <input class="input" id="uploadCompany" placeholder="e.g. DOMO Realty" required />
+            </label>
+
+            <label class="field">
+              <span class="label">Customer email</span>
+              <input class="input" id="uploadCustomerEmail" type="email" placeholder="e.g. vanessa@domorealty.com" required />
+              <span class="hint">
+                Where it would be sent. Nothing is sent now - the send step is on the Library, behind the same review
+                as every other video.
+              </span>
+            </label>
+
+            <fieldset class="field">
+              <legend class="label">Send from</legend>
+              <div class="choices" role="radiogroup" id="uploadFromChoices"></div>
+            </fieldset>
+
+            <p class="error" id="uploadVideoError" hidden></p>
+
+            <button class="btn btn--primary btn--big" type="submit" id="uploadVideoBtn">Upload it and give me a link</button>
+            <p class="hint hint--center" id="uploadVideoState"></p>
+          </form>
+        </div>
+
+        <!-- ---------- the link, once it is up ---------- -->
+        <section class="panel" id="uploadVideoDone" hidden>
+          <h2 class="h2">Up and playable</h2>
+          <p class="lede" id="uploadVideoSummary"></p>
+
+          <video id="uploadVideoPlayer" class="player" controls playsinline preload="metadata"></video>
+
+          <div class="share">
+            <span class="label">Public watch link</span>
+            <div class="share__row">
+              <input class="input" id="uploadShareLink" readonly />
+              <button type="button" class="btn btn--dark" id="uploadCopyBtn">Copy link</button>
+            </div>
+            <p class="hint">
+              Anyone with this link can play it, with no sign-in - the same page a video made here gets. It stops
+              working the moment the video is deleted from the Library.
+            </p>
+          </div>
+
+          <p class="notice">
+            To email it, open it from the <strong>Library</strong>. Sending stays behind the same review as every other
+            video: watch it through, or tick the box, and then the send button wakes up.
+          </p>
+
+          <div class="recorder__row recorder__row--wrap" style="margin-top: 18px">
+            <button type="button" class="btn btn--ghost" id="uploadOpenLibraryBtn">Open it in the Library</button>
+            <button type="button" class="btn btn--ghost" id="uploadAnotherBtn">Upload another one</button>
+          </div>
+        </section>
+      </section>
+
+      <!-- ============================================================ -->
       <!-- ======================== LIBRARY =========================== -->
       <!-- ============================================================ -->
       <section id="view-library" class="view" hidden>
         <h1 class="h1">Video library</h1>
-        <p class="lede">Every video made on this box. Play it, copy the link, send it, or delete it for good.</p>
+        <p class="lede">
+          Every video on this box, whether it was made here or uploaded finished. Play it, copy the link, send it, or
+          delete it for good.
+        </p>
         <p class="error" id="libError" hidden></p>
         <div id="libList" class="cards"></div>
         <p class="hint" id="libEmpty" hidden>No videos yet. Make one on the <strong>Make a video</strong> tab.</p>
@@ -533,7 +677,8 @@
           <h1 class="h1">Scripts</h1>
           <p class="lede">
             A script is a list of beats: the words you say, an optional caption for the top bar, how long that picture
-            should be, and what is on screen while you say it.
+            should be, and what is on screen while you say it. The caption bar is off by default when a video is made,
+            so rewording a spoken line here cannot leave stale copy on screen.
           </p>
 
           <!--
@@ -618,7 +763,10 @@
               <span class="label">Beats</span>
               <span class="hint hint--above">
                 Use <code>{firstName}</code> and <code>{company}</code> anywhere in the words or a caption. Captions sit
-                in the <strong>top</strong> bar only - a bottom bar would cover the house button.
+                in the <strong>top</strong> bar only - a bottom bar would cover the house button. They are
+                <strong>not drawn unless the video asks for them</strong>: the caption bar is off by default on the
+                <strong>Make a video</strong> form, so these lines are kept for the day somebody turns it on and are
+                otherwise ignored.
               </span>
               <div id="beatEditor"></div>
               <button type="button" class="btn btn--ghost" id="addBeatBtn" style="margin-top: 14px">Add a beat</button>
@@ -644,6 +792,7 @@
     <script src="/tools/listing-video/static/js/remember.js"></script>
     <script src="/tools/listing-video/static/js/place-picker.js"></script>
     <script src="/tools/listing-video/static/js/maker.js"></script>
+    <script src="/tools/listing-video/static/js/upload-video.js"></script>
     <script src="/tools/listing-video/static/js/library.js"></script>
     <script src="/tools/listing-video/static/js/scripts-page.js"></script>
     <script src="/tools/listing-video/static/js/boot.js"></script>

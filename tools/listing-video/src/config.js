@@ -115,6 +115,19 @@ const config = {
   callToActionPhone: process.env.LISTING_VIDEO_PHONE || "",
 
   /*
+   * Hosting a finished video somebody made somewhere else.
+   *
+   * On, because the whole service is staging-only and never sits in front of a
+   * customer - see the README. It is a switch rather than a constant so that a
+   * box which should only ever build videos can be told to stop accepting them,
+   * without a deploy: LISTING_VIDEO_VIDEO_UPLOAD=off. The tab hides itself when
+   * it is off, and the route refuses.
+   */
+  uploadedVideos: {
+    allowed: bool(process.env.LISTING_VIDEO_VIDEO_UPLOAD, true),
+  },
+
+  /*
    * The live Neighborhood Explorer.
    *
    * Videos film the real product: the widget is opened at the listing's

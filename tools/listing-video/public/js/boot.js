@@ -14,10 +14,17 @@
         D.show(el("gate"), !signedIn);
         D.show(el("tabs"), signedIn);
         D.show(el("signout"), signedIn);
-        ["make", "library", "scripts"].forEach(function (view) {
+        D.VIEWS.forEach(function (view) {
           if (!signedIn) D.show(el("view-" + view), false);
         });
         if (!signedIn) return null;
+        /*
+         * Hosting a video made elsewhere can be switched off on a box that
+         * should only ever build them, and then the tab is not there at all
+         * rather than there and refusing.
+         */
+        var upload = D.state.session.videoUpload || {};
+        D.show(document.querySelector('#tabs .tab[data-view="upload"]'), upload.allowed !== false);
         return D.loadTemplates().then(function () {
           D.goTo("make");
         });

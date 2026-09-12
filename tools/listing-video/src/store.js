@@ -134,6 +134,113 @@ async function createJob({ input, template, beats }) {
   return job;
 }
 
+/*
+ * What a job that arrives finished calls its script.
+ *
+ * There is no script: nothing was drawn from beats and nothing was filmed. But
+ * every screen that lists a video asks a job what script it was made from, and
+ * "(no script)" on a Library card reads like something went wrong. So an
+ * uploaded video says what it is, in the same field, and explorers is empty
+ * because it shows neither of ours - which is also what keeps the email from
+ * promising a Neighborhood Explorer upgrade the customer never saw.
+ */
+const UPLOADED_VIDEO_TEMPLATE = {
+  id: "uploaded-video",
+  name: "A video you uploaded",
+  explorers: "",
+  listingExplorer: "absent",
+  beatCount: 0,
+};
+
+/**
+ * Claim an id and its folder before there is a job to put in it.
+ *
+ * An uploaded video has to be checked and remuxed into the folder it will be
+ * served from, and that has to happen before the job exists - otherwise a file
+ * that turns out not to be a video leaves a ready-looking job in the Library
+ * pointing at nothing. So the id is claimed, the work is done in its folder, and
+ * the job is only written if the file was good. A refusal takes the folder with
+ * it and nothing was ever listed.
+ */
+async function reserveJob() {
+  ensureDirs();
+  const id = newId();
+  const dir = jobDir(id);
+  await fsp.mkdir(dir, { recursive: true });
+  return { id, dir };
+}
+
+/** Give back a reserved folder that never became a job. */
+async function releaseJob(id) {
+  if (!validId(id)) return false;
+  await fsp.rm(jobDir(id), { recursive: true, force: true }).catch(() => {});
+  jobs.delete(id);
+  return true;
+}
+
+/**
+ * A video that was made somewhere else, kept here for its link.
+ *
+ * Comes out ready, because it is: there is nothing to capture, no voice to lay
+ * on and no scene to draw. The shape is the shape renderSilent and attachAudio
+ * leave behind between them, so /v/{id}, the Library, the review step and the
+ * send step all read it without knowing where the file came from - see
+ * src/uploaded-video.js.
+ */
+async function createUploadedVideoJob({ id, input, video, notes = [] }) {
+  ensureDirs();
+  const job = {
+    id,
+    createdAt: new Date().toISOString(),
+    // "uploaded" rather than a missing field, so the screens can tell the two
+    // apart on purpose instead of by noticing that job.silent is null.
+    kind: "uploaded",
+    status: "ready",
+    progress: [],
+    input,
+    template: { ...UPLOADED_VIDEO_TEMPLATE },
+    beats: [],
+    // Never any silent cut: nothing was drawn, so there is nothing to record
+    // over and no way back to the record step. The maker hides it.
+    silent: null,
+    result: {
+      videoFile: video.videoFile,
+      posterFile: video.posterFile,
+      durationSeconds: video.durationSeconds,
+      capturedPageUrl: "",
+      capturedAddress: "",
+      notes,
+      // The review step names the voice on every video, and on this one the
+      // honest answer is that whatever is in the file is what plays.
+      voice: { label: "The sound already in the file you uploaded" },
+      templateName: UPLOADED_VIDEO_TEMPLATE.name,
+      sceneCount: 0,
+      uploaded: {
+        originalName: String(input.originalName || "").slice(0, 120),
+        bytes: Number(input.bytes) || 0,
+        width: video.width || 0,
+        height: video.height || 0,
+        codec: video.codec || "",
+        at: new Date().toISOString(),
+      },
+    },
+    review: { reviewed: false, at: null, how: null },
+    error: null,
+    errorCode: null,
+    retryable: false,
+    email: null,
+  };
+  await fsp.mkdir(jobDir(id), { recursive: true });
+  jobs.set(id, job);
+  await persist(job);
+  return job;
+}
+
+/** Was this video made here, or uploaded already finished? */
+function isUploadedVideo(job) {
+  return Boolean(job && job.kind === "uploaded");
+}
+
 async function persist(job) {
   try {
     await fsp.writeFile(path.join(jobDir(job.id), "job.json"), JSON.stringify(job, null, 2), "utf8");
@@ -206,6 +313,10 @@ function publicView(job) {
     id: job.id,
     createdAt: job.createdAt,
     status: job.status,
+    // Whether this video was made here or arrived finished. The maker hides the
+    // steps an uploaded video has no answer for - there is no silent cut to go
+    // back to and no script to change.
+    uploaded: isUploadedVideo(job),
     progress: job.progress.map((entry) => entry.message),
     error: job.error,
     errorCode: job.errorCode || null,
@@ -238,6 +349,9 @@ function publicView(job) {
           voice: job.result.voice,
           templateName: job.result.templateName,
           sceneCount: job.result.sceneCount,
+          // Only on a video that arrived finished: what the file was called and
+          // what is in it. No server path - the file itself is served by route.
+          uploaded: job.result.uploaded || null,
         }
       : null,
     review: job.review || { reviewed: false },
@@ -251,6 +365,9 @@ function publicView(job) {
       customerEmail: job.input.customerEmail,
       templateId: job.input.templateId,
       fromId: job.input.fromId,
+      // Whether the green caption bar was burned into this video's frames. Off
+      // unless the form asked, including on jobs made before the toggle existed.
+      showCaptions: Boolean(job.input.showCaptions),
       // What was uploaded and the address that came with it, without the server
       // path the file sits at.
       uploadedListing: job.input.uploadedListing
@@ -270,6 +387,7 @@ function libraryView(job) {
     id: job.id,
     createdAt: job.createdAt,
     status: job.status,
+    uploaded: isUploadedVideo(job),
     firstName: job.input.firstName,
     company: job.input.company,
     customerEmail: job.input.customerEmail,
@@ -330,6 +448,11 @@ function failureView(job) {
 module.exports = {
   ensureDirs,
   createJob,
+  reserveJob,
+  releaseJob,
+  createUploadedVideoJob,
+  isUploadedVideo,
+  UPLOADED_VIDEO_TEMPLATE,
   getJob,
   listJobs,
   deleteJob,

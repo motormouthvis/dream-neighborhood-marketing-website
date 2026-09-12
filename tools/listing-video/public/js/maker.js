@@ -332,7 +332,7 @@
    */
   var memory = D.remember.attach({
     texts: ["firstName", "company", "websiteUrl", "listingUrl", "customerEmail"],
-    choices: ["templateId", "pictureSource", "fromId", "voiceId"],
+    choices: ["templateId", "pictureSource", "fromId", "voiceId", "showCaptions"],
     extras: {
       // Not just letters: what this box holds is the place the Explorer named.
       address: {
@@ -419,6 +419,9 @@
       customerEmail: el("customerEmail").value.trim(),
       fromId: D.selectedValue("fromId"),
       voiceId: D.selectedValue("voiceId") || "",
+      // Off unless it was picked. The server reads it the same way and defaults
+      // to off too, so a stale page cannot burn captions in by accident.
+      showCaptions: D.selectedValue("showCaptions") === "on" ? "yes" : "",
     };
 
     var uploading = D.selectedValue("pictureSource") === "upload";
@@ -644,6 +647,9 @@
     mine.beats = job.beats || [];
 
     var bits = [job.template.name, mine.beats.length + " scenes"];
+    // Said out loud, because the words on screen are what tie your hands: with
+    // no caption bar you can reword any line and nothing contradicts you.
+    bits.push(job.input && job.input.showCaptions ? "green caption bar on" : "no captions");
     if (job.silent) bits.push(D.runtime(job.silent.durationSeconds) + " of silent picture");
     if (job.silent && job.silent.capturedAddress) {
       // Say which it was. A screenshot somebody took is not a capture of their
@@ -975,6 +981,7 @@
     mine.reviewMarked = Boolean(job.review && job.review.reviewed);
 
     var bits = [job.template.name, job.result.voice.label, D.runtime(job.result.durationSeconds)];
+    if (job.input && job.input.showCaptions) bits.push("green caption bar on");
     var text = bits.join(" \u00b7 ") + ".";
     // What the AI voice cost, when it was used and lines were reused.
     var voice = job.result.voice || {};
@@ -1011,6 +1018,28 @@
     if (job.result.capturedPageUrl) text += " " + job.result.capturedPageUrl;
     if (job.result.notes && job.result.notes.length) text += " " + job.result.notes.join(" ");
     D.setText(el("reviewSummary"), text);
+
+    /*
+     * A video that was uploaded rather than made has no way back.
+     *
+     * There is no silent cut to record over again and no script or listing to
+     * change, so both doors out of this step would land on an empty record
+     * screen. The rest of it - the player, the link, the review gate and the
+     * send - is the same, which is the whole reason an uploaded video is a job
+     * like any other. See the Upload a video tab.
+     */
+    var uploaded = Boolean(job.uploaded);
+    D.show(el("redoAudioBtn"), !uploaded);
+    D.show(el("reviewEditInputsBtn"), !uploaded);
+    // Trimming still works on an uploaded video - it is one ffmpeg pass over the
+    // finished file - but the reason it exists here has nothing to do with the
+    // way this tool times a voice, so it does not claim to.
+    if (uploaded) {
+      D.setText(
+        el("trimWhy"),
+        "This video was uploaded as it is. To end it sooner, pause the player exactly where you want it to finish and trim. This cannot be undone, and the file you uploaded is not kept anywhere else here."
+      );
+    }
 
     el("reviewPlayer").src = API + "/jobs/" + job.id + "/video.mp4?t=" + Date.now();
     el("shareLink").value = job.watchUrl;
