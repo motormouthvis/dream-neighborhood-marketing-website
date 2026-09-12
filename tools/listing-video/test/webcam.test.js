@@ -35,7 +35,8 @@ const config = require("../src/config");
 const store = require("../src/store");
 const templates = require("../src/templates");
 const { run } = require("../src/exec");
-const { buildVideo } = require("../src/video");
+const { buildVideo, buildSilentVideo } = require("../src/video");
+const { launch, closeBrowser } = require("../src/browser");
 const { buildRecordedTrack, probeDuration } = require("../src/audio");
 const { attachAudio } = require("../src/render");
 const webcam = require("../src/webcam");
@@ -319,8 +320,13 @@ test("the finished video has the face bottom left and the house corner untouched
   const house = await patch(video.file, mid, HOUSE_CORNER, dir);
   assert.ok(looksLike(house, SCENE), `the house button's corner is ${describe(house)}, wanted the scene`);
 
-  // The white edge the card is drawn with, a couple of pixels inside its top.
-  const edge = await patch(video.file, mid, { x: CARD.left + CARD.width / 2, y: CARD.top + 2, w: 10, h: 2 }, dir);
+  // The white edge the card is drawn with, just inside the dark hairline.
+  const edge = await patch(
+    video.file,
+    mid,
+    { x: CARD.left + CARD.width / 2, y: CARD.top + webcam.PIP.rim + 2, w: 10, h: 2 },
+    dir
+  );
   assert.ok(edge.every((channel) => channel > 200), `the card's edge is ${describe(edge)}, wanted white`);
 
   // And the corners are rounded off, so what is drawn is a card and not a box:
@@ -366,8 +372,13 @@ test("a video burned without the camera has nothing in that corner at all", asyn
 /* re-recording, and the path that can never have a face             */
 /* ---------------------------------------------------------------- */
 
-/** A job sitting on the record step with three flat scenes behind it. */
-async function jobReadyToRecord() {
+/**
+ * A job sitting on the record step with three flat scenes behind it.
+ *
+ * `withSilentCut` builds the mp4 the record step actually plays, which only the
+ * browser test needs - it is a render, and the other tests have no player.
+ */
+async function jobReadyToRecord({ withSilentCut = false } = {}) {
   const template = await templates.getDefault("vanessa-se-only-v11");
   const input = {
     templateId: template.id,
@@ -394,8 +405,19 @@ async function jobReadyToRecord() {
     neTab: null,
     neTabName: "",
   }));
+  const silentPath = path.join(dir, "silent.mp4");
+  if (withSilentCut) {
+    await buildSilentVideo({
+      frames,
+      durations: [4, 4, 4],
+      workDir,
+      outFile: silentPath,
+      log: () => {},
+    });
+  }
+
   job.silent = {
-    file: path.join(dir, "silent.mp4"),
+    file: silentPath,
     posterFile: "",
     durationSeconds: 12,
     frames,
@@ -624,6 +646,152 @@ test("a finished cut says whether there is somebody in it", async () => {
   // spotted in the player.
   const maker = fs.readFileSync(path.join(config.root, "public", "js", "maker.js"), "utf8");
   assert.match(maker, /you in the bottom-left corner for/);
+});
+
+/* ---------------------------------------------------------------- */
+/* the whole thing, in a real browser, with a real camera            */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Everything above this line tests the half of the feature that runs on the
+ * server. The other half is a browser opening a camera, recording it into the
+ * same file as the microphone and posting it, and none of it is exercised by
+ * calling functions.
+ *
+ * So this drives the actual record step in actual Chrome. src/browser.js already
+ * launches with --use-fake-device-for-media-stream, for an unrelated reason - a
+ * realtor site's voice widget being told no put a permission panel in the middle
+ * of a finished video - and a fake camera is exactly what this needs.
+ */
+const noChrome = !config.chromePath;
+const needsChrome = noChrome ? { skip: "no Chrome or Chromium on this machine" } : {};
+
+async function openRecordStep(jobId) {
+  const server = await new Promise((resolve) => {
+    const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+  });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const signin = await fetch(`${origin}${TOOL}/api/signin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "webcam-token" }),
+  });
+  const cookie = signin.headers.getSetCookie()[0].split(";")[0];
+
+  const browser = await launch();
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1440, height: 1000 });
+  await page.setCookie({
+    name: cookie.split("=")[0],
+    value: cookie.split("=").slice(1).join("="),
+    domain: "127.0.0.1",
+    path: "/",
+  });
+  await page.goto(`${origin}${TOOL}`, { waitUntil: "networkidle2" });
+  await page.waitForFunction(() => window.DNLV && window.DNLV.maker, { timeout: 20000 });
+  await page.evaluate((id) => window.DNLV.maker.openJob(id), jobId);
+  await page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 20000 });
+
+  return {
+    page,
+    origin,
+    async close() {
+      await closeBrowser(browser);
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+test("a browser records the camera with the voice and the burn puts it in the corner", needsChrome, async () => {
+  const { job } = await jobReadyToRecord({ withSilentCut: true });
+  const tool = await openRecordStep(job.id);
+  try {
+    // Offered, and offered off.
+    assert.equal(await tool.page.$eval("#webcamField", (field) => field.hidden), false);
+    assert.equal(await tool.page.$eval("#webcamToggle", (box) => box.checked), false);
+
+    await tool.page.click("#webcamToggle");
+    await tool.page.click("#recBtn");
+
+    // The self-view comes up, with a real camera behind it rather than a poster.
+    await tool.page.waitForFunction(
+      () => {
+        const live = document.getElementById("webcamLive");
+        return !live.hidden && live.videoWidth > 0 && !live.paused;
+      },
+      { timeout: 20000 }
+    );
+    assert.match(await tool.page.$eval("#recState", (node) => node.textContent), /you are in shot bottom left/);
+
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    await tool.page.click("#recBtn");
+
+    // A take, with a camera in it, previewed in the corner it will be burned in.
+    await tool.page.waitForFunction(() => !document.getElementById("takeWrap").hidden, { timeout: 20000 });
+    const held = await tool.page.evaluate(() => ({
+      previewShown: !document.getElementById("webcamPreview").hidden,
+      previewHasSource: Boolean(document.getElementById("webcamPreview").src),
+      noteShown: !document.getElementById("takeWebcamNote").hidden,
+      liveGone: document.getElementById("webcamLive").hidden,
+      state: document.getElementById("recState").textContent.trim(),
+    }));
+    assert.equal(held.previewShown, true);
+    assert.equal(held.previewHasSource, true);
+    assert.equal(held.noteShown, true);
+    assert.equal(held.liveGone, true, "the live camera is released the moment the take stops");
+    assert.match(held.state, /with you in it/);
+
+    // The preview sits where ffmpeg will put the real thing, which is the only
+    // reason it is worth having.
+    const where = await tool.page.evaluate(() => {
+      const player = document.getElementById("silentPlayer").getBoundingClientRect();
+      const card = document.getElementById("webcamPreview").getBoundingClientRect();
+      return {
+        fromLeft: (card.left - player.left) / player.width,
+        fromBottom: (player.bottom - card.bottom) / player.height,
+        width: card.width / player.width,
+      };
+    });
+    assert.ok(Math.abs(where.fromLeft - webcam.PIP.margin / 1920) < 0.01, `${where.fromLeft} of the way across`);
+    assert.ok(Math.abs(where.fromBottom - webcam.PIP.margin / 1080) < 0.01, `${where.fromBottom} up from the bottom`);
+    assert.ok(Math.abs(where.width - webcam.CARD_WIDTH / 1920) < 0.01, `${where.width} of the width`);
+
+    // And then the only thing that burns anything.
+    await tool.page.click("#keepTakeBtn");
+    await tool.page.waitForFunction(() => !document.getElementById("step-review").hidden, { timeout: 120000 });
+
+    const summary = await tool.page.$eval("#reviewSummary", (node) => node.textContent);
+    assert.match(summary, /you in the bottom-left corner/);
+  } finally {
+    await tool.close();
+  }
+
+  // The file itself, which is the only claim that matters. The fake camera is a
+  // rolling colour pattern, so "there is a camera here" is "this is not the flat
+  // blue the scenes are", and the house corner still is.
+  const burned = await store.getJob(job.id);
+  assert.equal(burned.result.webcam.shown, true);
+
+  const dir = store.jobDir(job.id);
+  const face = await patch(burned.result.videoFile, 2, FACE_MIDDLE, dir);
+  assert.ok(!looksLike(face, SCENE, 40), `the corner is ${describe(face)}, which is the scene and not a camera`);
+
+  const house = await patch(burned.result.videoFile, 2, HOUSE_CORNER, dir);
+  assert.ok(looksLike(house, SCENE), `the house button's corner is ${describe(house)}, wanted the scene`);
+});
+
+test("with the camera switched off on the server, the record step does not offer it", needsChrome, async () => {
+  const { job } = await jobReadyToRecord({ withSilentCut: true });
+  const was = config.webcam.allowed;
+  config.webcam.allowed = false;
+  let tool;
+  try {
+    tool = await openRecordStep(job.id);
+    assert.equal(await tool.page.$eval("#webcamField", (field) => field.hidden), true);
+  } finally {
+    config.webcam.allowed = was;
+    if (tool) await tool.close();
+  }
 });
 
 test("probeDuration still reads a burned video with a card on it", async () => {

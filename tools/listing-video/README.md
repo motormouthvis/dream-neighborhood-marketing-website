@@ -881,6 +881,102 @@ well — see [How long the finished video is](#how-long-the-finished-video-is).
 You can also upload an mp3, wav, m4a or webm. That becomes a take like any
 other, so it can be tried against the pictures before you commit to it.
 
+#### Include webcam: your face in the corner
+
+**Off every time this step is opened.** Tick **Include webcam** before you press
+record and the camera runs alongside the microphone, and the finished video
+carries you as a small rounded card over the listing and the Explorer popups —
+the way a Loom looks.
+
+Myles's argument for it is authenticity: a prospecting video with a person in it
+is somebody talking to a realtor, and one without it is a slideshow with a voice
+on it.
+
+**Bottom left, and only bottom left.** The School Explorer house button is drawn
+in the bottom right of every listing frame, and that button is the one thing
+these videos are about. Nothing is allowed to cover it, and
+`test/webcam.test.js` reads the pixels in that corner of a finished file to
+prove nothing does.
+
+What happens, in order:
+
+1. **One recording, not two.** The browser hands the camera and the microphone
+   to a single recorder, so the file that arrives has your face and your words
+   already interleaved. There is no clock to keep two files in step, because
+   there is only one file.
+2. **You can see yourself while you record.** The live camera sits in the corner
+   of the silent player, exactly where the burned-in card will be, so "am I in
+   shot" is answered before the take rather than after it.
+3. **You can watch the corner before anything is burned.** *Play the video and
+   this take together* now plays three things: the pictures, your take, and your
+   camera in the corner. Nothing has been muxed at this point, so recording again
+   is as free as it ever was.
+4. **Keeping the take burns it in.** The camera is cut to exactly the slice of
+   the recording your voice was cut to — see below — scaled into a 264×198 card
+   with a white edge and rounded corners, and composited 40px in from the left
+   and 40px up from the bottom of the 1920×1080 frame.
+
+##### It is cut to the same window the voice is
+
+A take is not used whole. The dead air is trimmed off the front, dead air is
+trimmed off the end, and a known 0.6s of silence goes back in front so the first
+word is never clipped. So the voice in the finished video is a **window onto the
+middle of the recording**, and the camera has to be cut to the same window or
+your mouth stops matching your words.
+
+It is measured rather than guessed: `buildRecordedTrack` reports how much came
+off the front, how much was kept, and where it lands, and `src/webcam.js` cuts
+the camera to those three numbers. The card appears with your first word and
+leaves with your last — it does not freeze on screen for the rest of the video,
+and it is not up before you have said anything.
+
+##### Recording again replaces the face too
+
+The clip is cut out of **the take that arrived with that request and nothing
+else**, so:
+
+| What you do | What happens to the face |
+| --- | --- |
+| Record again with the camera on | The new face replaces the old one |
+| Record again with the camera off | The face goes; the video is as it was before |
+| Upload an audio file | No face, whatever the toggle says — there was no camera open when it was made |
+| Use the AI voice instead | No face. Nobody was in the room, so there is nothing to film |
+
+##### Nothing here can lose a take
+
+A camera that will not open, a file that turns out to have no picture in it, a
+clip ffmpeg will not read: each of those burns the voice on its own and says so
+in the progress log. The take is the thing you spent a minute recording; the face
+is the garnish. If you asked for a face and did not get one, **the final review
+says so in words** rather than leaving it to be noticed.
+
+A refused camera does not even cost you the recording — the microphone is asked
+for again on its own and the take goes ahead voice-only, because somebody about
+to read a script wants to record, not to debug a permission prompt.
+
+##### What the preview cannot show you
+
+The preview plays the raw recording; the burn trims the silence off the front of
+it. Your voice and your face move by the same amount, so what you are judging —
+do the words and the face land on the right pictures — is what comes out. The
+whole card simply starts at your first word rather than at the moment you pressed
+record.
+
+##### Switching it off
+
+On, for the same reason the video upload is: this whole service is staging-only
+and never sits in front of a customer. `LISTING_VIDEO_WEBCAM=off` takes the
+toggle off the record step and makes the route ignore the field — a take posted
+with the camera asked for is still **accepted**, and burned without a face, with
+a line in the log saying why. Losing somebody's recording over a setting they
+cannot see would be the worse of the two answers.
+
+Switching it on does not put a face in anything. The toggle is off every time the
+record step is opened, so a video only has somebody in it because somebody ticked
+the box for that take.
+
+See `src/webcam.js` and `test/webcam.test.js`.
+
 #### The way back, if the silent video is not the one you wanted
 
 This step used to be a one-way door. The video arrived and the only thing on the
@@ -975,6 +1071,16 @@ the customer will see. **Send stays switched off** until you have watched it
 through or ticked *I reviewed this*. The server refuses the send either way, so
 there is no silent fake send. Going back and keeping another take clears the
 review, because the new file has not been reviewed.
+
+The line above the player says what is in the cut: the script, the voice, the
+length, whether the green caption bar is on, and — when
+[the camera was used](#include-webcam-your-face-in-the-corner) — that there is
+somebody in the bottom-left corner and for how long. A face changes what this
+step is for. It is no longer only *do the words land on the right pictures*, it
+is also *is this a video I am happy to have gone out with my face on it*, and
+that question is worth being asked in words rather than being left to be noticed
+in the player. If a camera was asked for and there is none in the file, it says
+that too.
 
 If SMTP is not configured the UI says **"Mailbox not connected"**, the send
 button stays off, and you get the watch link plus the whole email text to copy
@@ -1953,6 +2059,7 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `LISTING_VIDEO_QUAL_HOSTS` | Which sites the QUAL account may be used on. Empty means any; a comma-separated list is an allowlist. |
 | `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account, not just signing in. Off, because registering on an IDX site is what emails that site's agent a new lead. |
 | `LISTING_VIDEO_VIDEO_UPLOAD` | Whether a finished video made elsewhere can be uploaded and hosted here. **On.** Set it to `off` on a box that should only ever build videos, and the tab is not there at all. See [Upload a video you already made](#upload-a-video-you-already-made). |
+| `LISTING_VIDEO_WEBCAM` | Whether the record step may film whoever is talking and put them in the bottom-left corner. **On.** Set it to `off` on anything that is not staging, and the toggle is not there — a take that asks for a camera anyway is still accepted and burned without one. On or off, the toggle itself starts off on every take. See [Include webcam](#include-webcam-your-face-in-the-corner). |
 
 ### Memory
 
@@ -2029,7 +2136,8 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. With a listing URL, goes back to the live site and drops any uploaded screenshot. Without one, it is "film it again, same answers" and keeps the screenshot |
 | `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
 | `POST /tools/listing-video/api/uploaded-videos` | Signed in only. Multipart: a finished `video` mp4 plus the customer's first name, company and email. Hosts it as it is and answers with the `/v/{id}` link. Nothing is filmed, and no Chrome is opened. Off when `LISTING_VIDEO_VIDEO_UPLOAD=off` |
-| `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
+| `POST /tools/listing-video/api/jobs/:id/audio` | Signed in only. Multipart: the take as `audio`, plus `webcam` for whether this take carries a camera to composite bottom left. Ignored when `LISTING_VIDEO_WEBCAM=off`, and the take is still accepted |
+| `POST /tools/listing-video/api/jobs/:id/ai-voice` | Signed in only. Never has a camera: there was nobody in the room |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
 | `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |
@@ -2058,6 +2166,7 @@ src/page-analysis.js         is this one listing or a landing page, and what add
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
 src/audio.js                 recorded takes, the AI voice, and the AI scene lengths
+src/webcam.js                the camera card: where it goes, and why only there
 src/render.js                phase one (silent picture) and phase two (attach audio)
 src/store.js                 jobs on disk, the library list, delete
 src/mail.js                  the two from-addresses, honest "not connected" state
@@ -2078,6 +2187,7 @@ test/client.test.js          the front end in Chrome: a lost job must not hang
 test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
 test/uploaded-video.test.js  a finished video uploaded whole, and the link it gets
 test/no-captions.test.js     no green bar unless a video asked for one
+test/webcam.test.js          the face is bottom left, and the house corner is clear
 test/persona.test.js         the persona's rules, with no browser needed to check them
 test/beat-timing.test.js     the suggested seconds, against the hand-timed scripts
 test/listing-scenes.test.js  the three listing looks, and the bare one staying bare
@@ -2095,26 +2205,27 @@ test/site-account.test.js    the QUAL account, and what it must not be used for
 Written down so they are not re-invented from scratch, and so it is clear they are
 not in here.
 
-### A webcam picture-in-picture while you talk
+### ~~A webcam picture-in-picture while you talk~~ — built
 
-A small circle of whoever is speaking, bottom left, over the listing and the
-Explorer popups — the way a Loom looks. The argument for it is authenticity: a
-face on a prospecting video is a person talking to a realtor rather than a
-slideshow with a voice on it, and it is the one thing these videos most obviously
-lack next to what an agent would record themselves.
+This was on this list with *"not built, do not build it as part of anything
+else"* written under it, and its own pass is what it got. See
+[Include webcam: your face in the corner](#include-webcam-your-face-in-the-corner).
 
-**Not built. Do not build it as part of anything else.** It is a bigger change
-than it sounds:
+It listed four things that made it bigger than it sounds. For anyone reading the
+change against the note, this is where each of them landed:
 
-- the take is currently a microphone recording, and this needs the camera as well,
-  recorded in sync and kept in sync through a re-record
-- the frames are stills stitched by the concat demuxer, so a moving overlay means
-  a second video input and an `overlay` filter over the whole timeline rather than
-  one pass over a list of JPEGs
-- bottom **left** on purpose: bottom right is where the house button is, and the
-  button being covered would break the one thing the video is about
-- a face in shot changes what the review step is for, and probably what "record
-  again" means
-
-If it gets picked up, it wants its own pass and its own before-and-after, not a
-corner of a change about something else.
+- **the camera has to be recorded in sync with the microphone, and stay in sync
+  through a re-record.** One `MediaRecorder` over a stream with both tracks on
+  it, so there is one file and nothing to keep in step. A re-record is a new
+  file, and the clip is cut out of that file and no other.
+- **the frames are stills stitched by the concat demuxer, so a moving overlay
+  means a second video input.** It does, and it has one: `buildVideo` now writes
+  a filtergraph instead of a `-vf`, with the stills as a background and the
+  camera composited onto it. A video built without a camera goes through the same
+  graph and comes out as it always did.
+- **bottom left on purpose.** Enforced by a test that reads the pixels of the
+  bottom-right corner of a finished file, because a comment saying "bottom left"
+  is not what stops somebody moving it.
+- **a face in shot changes what the review step is for.** It says who is in the
+  cut and for how long, and it says when a face was asked for and did not
+  arrive.

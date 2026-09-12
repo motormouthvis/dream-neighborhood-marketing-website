@@ -29,16 +29,22 @@ const { probeDuration } = require("./audio");
 /**
  * The card, in the 1920x1080 the finished video is built at.
  *
- * `width`/`height` are the camera picture itself and `border` is the white edge
- * drawn around it, so the card on screen is width+2*border by height+2*border.
+ * `width`/`height` are the camera picture itself. Around it goes a white edge of
+ * `border`, and around that a dark hairline of `rim`: the white alone vanishes
+ * against the Explorer popup, which is white, and a card with no edge on it
+ * reads as a hole punched in the product rather than as something in front of it.
  *
  * Sized as a compromise rather than as big as it could be. The Explorer popups
  * are drawn from x=150 to x=1750 and stop at y=948 (views/frame.html), so a card
  * in the bottom left corner of a 1080-tall frame unavoidably covers part of the
- * popup's bottom left corner. Smaller means less of the product hidden; bigger
- * means a face somebody can actually read at email-preview size. 264x198 takes a
- * corner off the popup about a tenth of its width and costs nothing that carries
- * a number or a label in it.
+ * popup's bottom left corner - there are only 132px below the popup and nothing
+ * useful fits in them. Smaller means less of the product hidden; bigger means a
+ * face somebody can actually read at the size these get watched at. 264x198
+ * takes about a tenth off the popup's width and a seventh off its height, in the
+ * one corner that carries no header, no close button and no map.
+ *
+ * If Bill wants it smaller, this is the whole of it: everything else - the
+ * preview in the browser, the tests that read the pixels - is measured off these.
  *
  * 4:3 rather than 16:9 on purpose: a widescreen webcam gets cropped in at the
  * sides, which puts the person in the middle of the card instead of marooned in
@@ -48,13 +54,14 @@ const PIP = {
   width: 264,
   height: 198,
   border: 6,
-  radius: 24,
-  margin: 40,
+  rim: 2,
+  radius: 26,
+  margin: 38,
 };
 
-/** The white card including its border - what actually lands on the frame. */
-const CARD_WIDTH = PIP.width + PIP.border * 2;
-const CARD_HEIGHT = PIP.height + PIP.border * 2;
+/** The whole card, edge and hairline included - what actually lands on the frame. */
+const CARD_WIDTH = PIP.width + (PIP.border + PIP.rim) * 2;
+const CARD_HEIGHT = PIP.height + (PIP.border + PIP.rim) * 2;
 
 /** Below this there is no clip worth compositing, only a flicker. */
 const LEAST_CLIP_SECONDS = 0.5;
@@ -187,13 +194,16 @@ function firstWords(error) {
 /**
  * The filter that puts the card on the picture.
  *
- * Three things happen to the camera stream and one to the join:
+ * Four things happen to the camera stream and one to the join:
  *
  *   pad      a white edge all the way round, so the card has a boundary against
  *            a listing photo that might be any colour at all
+ *   pad      a dark hairline outside that, because the white edge is invisible
+ *            against the Explorer popup and the popup is where the card most
+ *            needs to look like it is in front of something
  *   geq      the corners rounded off, by making the alpha channel zero outside a
  *            quarter circle of PIP.radius in each corner. Per pixel and per
- *            frame, which sounds expensive and is not: the card is 276x210, and
+ *            frame, which sounds expensive and is not: the card is 280x214, and
  *            the whole overlay pass still runs several times faster than real
  *            time on a dyno-sized CPU
  *   setpts   shifted to where the voice starts, because the finished video opens
@@ -213,8 +223,11 @@ function pipFilter({ input = "2:v", base = "base", out = "v", startSeconds = 0 }
     `if(gt(abs(W/2-X),W/2-${r})*gt(abs(H/2-Y),H/2-${r}),` +
     `if(lte(hypot(${r}-(W/2-abs(W/2-X)),${r}-(H/2-abs(H/2-Y))),${r}),255,0),255)`;
 
+  const white = PIP.border;
   const card =
-    `[${input}]pad=${CARD_WIDTH}:${CARD_HEIGHT}:${PIP.border}:${PIP.border}:color=white,format=rgba,` +
+    `[${input}]format=rgba,` +
+    `pad=${PIP.width + white * 2}:${PIP.height + white * 2}:${white}:${white}:color=white,` +
+    `pad=${CARD_WIDTH}:${CARD_HEIGHT}:${PIP.rim}:${PIP.rim}:color=0x14281f@0.45,` +
     `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${alpha}',` +
     `setpts=PTS-STARTPTS+${startSeconds.toFixed(3)}/TB[pip]`;
 
