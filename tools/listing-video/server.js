@@ -884,6 +884,23 @@ app.post(`${TOOL_PATH}/api/jobs/:id/ai-voice`, auth.requireSession, async (req, 
   }
 
   /*
+   * The voice picked on the record step, which is where the picker lives.
+   *
+   * The job was booked with a voice when it was made, and that is still the
+   * answer if nothing is sent - an old page, or the picker having nothing to
+   * offer. A voice this account cannot speak with is resolved away here rather
+   * than failing halfway through a render.
+   */
+  const asked = String((req.body || {}).voiceId || "").trim();
+  if (asked) {
+    const wanted = await elevenVoices.resolveVoiceId(asked);
+    if (wanted !== job.input.voiceId) {
+      job.input.voiceId = wanted;
+      store.logProgress(job, `Using the ${await elevenVoices.labelFor(wanted)} voice, as picked on the record step`);
+    }
+  }
+
+  /*
    * Nobody was in the room when an AI line was spoken, so there is no face to
    * put in the corner. If the last take had one, this is where it goes: the
    * finished cut is rebuilt from the stills and the new track, and the camera

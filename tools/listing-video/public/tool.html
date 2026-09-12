@@ -230,22 +230,16 @@
               <div class="choices" role="radiogroup" id="fromChoices"></div>
             </fieldset>
 
-            <!-- Filled in from the server; never carries the API key. -->
-            <div class="usage" id="voiceUsage" hidden>
-              <span class="label">ElevenLabs</span>
-              <p class="usage__line" id="usageLine"></p>
-              <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
-              <p class="hint" id="usageNote"></p>
-            </div>
+            <!--
+              The AI voice picker is NOT here.
 
-            <!-- Only shown when the ElevenLabs account has voices to offer. -->
-            <fieldset class="field" id="voiceField" hidden>
-              <legend class="label">AI voice, if you use it</legend>
-              <div class="choices" role="radiogroup" id="voiceChoices"></div>
-              <span class="hint">
-                Only matters if you pick the AI voice instead of recording your own. Recording is still the normal way.
-              </span>
-            </fieldset>
+              It used to sit on this page, between the from-address and the make
+              button, and it is the one answer on the form that most videos never
+              use: recording your own voice is the normal way. Bill asked for it
+              to live with the other audio choices instead, so it is under
+              "Other ways to add the voice" on the record step, next to the
+              button that uses it.
+            -->
 
             <p class="error" id="form-error" hidden></p>
 
@@ -391,6 +385,33 @@
 
             <details class="teleprompter">
               <summary>Other ways to add the voice</summary>
+
+              <!--
+                Which AI voice, and how much allowance is left to spend on it.
+
+                Both of these used to be on step 1, where the choice is made
+                before there is anything to hear and by somebody who is usually
+                about to record their own voice anyway. They belong beside the
+                button that spends them, so they are here: pick the voice, then
+                press the AI button. The pick travels with that press, so it can
+                be changed right up to the moment it is used.
+              -->
+              <fieldset class="field" id="voiceField" hidden>
+                <legend class="label">AI voice, if you use it</legend>
+                <div class="choices" role="radiogroup" id="voiceChoices"></div>
+                <span class="hint">
+                  Only matters if you use the AI voice below. Recording your own is still the normal way.
+                </span>
+              </fieldset>
+
+              <!-- Filled in from the server; never carries the API key. -->
+              <div class="usage" id="voiceUsage" hidden>
+                <span class="label">ElevenLabs</span>
+                <p class="usage__line" id="usageLine"></p>
+                <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
+                <p class="hint" id="usageNote"></p>
+              </div>
+
               <div class="recorder__row recorder__row--wrap">
                 <label class="btn btn--ghost">
                   Upload an audio file

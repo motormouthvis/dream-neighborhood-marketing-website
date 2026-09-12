@@ -168,6 +168,11 @@
    * The list comes from the server, which asks ElevenLabs what this plan can
    * actually speak with - so nothing is offered here that would fail at render
    * time, after the silent video has already been made. No voices, no picker.
+   *
+   * The radios live on the record step now, under "Other ways to add the voice",
+   * beside the button that spends them. They are painted on page load all the
+   * same: the job carries a voice from the moment it is made, so the first one
+   * has to be picked before anything is posted.
    */
   function paintVoiceChoices() {
     var ai = (D.state.session && D.state.session.aiVoice) || {};
@@ -193,6 +198,44 @@
         "</span></span></span>";
       wrap.appendChild(label);
     });
+    // Changing the voice changes what the AI button would say, and the note
+    // sits right under it.
+    Array.prototype.forEach.call(wrap.querySelectorAll('input[name="voiceId"]'), function (input) {
+      input.addEventListener("change", paintAiNote);
+    });
+  }
+
+  /** Tick the radio for one voice, when that voice is on the picker at all. */
+  function selectVoice(id) {
+    if (!id) return;
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="voiceId"]'), function (input) {
+      if (input.value === id) input.checked = true;
+    });
+  }
+
+  /**
+   * What the AI button would speak with, said under the button.
+   *
+   * Read off the picker rather than off the job, because the picker is on this
+   * step now and the pick travels with the button press - so a voice changed
+   * here is the voice used, and the note has to keep up.
+   */
+  function paintAiNote() {
+    var ai = (D.state.session && D.state.session.aiVoice) || {};
+    if (!ai.available) {
+      D.setText(el("aiNote"), "The AI voice is not connected on this server, so record your own or upload a file.");
+      return;
+    }
+    var picked = D.selectedValue("voiceId");
+    var named = (ai.voices || []).filter(function (voice) {
+      return voice.id === picked;
+    })[0];
+    D.setText(
+      el("aiNote"),
+      "The AI voice is the secondary option, and would use " +
+        (named ? named.name + " (" + (named.sex === "male" ? "male" : "female") + ")" : ai.label) +
+        ", as picked above. It still has to be reviewed before it can be sent."
+    );
   }
 
   /* A thousand characters reads better than 1000, and 1.2m better than 1200000. */
@@ -636,19 +679,16 @@
 
     var ai = D.state.session && D.state.session.aiVoice;
     el("aiBtn").disabled = !(ai && ai.available);
-    // Name the voice this job was actually booked with, so it is not a surprise.
-    var picked = (job.input && job.input.voiceId) || "";
-    var named = ((ai && ai.voices) || []).filter(function (voice) {
-      return voice.id === picked;
-    })[0];
-    D.setText(
-      el("aiNote"),
-      ai && ai.available
-        ? "The AI voice is the secondary option, and would use " +
-          (named ? named.name + " (" + (named.sex === "male" ? "male" : "female") + ")" : ai.label) +
-          ", as picked on the form. It still has to be reviewed before it can be sent."
-        : "The AI voice is not connected on this server, so record your own or upload a file."
-    );
+    /*
+     * The picker starts on the voice this job was booked with.
+     *
+     * It is on this step now, so opening an old job from the Library would
+     * otherwise show whatever this browser last picked rather than the voice
+     * that job carries. Changing it here is allowed, and the change goes with
+     * the AI button.
+     */
+    selectVoice(job.input && job.input.voiceId);
+    paintAiNote();
 
     /*
      * "Film it again" only means something when there was filming.
@@ -1063,7 +1103,11 @@
   el("aiBtn").addEventListener("click", function () {
     D.showMessage(el("recError"), "");
     stopTogether();
-    D.send("POST", API + "/jobs/" + mine.jobId + "/ai-voice").then(function (result) {
+    // The voice picked right above this button, sent with the press. The job was
+    // booked with a voice when it was made; this is the last word on it.
+    D.send("POST", API + "/jobs/" + mine.jobId + "/ai-voice", {
+      voiceId: D.selectedValue("voiceId") || "",
+    }).then(function (result) {
       if (!result.ok) {
         D.showMessage(el("recError"), D.errorFrom(result, "The AI voice could not be used."));
         return;

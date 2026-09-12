@@ -92,8 +92,10 @@ lot away as well.
 
 So the answers are kept in the browser's `localStorage` and put back next time:
 first name, company, website, listing URL, customer email, the address box, and
-the picked script, picture source, send-from and AI voice. Nothing goes to the
-server — this is one person's browser filling in their own form again.
+the picked script, picture source, send-from and AI voice — the voice included even
+though its picker sits on the record step now, because it is the answer the form
+posts when a job is made. Nothing goes to the server — this is one person's browser
+filling in their own form again.
 
 A remembered box **selects all of its text the first time it is focused**, so the
 one answer that changed between takes is replaced by typing over it. Once
@@ -877,8 +879,11 @@ Dead air is trimmed off the front of a take and a known 0.6s of silence is put
 back, so the first word is never clipped. Dead air is trimmed off the **end** as
 well — see [How long the finished video is](#how-long-the-finished-video-is).
 
-You can also upload an mp3, wav, m4a or webm. That becomes a take like any
-other, so it can be tried against the pictures before you commit to it.
+**Other ways to add the voice** is a fold on this step holding everything that is
+not recording: upload an mp3, wav, m4a or webm — that becomes a take like any
+other, so it can be tried against the pictures before you commit to it — press the
+AI voice button, and pick **which** AI voice, with the ElevenLabs allowance beside
+it. See [Picking a male or female voice](#picking-a-male-or-female-voice).
 
 #### Include webcam: your face in the corner
 
@@ -1911,10 +1916,24 @@ cannot be written costs money rather than breaking a video.
 
 ### Picking a male or female voice
 
-The voice is chosen **on the make-a-video form**, beside the from-address, not
-buried behind the AI button on a later step. It is kept on the job, so the AI path
-uses the voice that was picked when the job was made, and the record step names it
-rather than leaving it a surprise.
+The voice is chosen **on the record step, under *Other ways to add the voice***,
+right above the AI button that uses it.
+
+It used to sit on the make-a-video form, beside the from-address. Bill asked for it
+to move: it is the one answer on that form most videos never use, because recording
+your own voice is the normal way, and it was in the way of the answers every video
+does need. So it lives with the rest of the audio choices now — the file upload and
+the AI button — and the form stays short.
+
+Two things follow from where it sits:
+
+- **The job is still booked with a voice when it is made**, so nothing depends on
+  the picker having been opened. Whatever it is showing is what the form posts, and
+  Jessica is what it shows.
+- **The pick travels with the AI button press**, so it can be changed right up to
+  the moment it is spent. Opening an older video from the Library sets the picker
+  back to the voice that job carries, and the line under the button names whichever
+  voice would be used.
 
 Two women and two men, by name — **Jessica is the default**, because she is the
 voice that has been heard and approved. The choice only matters if the AI voice is
@@ -1968,10 +1987,11 @@ account cannot be asked at all, so the picker still offers something sensible.
 
 ### Seeing an upgrade coming
 
-A small **ElevenLabs** card sits on the make-a-video form, above the voice picker,
-so running out of characters is not something you find out halfway through a
-render. `GET /v1/user/subscription`, read server side, behind the password, cached
-for five minutes.
+A small **ElevenLabs** card sits under the voice picker, so running out of
+characters is not something you find out halfway through a render. It moved off the
+form with the picker, since it is the same question — what the AI voice would cost —
+asked next to the button that spends it. `GET /v1/user/subscription`, read server
+side, behind the password, cached for five minutes.
 
 | What it can read | What the card says |
 | --- | --- |
@@ -2154,7 +2174,7 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
 | `POST /tools/listing-video/api/uploaded-videos` | Signed in only. Multipart: a finished `video` mp4 plus the customer's first name, company and email. Hosts it as it is and answers with the `/v/{id}` link. Nothing is filmed, and no Chrome is opened. Off when `LISTING_VIDEO_VIDEO_UPLOAD=off` |
 | `POST /tools/listing-video/api/jobs/:id/audio` | Signed in only. Multipart: the take as `audio`, plus `webcam` for whether this take carries a camera to composite bottom left. Ignored when `LISTING_VIDEO_WEBCAM=off`, and the take is still accepted |
-| `POST /tools/listing-video/api/jobs/:id/ai-voice` | Signed in only. Never has a camera: there was nobody in the room |
+| `POST /tools/listing-video/api/jobs/:id/ai-voice` | Signed in only. Takes an optional `voiceId` — the pick from the record step — and falls back to the voice the job was booked with. Never has a camera: there was nobody in the room |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
 | `GET /tools/listing-video/api/jobs/:id/silent.mp4`, `.../video.mp4` | Signed in only |

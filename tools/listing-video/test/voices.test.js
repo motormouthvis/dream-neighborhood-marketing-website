@@ -354,6 +354,94 @@ test("a voice this plan cannot use is not booked onto a job", async () => {
   }
 });
 
+/* ---------------------------------------------------------------- */
+/* the pick now happens on the record step, beside the AI button     */
+/* ---------------------------------------------------------------- */
+
+/*
+ * The picker moved off the first page.
+ *
+ * Bill asked for it: it is the one answer on the make-a-video form that most
+ * videos never use, since recording your own voice is the normal way. It lives
+ * under "Other ways to add the voice" on the record step now, so the pick has to
+ * be able to reach the job at the moment the AI button is pressed rather than
+ * only when the job was made.
+ */
+
+/** A job standing where the record step is: made, and nothing muxed yet. */
+async function jobAtTheRecordStep(tool, voiceId = "") {
+  const created = await (await tool.post(`${TOOL}/api/jobs`, formFor(voiceId))).json();
+  const job = await store.getJob(created.id);
+  /*
+   * A silent cut with no stills in it. That is enough for the endpoint to accept
+   * the press, and it makes the render refuse before it would speak a line - so
+   * this stays a test about which voice was booked and asks ElevenLabs nothing.
+   */
+  job.status = "silent-ready";
+  job.silent = { file: path.join(store.jobDir(job.id), "silent.mp4"), durationSeconds: 8, frames: [], frameBeats: [], notes: [] };
+  await store.persist(job);
+  return job;
+}
+
+test("the voice picked on the record step is the one booked onto the job", async () => {
+  stubElevenLabs();
+  const offered = await voices.listVoices({ fresh: true });
+  const man = offered.find((voice) => voice.sex === "male");
+
+  const tool = await signedIn();
+  try {
+    const job = await jobAtTheRecordStep(tool);
+    assert.equal(job.input.voiceId, voices.PREFERRED_FEMALE_ID, "the job is made with Jessica");
+
+    const answer = await tool.post(`${TOOL}/api/jobs/${job.id}/ai-voice`, { voiceId: man.id });
+    assert.equal(answer.status, 202);
+
+    const after = await store.getJob(job.id);
+    assert.equal(after.input.voiceId, man.id, `wanted ${man.name}'s id on the job`);
+    // And it is written into the job log, so the change is not silent.
+    const said = after.progress.map((entry) => entry.message).join(" ");
+    assert.match(said, new RegExp(`${man.name}.*record step`, "i"), said);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("pressing the AI button with nothing picked keeps the voice the job has", async () => {
+  stubElevenLabs();
+  const offered = await voices.listVoices({ fresh: true });
+  const man = offered.find((voice) => voice.sex === "male");
+
+  const tool = await signedIn();
+  try {
+    const job = await jobAtTheRecordStep(tool, man.id);
+    assert.equal(job.input.voiceId, man.id);
+
+    // An older page, or an account with nothing to offer, sends no voice at all.
+    const answer = await tool.post(`${TOOL}/api/jobs/${job.id}/ai-voice`, {});
+    assert.equal(answer.status, 202);
+    assert.equal((await store.getJob(job.id)).input.voiceId, man.id, "the job's own voice stands");
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a voice this plan cannot speak with is not booked from the record step either", async () => {
+  stubElevenLabs();
+  const tool = await signedIn();
+  try {
+    const job = await jobAtTheRecordStep(tool);
+    // Rachel is a Voice Library voice, so the picker never offered her.
+    const answer = await tool.post(`${TOOL}/api/jobs/${job.id}/ai-voice`, { voiceId: "21m00Tcm4TlvDq8ikWAM" });
+    assert.equal(answer.status, 202);
+
+    const after = await store.getJob(job.id);
+    assert.notEqual(after.input.voiceId, "21m00Tcm4TlvDq8ikWAM");
+    assert.equal(after.input.voiceId, voices.PREFERRED_FEMALE_ID, "it falls back to the default");
+  } finally {
+    await tool.close();
+  }
+});
+
 test("the AI voice speaks with the voice the job was given", async () => {
   const calls = stubElevenLabs();
   const offered = await voices.listVoices({ fresh: true });

@@ -251,6 +251,53 @@ test("a before-shot upload has no confirmation box, and no password is remembere
   }
 });
 
+/*
+ * The voice moved off this page, and the memory of it did not.
+ *
+ * The picker lives on the record step now - "Other ways to add the voice" - and
+ * the last voice used still comes back, because that is the answer this form
+ * posts when the job is made.
+ */
+test("the voice is not on the first page, and is still remembered", options, async () => {
+  const tool = await openTool();
+  try {
+    const page = await tool.open();
+    await fillTheForm(page);
+
+    const where = await page.evaluate(() => {
+      const field = document.getElementById("voiceField");
+      const usage = document.getElementById("voiceUsage");
+      return {
+        onTheForm: Boolean(document.getElementById("form").contains(field)),
+        onTheRecordStep: Boolean(document.getElementById("step-record").contains(field)),
+        withTheAudioOptions: Boolean(field.closest("details") === document.getElementById("aiBtn").closest("details")),
+        usageWithIt: Boolean(usage.closest("details") === field.closest("details")),
+        voices: document.querySelectorAll('input[name="voiceId"]').length,
+      };
+    });
+    assert.equal(where.onTheForm, false, "the voice picker is off the first page");
+    assert.equal(where.onTheRecordStep, true);
+    assert.equal(where.withTheAudioOptions, true, "it sits with the AI voice button that uses it");
+    assert.equal(where.usageWithIt, true, "and so does the ElevenLabs allowance card");
+
+    // Only worth remembering if the account offered anything to pick.
+    if (!where.voices) return;
+    const picked = await page.evaluate(() => {
+      const radios = document.querySelectorAll('input[name="voiceId"]');
+      const last = radios[radios.length - 1];
+      last.checked = true;
+      last.dispatchEvent(new Event("change", { bubbles: true }));
+      window.DNLV.maker.memory.save();
+      return last.value;
+    });
+
+    await tool.open();
+    assert.equal((await page.evaluate(formNow)).voiceId, picked, "the last voice used comes back");
+  } finally {
+    await tool.close();
+  }
+});
+
 /* ---------------------------------------------------------------- */
 /* select all, so one answer can be typed over                      */
 /* ---------------------------------------------------------------- */

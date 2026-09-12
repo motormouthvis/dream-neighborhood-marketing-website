@@ -872,6 +872,129 @@ test("the line being spoken is highlighted and scrolls itself as the video plays
 });
 
 /* ---------------------------------------------------------------- */
+/* the voice, now picked on this step rather than on the form         */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bill asked for the ElevenLabs voice picks to come off the first page and live
+ * with the other audio choices. So the radios are inside "Other ways to add the
+ * voice", next to the button that uses them, and the pick has to travel with
+ * that press - it can be changed right up to the moment it is used.
+ *
+ * The account is not asked for anything here: the session answer is topped up
+ * with two voices in the browser, so this is about the page and not about
+ * ElevenLabs being reachable.
+ */
+const OFFERED = [
+  { id: "cgSgspJ2msm6clMCkdW9", name: "Jessica", sex: "female" },
+  { id: "PGqDc9SLzJTxDTy8SjYb", name: "Dan", sex: "male" },
+];
+
+async function toolWithVoices(voices) {
+  const tool = await openTool();
+  await tool.page.evaluateOnNewDocument((list) => {
+    window.__aiPosts = [];
+    const real = window.fetch;
+    window.fetch = function (url, init) {
+      if (typeof url === "string" && /\/api\/session$/.test(url)) {
+        return real(url, init).then((response) =>
+          response.json().then((body) => {
+            body.aiVoice = { available: true, label: "ElevenLabs", voices: list, defaultVoiceId: list[0].id };
+            return new Response(JSON.stringify(body), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          })
+        );
+      }
+      if (typeof url === "string" && /\/ai-voice$/.test(url)) {
+        window.__aiPosts.push(String((init && init.body) || ""));
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: "x" }), { status: 202, headers: { "Content-Type": "application/json" } })
+        );
+      }
+      return real(url, init);
+    };
+  }, voices);
+  await tool.page.reload({ waitUntil: "networkidle2" });
+  await tool.page.waitForFunction(() => window.DNLV && window.DNLV.maker, { timeout: 15000 });
+  await tool.page.waitForFunction(() => document.querySelectorAll('input[name="voiceId"]').length > 0, {
+    timeout: 15000,
+  });
+  return tool;
+}
+
+test("the voice picker is with the other audio options, not on the form", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await toolWithVoices(OFFERED);
+  try {
+    const onTheForm = await tool.page.evaluate(() =>
+      document.getElementById("form").contains(document.getElementById("voiceField"))
+    );
+    assert.equal(onTheForm, false, "the first page is left lean");
+
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+
+    const shown = await tool.page.evaluate(() => {
+      const box = document.getElementById("aiBtn").closest("details");
+      return {
+        summary: box.querySelector("summary").textContent.trim(),
+        // The picker is inside that same fold, above the button that spends it.
+        voicesInside: box.contains(document.getElementById("voiceField")),
+        usageInside: box.contains(document.getElementById("voiceUsage")),
+        aboveTheButton: Boolean(
+          document.getElementById("voiceField").compareDocumentPosition(document.getElementById("aiBtn")) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+        pickerShown: !document.getElementById("voiceField").hidden,
+        picked: (document.querySelector('input[name="voiceId"]:checked') || {}).value || "",
+        note: document.getElementById("aiNote").textContent.trim(),
+      };
+    });
+
+    assert.match(shown.summary, /other ways to add the voice/i);
+    assert.equal(shown.voicesInside, true);
+    assert.equal(shown.usageInside, true, "the ElevenLabs allowance card comes with it");
+    assert.equal(shown.aboveTheButton, true, "pick the voice, then press the button");
+    assert.equal(shown.pickerShown, true);
+    assert.equal(shown.picked, OFFERED[0].id, "Jessica is still the default");
+    assert.match(shown.note, /Jessica \(female\)/);
+  } finally {
+    await tool.close();
+  }
+});
+
+test("a voice changed on the record step is the one the AI button asks for", options, async () => {
+  const job = await jobOnRecordStep();
+  const tool = await toolWithVoices(OFFERED);
+  try {
+    await tool.page.evaluate((id) => window.DNLV.maker.openJob(id), job.id);
+    await tool.page.waitForFunction(() => !document.getElementById("step-record").hidden, { timeout: 15000 });
+
+    // Pick the man, the way somebody in the fold would.
+    await tool.page.evaluate((id) => {
+      const radio = document.querySelector(`input[name="voiceId"][value="${id}"]`);
+      radio.checked = true;
+      radio.dispatchEvent(new Event("change", { bubbles: true }));
+    }, OFFERED[1].id);
+
+    // The note under the button follows the pick, rather than naming whatever
+    // the job was booked with when it was made.
+    const note = await tool.page.evaluate(() => document.getElementById("aiNote").textContent.trim());
+    assert.match(note, /Dan \(male\)/, note);
+
+    await tool.page.evaluate(() => document.getElementById("aiBtn").click());
+    await tool.page.waitForFunction(() => (window.__aiPosts || []).length > 0, { timeout: 10000 });
+
+    const posted = await tool.page.evaluate(() => JSON.parse(window.__aiPosts[0]));
+    assert.equal(posted.voiceId, OFFERED[1].id, `the press carried ${JSON.stringify(posted)}`);
+  } finally {
+    await tool.close();
+  }
+});
+
+/* ---------------------------------------------------------------- */
 /* trimming: the step is covered until the new file is on the player */
 /* ---------------------------------------------------------------- */
 
