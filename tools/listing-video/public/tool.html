@@ -208,29 +208,16 @@
               <p class="hint" id="addressNote" hidden></p>
 
               <!--
-                The before shot has to be a clean listing, and on this path only
-                the person who took the screenshot can say whether it is.
+                Nothing is asked here about the listing already having an
+                Explorer on it.
 
-                The live capture checks the page itself and refuses a listing
-                that already has one of our Explorers on it. There is no page
-                here, and nothing reads the pixels - for the same reason nothing
-                reads the address off them. So it is asked, and shown only for
-                the scripts it matters to.
+                It used to be a tickbox on a before-shot upload: confirm you can
+                see there is no School Explorer or Neighborhood Explorer on the
+                page you screenshotted. Bill's answer was that he can see that
+                already - he is the one who took the picture - so the script's
+                own choice is the answer. A before-shot script draws a clean
+                listing whatever the picture holds; see src/frames.js.
               -->
-              <div id="cleanShotField" hidden>
-                <label class="check">
-                  <input type="checkbox" id="listingHasNoExplorer" />
-                  <span id="cleanShotLabel">
-                    This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
-                    Explorer on the page I screenshotted.
-                  </span>
-                </label>
-                <span class="hint">
-                  This script is the "before" shot. Nothing can check a picture for an Explorer, so this is the only
-                  check there is. If the listing already has School Explorer on it, use the
-                  <strong>SE to NE upgrade</strong> script instead.
-                </span>
-              </div>
             </div>
 
             <label class="field">
@@ -243,22 +230,16 @@
               <div class="choices" role="radiogroup" id="fromChoices"></div>
             </fieldset>
 
-            <!-- Filled in from the server; never carries the API key. -->
-            <div class="usage" id="voiceUsage" hidden>
-              <span class="label">ElevenLabs</span>
-              <p class="usage__line" id="usageLine"></p>
-              <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
-              <p class="hint" id="usageNote"></p>
-            </div>
+            <!--
+              The AI voice picker is NOT here.
 
-            <!-- Only shown when the ElevenLabs account has voices to offer. -->
-            <fieldset class="field" id="voiceField" hidden>
-              <legend class="label">AI voice, if you use it</legend>
-              <div class="choices" role="radiogroup" id="voiceChoices"></div>
-              <span class="hint">
-                Only matters if you pick the AI voice instead of recording your own. Recording is still the normal way.
-              </span>
-            </fieldset>
+              It used to sit on this page, between the from-address and the make
+              button, and it is the one answer on the form that most videos never
+              use: recording your own voice is the normal way. Bill asked for it
+              to live with the other audio choices instead, so it is under
+              "Other ways to add the voice" on the record step, next to the
+              button that uses it.
+            -->
 
             <p class="error" id="form-error" hidden></p>
 
@@ -404,6 +385,33 @@
 
             <details class="teleprompter">
               <summary>Other ways to add the voice</summary>
+
+              <!--
+                Which AI voice, and how much allowance is left to spend on it.
+
+                Both of these used to be on step 1, where the choice is made
+                before there is anything to hear and by somebody who is usually
+                about to record their own voice anyway. They belong beside the
+                button that spends them, so they are here: pick the voice, then
+                press the AI button. The pick travels with that press, so it can
+                be changed right up to the moment it is used.
+              -->
+              <fieldset class="field" id="voiceField" hidden>
+                <legend class="label">AI voice, if you use it</legend>
+                <div class="choices" role="radiogroup" id="voiceChoices"></div>
+                <span class="hint">
+                  Only matters if you use the AI voice below. Recording your own is still the normal way.
+                </span>
+              </fieldset>
+
+              <!-- Filled in from the server; never carries the API key. -->
+              <div class="usage" id="voiceUsage" hidden>
+                <span class="label">ElevenLabs</span>
+                <p class="usage__line" id="usageLine"></p>
+                <div class="usage__bar" id="usageBar" hidden><span id="usageFill"></span></div>
+                <p class="hint" id="usageNote"></p>
+              </div>
+
               <div class="recorder__row recorder__row--wrap">
                 <label class="btn btn--ghost">
                   Upload an audio file
@@ -576,22 +584,6 @@
                 Start typing and pick it from the list. These are the Explorer's own suggestions, so a picked address is
                 one it can place - nothing is read off the picture, and the School Explorer and Neighborhood Explorer
                 popups in the video are both filmed at whatever you choose.
-              </span>
-            </div>
-
-            <!-- The same clean-listing question the form asks, because this is
-                 the same upload arriving by a different door. -->
-            <div id="retryCleanShotField" hidden>
-              <label class="check">
-                <input type="checkbox" id="retryListingHasNoExplorer" />
-                <span>
-                  This listing has no Explorer on it yet - I can see there is no School Explorer or Neighborhood
-                  Explorer on the page I screenshotted.
-                </span>
-              </label>
-              <span class="hint">
-                This script is the "before" shot, and nothing can check a picture for an Explorer. If the listing
-                already has School Explorer on it, that customer wants the <strong>SE to NE upgrade</strong> script.
               </span>
             </div>
 

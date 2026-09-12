@@ -193,23 +193,22 @@ test("the script, the picture source and the address come back too", options, as
     const shown = await page.evaluate(() => ({
       upload: !document.getElementById("uploadField").hidden,
       listingUrl: !document.getElementById("listingUrlField").hidden,
-      // The upgrade script is not a before shot, so nothing is asked about a
-      // clean listing - which only follows if the script really was restored.
-      cleanShot: !document.getElementById("cleanShotField").hidden,
     }));
     assert.equal(shown.upload, true, "the upload box follows the remembered choice");
     assert.equal(shown.listingUrl, false);
-    assert.equal(shown.cleanShot, false);
   } finally {
     await tool.close();
   }
 });
 
 /*
- * The before-shot confirmation is a statement about one particular screenshot,
- * so it is never remembered - it has to be made again for the next picture.
+ * There is nothing on a before-shot upload to confirm any more.
+ *
+ * The form used to ask - a tickbox saying "this listing has no Explorer on it
+ * yet" - and Bill asked for it to go: he picked the page and took the picture, so
+ * he can already see there is no Explorer on it. Nothing replaced it on the form.
  */
-test("neither the password nor the clean-shot confirmation is remembered", options, async () => {
+test("a before-shot upload has no confirmation box, and no password is remembered", options, async () => {
   const tool = await openTool();
   try {
     const page = await tool.open();
@@ -225,22 +224,75 @@ test("neither the password nor the clean-shot confirmation is remembered", optio
       };
       pick("templateId", "vanessa-se-only-v11");
       pick("pictureSource", "upload");
-      document.getElementById("listingHasNoExplorer").checked = true;
       window.DNLV.maker.memory.save();
     });
 
     await tool.open();
     const after = await page.evaluate(() => ({
-      cleanShotAsked: !document.getElementById("cleanShotField").hidden,
-      confirmed: document.getElementById("listingHasNoExplorer").checked,
+      // The before-shot script and the upload are both still picked, which is
+      // exactly the case the tickbox used to appear for.
+      templateId: (document.querySelector('input[name="templateId"]:checked') || {}).value || "",
+      upload: !document.getElementById("uploadField").hidden,
+      box: Boolean(document.getElementById("listingHasNoExplorer")),
+      field: Boolean(document.getElementById("cleanShotField")),
+      retryBox: Boolean(document.getElementById("retryListingHasNoExplorer")),
       stored: window.localStorage.getItem(window.DNLV.remember.key) || "",
     }));
 
-    // The before-shot script is still picked, so the question is still asked.
-    assert.equal(after.cleanShotAsked, true);
-    assert.equal(after.confirmed, false, "the confirmation is about one picture, not about the form");
+    assert.equal(after.templateId, "vanessa-se-only-v11");
+    assert.equal(after.upload, true);
+    assert.equal(after.box, false, "the clean-shot tickbox is gone from the form");
+    assert.equal(after.field, false);
+    assert.equal(after.retryBox, false, "and from the failure panel's upload too");
     assert.doesNotMatch(after.stored, /listingHasNoExplorer/, after.stored);
     assert.doesNotMatch(after.stored, /memory-test-token/, "no password goes anywhere near this");
+  } finally {
+    await tool.close();
+  }
+});
+
+/*
+ * The voice moved off this page, and the memory of it did not.
+ *
+ * The picker lives on the record step now - "Other ways to add the voice" - and
+ * the last voice used still comes back, because that is the answer this form
+ * posts when the job is made.
+ */
+test("the voice is not on the first page, and is still remembered", options, async () => {
+  const tool = await openTool();
+  try {
+    const page = await tool.open();
+    await fillTheForm(page);
+
+    const where = await page.evaluate(() => {
+      const field = document.getElementById("voiceField");
+      const usage = document.getElementById("voiceUsage");
+      return {
+        onTheForm: Boolean(document.getElementById("form").contains(field)),
+        onTheRecordStep: Boolean(document.getElementById("step-record").contains(field)),
+        withTheAudioOptions: Boolean(field.closest("details") === document.getElementById("aiBtn").closest("details")),
+        usageWithIt: Boolean(usage.closest("details") === field.closest("details")),
+        voices: document.querySelectorAll('input[name="voiceId"]').length,
+      };
+    });
+    assert.equal(where.onTheForm, false, "the voice picker is off the first page");
+    assert.equal(where.onTheRecordStep, true);
+    assert.equal(where.withTheAudioOptions, true, "it sits with the AI voice button that uses it");
+    assert.equal(where.usageWithIt, true, "and so does the ElevenLabs allowance card");
+
+    // Only worth remembering if the account offered anything to pick.
+    if (!where.voices) return;
+    const picked = await page.evaluate(() => {
+      const radios = document.querySelectorAll('input[name="voiceId"]');
+      const last = radios[radios.length - 1];
+      last.checked = true;
+      last.dispatchEvent(new Event("change", { bubbles: true }));
+      window.DNLV.maker.memory.save();
+      return last.value;
+    });
+
+    await tool.open();
+    assert.equal((await page.evaluate(formNow)).voiceId, picked, "the last voice used comes back");
   } finally {
     await tool.close();
   }
