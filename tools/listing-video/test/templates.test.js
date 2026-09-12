@@ -58,7 +58,9 @@ test("the school-only script never mentions Neighborhood Explorer", async () => 
  */
 test("no shipped script names a chip the product no longer has", async () => {
   for (const template of await templates.listDefaults()) {
-    const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" });
+    // Captions are off unless a job asks, so they are asked for here: a stale
+    // chip name in one still has to be caught for the day somebody turns them on.
+    const beats = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" }, { showCaptions: true });
 
     for (const beat of beats) {
       if (beat.scene !== "ne") continue;
@@ -84,7 +86,7 @@ test("no shipped script names a chip the product no longer has", async () => {
  */
 test("the voice says Walk and Bike while the Walk & Bike chip is showing", async () => {
   const upgrade = await templates.getDefault("se-to-ne-upgrade");
-  const beats = templates.renderBeats(upgrade, { firstName: "Vanessa", company: "DOMO" });
+  const beats = templates.renderBeats(upgrade, { firstName: "Vanessa", company: "DOMO" }, { showCaptions: true });
 
   const walk = beats.find((beat) => beat.neTabName === "Walk & Bike");
   assert.ok(walk, "the upgrade script walks the Walk & Bike chip");
@@ -145,6 +147,33 @@ test("Neighborhood Explorer beats get the tabs in order", async () => {
   const tabs = rendered.filter((beat) => beat.scene === "ne").map((beat) => beat.neTab);
   assert.deepEqual(tabs, [0, 1, 2, 3, 4, 5, 6]);
   assert.ok(rendered.filter((beat) => beat.scene !== "ne").every((beat) => beat.neTab === null));
+});
+
+/*
+ * Myles cannot reword a spoken line while the old wording is sitting across the
+ * top of every frame, and he is the one writing the lines. So the caption is a
+ * thing a job asks for, and a script carrying caption text is not the same as a
+ * video showing it.
+ */
+test("a script's captions are not drawn unless the job asks for them", async () => {
+  const template = await templates.getDefault("vanessa-se-only-v11");
+  assert.ok(
+    template.beats.some((beat) => beat.caption && beat.caption.headline),
+    "the shipped script still carries caption lines"
+  );
+  assert.match(template.beats[0].caption.headline, /Your listing format looks really good/);
+
+  // Nobody asked, so nothing is drawn - and this is the default, not a setting.
+  const quiet = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" });
+  for (const beat of quiet) {
+    assert.deepEqual(beat.caption, { headline: "", subline: "" }, beat.text.slice(0, 40));
+  }
+  // The words are still there, which is the point: only the on-screen copy went.
+  assert.ok(templates.beatsToText(quiet).includes("Claire from Dream Neighborhood"));
+
+  // And asked for, they come through filled in as they always did.
+  const loud = templates.renderBeats(template, { firstName: "Vanessa", company: "DOMO" }, { showCaptions: true });
+  assert.equal(loud[0].caption.headline, "Your listing format looks really good.");
 });
 
 test("placeholders are filled in, with fallbacks when a field is blank", async () => {

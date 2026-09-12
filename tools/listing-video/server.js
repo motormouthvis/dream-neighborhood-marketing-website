@@ -155,10 +155,29 @@ function isBeforeShotTemplate(template) {
   return ((template && template.listingExplorer) || "absent") === "absent";
 }
 
+/** A checkbox or radio the form sent, however the browser spelled "yes". */
+function ticked(value) {
+  const said = String(value == null ? "" : value).toLowerCase();
+  return said === "yes" || said === "true" || said === "on" || said === "1";
+}
+
 /** Did the form confirm the photographed listing is a clean one? */
 function confirmedNoExplorer(body) {
-  const said = String((body && body.listingHasNoExplorer) || "").toLowerCase();
-  return said === "yes" || said === "true" || said === "on" || said === "1";
+  return ticked((body || {}).listingHasNoExplorer);
+}
+
+/**
+ * Does this job want the green caption bar burned into the picture?
+ *
+ * Off unless the form says otherwise, and off is the answer for anything that
+ * does not ask. The bar is the script's own words on screen, and Myles cannot
+ * reword a spoken line while the old wording is sitting across the top of every
+ * frame - so the copy that used to be forced by the template is now something a
+ * job opts into. Shipped scripts still carry caption text; it is simply not
+ * drawn unless this says so.
+ */
+function wantsCaptions(body) {
+  return ticked((body || {}).showCaptions);
 }
 
 /** Move an accepted screenshot into the job's own folder, with its address. */
@@ -474,10 +493,26 @@ app.post(`${TOOL_PATH}/api/jobs`, auth.requireSession, acceptListingImage, async
     }
   }
 
-  const beats = templates.renderBeats(template, { firstName, company });
+  /*
+   * The caption bar is decided here, once, and the beats are drawn without the
+   * words unless it was asked for. A recapture redraws these same beats, so the
+   * answer cannot drift away from the video afterwards.
+   */
+  const showCaptions = wantsCaptions(body);
+  const beats = templates.renderBeats(template, { firstName, company }, { showCaptions });
 
   const job = await store.createJob({
-    input: { firstName, company, websiteUrl, listingUrl, customerEmail, templateId: template.id, fromId, voiceId },
+    input: {
+      firstName,
+      company,
+      websiteUrl,
+      listingUrl,
+      customerEmail,
+      templateId: template.id,
+      fromId,
+      voiceId,
+      showCaptions,
+    },
     template,
     beats,
   });

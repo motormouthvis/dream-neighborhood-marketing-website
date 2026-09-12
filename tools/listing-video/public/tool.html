@@ -82,6 +82,46 @@
               <p class="pickfirst" id="templatePrompt">Pick a script to turn on <strong>Make the silent video</strong>.</p>
             </fieldset>
 
+            <!--
+              The green bar across the top of every frame, and it is OFF.
+
+              It is the script's own words burned into the picture, so the moment
+              Myles reworded a spoken line the copy on screen disagreed with him.
+              He writes the lines, so the words on screen are the ones that go:
+              the script can keep its caption fields for the day somebody wants
+              them, and nothing is drawn unless this says so.
+            -->
+            <fieldset class="field" id="captionField">
+              <legend class="label">The green caption bar across the top</legend>
+              <span class="hint hint--above">
+                Off is the normal way. With it off you can reword the spoken script as much as you like and nothing on
+                screen can contradict you. Turn it on only when you want the script's caption lines burned into the
+                picture as well.
+              </span>
+              <div class="choices" role="radiogroup" id="captionChoices">
+                <label class="choice">
+                  <input type="radio" name="showCaptions" value="off" checked />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">No captions</strong>
+                      <span class="choice__note">
+                        Just the listing, the button and the Explorer popups. Say whatever you like over it.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="showCaptions" value="on" />
+                  <span class="choice__box"><span class="choice__mark" aria-hidden="true"></span>
+                    <span class="choice__text"><strong class="choice__title">Show the green caption bar</strong>
+                      <span class="choice__note">
+                        Each beat's two caption lines are drawn across the top, so the spoken words have to match them.
+                      </span>
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
             <label class="field">
               <span class="label">Customer first name</span>
               <input class="input" id="firstName" name="firstName" placeholder="e.g. Vanessa" required />
@@ -533,7 +573,8 @@
           <h1 class="h1">Scripts</h1>
           <p class="lede">
             A script is a list of beats: the words you say, an optional caption for the top bar, how long that picture
-            should be, and what is on screen while you say it.
+            should be, and what is on screen while you say it. The caption bar is off by default when a video is made,
+            so rewording a spoken line here cannot leave stale copy on screen.
           </p>
 
           <!--
@@ -618,7 +659,10 @@
               <span class="label">Beats</span>
               <span class="hint hint--above">
                 Use <code>{firstName}</code> and <code>{company}</code> anywhere in the words or a caption. Captions sit
-                in the <strong>top</strong> bar only - a bottom bar would cover the house button.
+                in the <strong>top</strong> bar only - a bottom bar would cover the house button. They are
+                <strong>not drawn unless the video asks for them</strong>: the caption bar is off by default on the
+                <strong>Make a video</strong> form, so these lines are kept for the day somebody turns it on and are
+                otherwise ignored.
               </span>
               <div id="beatEditor"></div>
               <button type="button" class="btn btn--ghost" id="addBeatBtn" style="margin-top: 14px">Add a beat</button>

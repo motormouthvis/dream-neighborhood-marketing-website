@@ -89,26 +89,40 @@ async function explorerShotsFor(outDir) {
  * off the same stage that is photographed, not from a spec that was on its way
  * there.
  */
-async function drawTheScript(templateId, { beats } = {}) {
+async function drawTheScript(templateId, { beats, showCaptions = true } = {}) {
   const template = await templates.getDefault(templateId);
   const outDir = await fsp.mkdtemp(path.join(dataDir, `${templateId}-`));
   const screenshot = await uploadedScreenshot(outDir);
   const shots = await explorerShotsFor(outDir);
 
+  /*
+   * The caption bar is asked for throughout this file, even though a real job
+   * now leaves it off.
+   *
+   * The bug here is the Neighborhood Explorer turning up on a listing frame, and
+   * a caption is one of the ways it could: it is the script's own words, drawn
+   * over their page. Filming these scripts with the bar OFF would take that
+   * whole class of wording out of shot and quietly stop testing for it. So the
+   * frames are drawn the loudest way a job can ask for, and the words read back
+   * off them are the most a video could ever say.
+   */
+  const asked = beats || templates.renderBeats(template, { firstName: "Bill", company: "Scott Rodgers Real Estate" }, { showCaptions });
+
   const browser = await launch();
   try {
     const drawn = await renderFrames({
       browser,
-      beats: beats || templates.renderBeats(template, { firstName: "Bill", company: "Scott Rodgers Real Estate" }),
+      beats: asked,
       screenshot,
       address: ADDRESS,
       company: "Scott Rodgers Real Estate",
       explorers: template.explorers,
+      showCaptions,
       ...shots,
       outDir,
       log: () => {},
     });
-    return { template, drawn, beats: beats || templates.renderBeats(template, { firstName: "Bill", company: "Scott Rodgers Real Estate" }) };
+    return { template, drawn, beats: asked };
   } finally {
     await closeBrowser(browser);
   }
@@ -294,7 +308,13 @@ test("no shipped script asks for the Neighborhood Explorer on a listing beat", a
   };
 
   for (const summary of await templates.listDefaults()) {
-    const beats = templates.renderBeats(summary, { firstName: "Bill", company: "Scott Rodgers Real Estate" });
+    // With the caption bar asked for, so a caption that names the Neighborhood
+    // Explorer on a listing beat is still caught by a fast test.
+    const beats = templates.renderBeats(
+      summary,
+      { firstName: "Bill", company: "Scott Rodgers Real Estate" },
+      { showCaptions: true }
+    );
     beats.forEach((beat, index) => {
       for (const spec of specsForBeat(beat, context, { sePosition: 0 })) {
         // What the stage would end up saying: the caption and the label are the

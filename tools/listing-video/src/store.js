@@ -251,6 +251,9 @@ function publicView(job) {
       customerEmail: job.input.customerEmail,
       templateId: job.input.templateId,
       fromId: job.input.fromId,
+      // Whether the green caption bar was burned into this video's frames. Off
+      // unless the form asked, including on jobs made before the toggle existed.
+      showCaptions: Boolean(job.input.showCaptions),
       // What was uploaded and the address that came with it, without the server
       // path the file sits at.
       uploadedListing: job.input.uploadedListing
