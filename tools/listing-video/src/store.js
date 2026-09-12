@@ -372,8 +372,9 @@ function publicView(job) {
       // Whether the green caption bar was burned into this video's frames. Off
       // unless the form asked, including on jobs made before the toggle existed.
       showCaptions: Boolean(job.input.showCaptions),
-      // What the last take asked for about the camera, so the record step can put
-      // the toggle back where it was left on a job that is being re-recorded.
+      // What the last take asked for about the camera. A record of what was
+      // asked, not a setting to restore: the toggle on the record step is off
+      // every time that step is opened, however this job was last burned.
       webcam: Boolean(job.input.webcam),
       // What was uploaded and the address that came with it, without the server
       // path the file sits at.

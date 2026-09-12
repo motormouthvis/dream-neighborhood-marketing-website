@@ -24,6 +24,7 @@ const os = require("os");
 const path = require("path");
 const fs = require("fs");
 const fsp = require("fs/promises");
+const crypto = require("crypto");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -333,6 +334,62 @@ test("the finished video has the face bottom left and the house corner untouched
   // the very corner pixel is still the scene behind it.
   const corner = await patch(video.file, mid, { x: CARD.left + 1, y: CARD.top + 1, w: 3, h: 3 }, dir);
   assert.ok(looksLike(corner, SCENE, 40), `the card's corner is ${describe(corner)}, wanted the scene through it`);
+});
+
+/*
+ * The refactor this change needed, and the proof it cost nothing.
+ *
+ * buildVideo used to hand ffmpeg a `-vf` and map the concat input straight to
+ * the output. An overlay needs a second video input, which means a filtergraph,
+ * which means every video that has nothing to do with the camera now goes down a
+ * different code path than it did yesterday.
+ *
+ * So this runs the command as it was written before the camera existed, over the
+ * frame list buildVideo itself wrote, and compares the bytes. Not "close enough"
+ * and not "the same length": the same file.
+ */
+test("a video with no camera is the same file the old one-pass command made", async () => {
+  const dir = await fsp.mkdtemp(path.join(dataDir, "unchanged-"));
+  const take = await takeWithoutCamera(dir, { speechSeconds: 6 });
+  const track = await buildRecordedTrack({ uploadPath: take, workDir: dir, log: () => {} });
+  const frames = await stills(dir, 3);
+
+  const now = await buildVideo({
+    frames,
+    durations: [4, 4, 4],
+    audioFile: track.audioFile,
+    workDir: dir,
+    outFile: path.join(dir, "now.mp4"),
+    log: () => {},
+  });
+
+  const before = path.join(dir, "before.mp4");
+  await run(config.ffmpegPath, [
+    "-y",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", path.join(dir, "frames-voiced.txt"),
+    "-i", track.audioFile,
+    "-map", "0:v:0",
+    "-map", "1:a:0",
+    "-t", "12.000",
+    "-af", "apad",
+    "-vf", "fps=30,scale=1920:1080:flags=lanczos,format=yuv420p",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-profile:v", "high",
+    "-level", "4.0",
+    "-movflags", "+faststart",
+    "-crf", "21",
+    "-c:a", "aac",
+    "-b:a", "160k",
+    "-ar", "44100",
+    before,
+  ], { timeout: 900000 });
+
+  const digest = async (file) =>
+    crypto.createHash("sha256").update(await fsp.readFile(file)).digest("hex");
+  assert.equal(await digest(now.file), await digest(before), "the filtergraph changed what a plain video encodes to");
 });
 
 test("the picture is the length the scenes asked for, camera or no camera", async () => {

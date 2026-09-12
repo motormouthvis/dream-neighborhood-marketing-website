@@ -2095,6 +2095,22 @@ keeps hitting R14, the fix is a bigger dyno — Standard-2X has 1GB — rather t
 more tuning here. What has changed is that the failure is now bounded and
 recoverable instead of a silent hang.
 
+#### What the camera card costs
+
+Nothing that matters, and it was worth checking before building it: the burn is
+the one place a second video stream shows up.
+
+The camera is normalised to **264×198** in its own pass before the burn — a frame
+of it is a fifth of a percent of one of the 1920×1080 stills — and the burn then
+holds one extra h264 decoder for that, plus a `geq` over the card. The stills and
+the encoder are the same as they ever were. The card is also **sized once, in
+`src/webcam.js`**, so this stays true if it is ever made bigger or smaller.
+
+The overlay pass runs several times faster than real time on a dyno-sized CPU, so
+a minute of video is still comfortably inside the render's own timeout. Chrome is
+not involved in any of it: the camera is recorded in the marketer's own browser
+and burned in by ffmpeg, and nothing about this opens a page.
+
 ### Disk
 
 Each job keeps its stills so a re-recorded take can be re-timed against the same
