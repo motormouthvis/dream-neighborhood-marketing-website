@@ -16,6 +16,16 @@ Both Explorer popups in the video are **photographs of the live product** at tha
 listing's address. Neither is drawn by this tool. See
 [Filming the Explorers](#filming-the-explorers).
 
+There is **no copy burned into the picture** any more. The green caption bar that
+used to carry two lines of the script across the top of every frame is off unless a
+video asks for it, so the spoken script can be rewritten without the words on
+screen contradicting it. See
+[The green caption bar is off](#the-green-caption-bar-is-off).
+
+A video that was made **somewhere else** can also just be uploaded and hosted here
+for its link — nothing is filmed, drawn or spoken on that path. See
+[Upload a video you already made](#upload-a-video-you-already-made).
+
 **Staging only.** Nothing in here is wired into the production marketing site.
 This is a separate Node service that lives in the repo but is not part of the
 static site build, and it does not touch any Dream Neighborhood product code. No
@@ -26,7 +36,11 @@ routes. Do not put it in front of customers on production unless Bill says go.
 
 ## The flow
 
-Three tabs: **Make a video**, **Library**, **Scripts**.
+Four tabs: **Make a video**, **Upload a video**, **Library**, **Scripts**.
+
+**Make a video** is the whole flow below. **Upload a video** is a video that
+already exists somewhere else, hosted here for its link — see [Upload a video you
+already made](#upload-a-video-you-already-made).
 
 ### 1. Pick a script
 
@@ -531,7 +545,9 @@ address in its path, so this cannot let one of those through.
 One 1920x1080 still per beat, held for that beat's suggested duration, with **no
 audio track at all**:
 
-- Captions sit in a **top** bar only. A bottom bar would cover the house button.
+- **No caption bar, unless the form asked for one.** See [The green caption bar is
+  off](#the-green-caption-bar-is-off). When it is on it sits in a **top** bar
+  only; a bottom bar would cover the house button.
 - The house button hovers in the bottom right of their own page, labelled *"Click
   here to explore the schools around 6031 N Rosemead Dr"*.
 - The School Explorer and Neighborhood Explorer cards are about 70% of the frame,
@@ -547,6 +563,58 @@ this cut: it is what somebody records over, reading along. Once an AI voice is
 laid on, the holds are re-measured off the lines it actually spoke, so an AI video
 comes out shorter than this one — see [How long the finished video
 is](#how-long-the-finished-video-is).
+
+#### The green caption bar is off
+
+Every frame used to carry two lines of the script burned across the top:
+
+> **Your listing format looks really good.**
+> Here is one of them, as it is today.
+
+That copy came from the beat's `caption` fields, and the shipped scripts all have
+them, so it went on every video whether anybody wanted it or not.
+
+**It made the spoken script unchangeable.** Myles writes the lines, and the moment
+he reworded one the words on screen disagreed with the voice — on a video that was
+otherwise finished and ready to send. The on-screen copy was the thing least worth
+keeping, so it is the thing that went.
+
+The bar is now something a **job** asks for, on the form, and the form ships it
+**off**:
+
+| | |
+| --- | --- |
+| **No captions** | The default. Their listing, the house button and the Explorer popups. Say whatever you like over it and nothing on screen can contradict you. |
+| **Show the green caption bar** | Each beat's two caption lines are drawn across the top, and the spoken words then have to match them. |
+
+Three layers make the default hold:
+
+- `renderBeats` in `src/templates.js` blanks the caption unless the job asked, and
+  **off is its default** — a caller that forgets draws nothing of ours over the
+  customer's page, the same way round as every other piece of furniture in
+  `src/frames.js`.
+- An empty headline and subline is the `#stage.no-caption` path `views/frame.html`
+  has always had for a beat that left its caption empty, so nothing downstream had
+  to learn a new state. The bar is not hidden — it is not in the frame at all, and
+  the words are not left in the markup either.
+- `renderFrames` reads the bar off the drawn stage **before the shutter** and
+  throws `CAPTION_ON_FRAME` if one is there on a job that switched it off. That is
+  the belt to `frame.html`'s braces, exactly as `CHROME_ON_BARE_LISTING` is for the
+  house button — a later change that forgets about the toggle fails loudly instead
+  of quietly shipping stale copy.
+
+**Scripts keep their caption fields.** The editor still has both lines and still
+validates them, and `{firstName}` and `{company}` still fill in. They are simply
+not drawn unless a video asks, and the Scripts page says so. Nothing was deleted
+out of the shipped scripts, so turning the bar back on gets the same captions it
+always had.
+
+A job made before the toggle existed has no answer recorded and gets the new
+default. That is deliberate: it is the behaviour Myles asked for, and a video is
+only re-rendered when somebody asks for it again.
+
+See `test/no-captions.test.js`, which draws a shipped script in real Chrome and
+checks that none of its caption words are anywhere in shot.
 
 #### Nothing about the Neighborhood Explorer goes on a listing frame
 
@@ -972,6 +1040,103 @@ date, status and watch link. Play it, copy the link, open it to send it, or
 delete it. Delete asks for confirmation and then removes the mp4, the poster,
 the stills and the record that makes `/v/{id}` work.
 
+A video that was **uploaded** rather than made says so on its card, with an
+*"Uploaded, not made here"* pill. Everything else about it works the same way.
+
+---
+
+## Upload a video you already made
+
+The **Upload a video** tab is the second half of this tool on its own.
+
+Everything on the Make tab builds a video: it finds a listing, films both
+Explorers, draws the scenes and lays a voice over them. But Myles already has
+videos — a screen recording, something off a phone, something cut in another
+editor — and what he wants from this box for those is the part that has nothing
+to do with making one:
+
+- a public `/v/{id}` link, on the same watch pages a made video gets
+- a card in the Library, alongside everything else
+- the same send step, behind the same review
+
+So an mp4 goes up with the three answers the Library and the email need — customer
+first name, company, and the email address it would go to — and comes back as a
+job that is already `ready`. There is nothing to poll: no capture, no Explorer, no
+voice, no scene. **No Chrome is opened at all**, and nothing about the Explorer
+tabs or the listing search is involved.
+
+The link works the moment the upload answers. **Sending is still a separate,
+gated step**: open it from the Library, watch it through or tick the box, and then
+the send button wakes up — exactly as it does for a video this tool built.
+
+### What happens to the file
+
+Nothing is re-encoded. A re-encode of a couple of minutes of 1080p is minutes of
+ffmpeg on a small dyno, and this is a request somebody is sitting waiting on.
+
+| Step | Why |
+| --- | --- |
+| The container is read out of the **bytes** | `ftyp` and its brand, so an upload is judged on what it is rather than on the content type a browser attached or the extension somebody typed. Same rule as an uploaded screenshot — see `src/listing-image.js`. |
+| **ffprobe has to find a picture in it** | An `.m4a` is the same container as an `.mp4`, so the byte check passes one. A watch page playing a black rectangle with a voice over it is a link somebody would send to a customer. |
+| It is **remuxed**, not re-encoded | The picture and sound are copied across untouched and only the container is rewritten, with its index (`moov`) moved to the **front**. A video exported for a hard drive usually has that at the end, which is what makes a watch link sit on a black frame until the whole file has downloaded. Seconds, not minutes. |
+| A poster is cut from about a second in | Not frame zero: plenty of videos open on a fade from black, and a black poster reads as a broken link. A poster that cannot be made is not worth failing an upload over. |
+
+### What is accepted, and the limits
+
+| | |
+| --- | --- |
+| Format | **mp4** — H.264 video, AAC audio, which is what every editor and phone exports by default. QuickTime `.mov` is accepted because a Mac screen recording is usually H.264 in a QuickTime container and remuxes into an mp4 untouched. |
+| Size | **120MB**. |
+| Length | 1 second to **20 minutes**. |
+
+**Why 120MB.** Heroku's router hangs up a request when 55 seconds pass with no
+bytes moving, and this dyno's disk is small and ephemeral. A minute of 1080p out
+of a screen recorder is roughly **10–20MB**, so 120MB is several minutes of the
+kind of video this is for and still lands inside the router's patience on any
+ordinary line. Beyond that the answer is not a bigger number — it is a 1080p
+export instead of a 4K one, a shorter cut, or a real video host. The form says the
+number, and it reads it off the server so the hint and the refusal cannot drift
+apart.
+
+**`.webm` is deliberately refused.** Safari will not play one, so the link would
+work for Myles and not for the customer he sent it to. The refusal says as much.
+
+The 20 minute cap is not a technical limit — the disk is the technical limit — but
+a 20 minute upload on this box is a mistake, and finding out about it after it has
+been sent is worse than finding out on the form.
+
+### A refusal leaves nothing behind
+
+The job's folder is claimed *before* the file is checked, because the checking
+writes into it. If the file turns out not to be a video, the folder goes with the
+refusal and no job was ever listed — so a bad upload cannot leave a ready-looking
+card in the Library pointing at nothing. The upload itself is removed either way.
+
+### What an uploaded video has no answer for
+
+It is a job like any other by the time anything else looks at it, which is why the
+watch page, the library list and the send step did not have to change: they were
+only ever asking a job for `result.videoFile`. Two things are hidden on the review
+step, because there is genuinely nothing behind them:
+
+- **Back to recording** — there is no silent cut to record over.
+- **Change the script, customer or listing** — there is no script, and no listing.
+
+Trimming still works, because it is one ffmpeg pass over the finished file.
+
+The email is the same email, and it does **not** mention Neighborhood Explorer:
+that line only appears when the script the customer watched covered it, and an
+uploaded video has no script at all.
+
+### Switching it off
+
+On, because the whole service is staging-only and never sits in front of a
+customer. `LISTING_VIDEO_VIDEO_UPLOAD=off` turns the route and the tab off on a
+box that should only ever build videos — the tab is then not there rather than
+there and refusing.
+
+See `src/uploaded-video.js` and `test/uploaded-video.test.js`.
+
 ### When it fails, it says so afterwards
 
 A capture that fails is not thrown away. The red box in the browser is gone as
@@ -1355,7 +1520,7 @@ A script is a list of **beats**. Each beat has:
 | Words you say | The teleprompter line. `{firstName}` and `{company}` are filled in. |
 | What is on screen | `listing`, `listing-button`, `se` or `ne`. These four are the only scenes — see below. |
 | Suggested seconds | How long that picture is held. Follows the words as you write them, and can be held at a number of your own — see below. |
-| Top caption | Two optional lines for the top bar. |
+| Top caption | Two optional lines for the top bar. **Not drawn unless the video asks for them** — the caption bar is off by default on the Make a video form. See [The green caption bar is off](#the-green-caption-bar-is-off). |
 | Tab | On a `ne` beat only: which Neighborhood Explorer tab is on screen. |
 
 Plus a name, a notes field, whether the script is *School Explorer only* or
@@ -1391,7 +1556,9 @@ script being right:
 - `src/frames.js` reads the drawn stage back **before the shutter** and throws
   `CHROME_ON_BARE_LISTING` if a bare listing frame has the button, a card, the
   dim or our label on it. A caption is not chrome in this sense: it is the
-  script's own words and belongs on every beat.
+  script's own words rather than our product. Whether the bar may be there at all
+  is a separate question with a separate gate — see [The green caption bar is
+  off](#the-green-caption-bar-is-off).
 
 `listing-tap`, the old name, still means `listing-button` everywhere — in a saved
 script, in an exported file, and in a job filmed before the rename.
@@ -1771,6 +1938,7 @@ node test/fixture-site.js 8899      # then open http://127.0.0.1:8899
 | `LISTING_VIDEO_QUAL_NAME`, `LISTING_VIDEO_QUAL_PHONE` | Details for a registration form. The name defaults to `Motormouth QUAL`. |
 | `LISTING_VIDEO_QUAL_HOSTS` | Which sites the QUAL account may be used on. Empty means any; a comma-separated list is an allowlist. |
 | `LISTING_VIDEO_QUAL_REGISTER` | Allow **creating** an account, not just signing in. Off, because registering on an IDX site is what emails that site's agent a new lead. |
+| `LISTING_VIDEO_VIDEO_UPLOAD` | Whether a finished video made elsewhere can be uploaded and hosted here. **On.** Set it to `off` on a box that should only ever build videos, and the tab is not there at all. See [Upload a video you already made](#upload-a-video-you-already-made). |
 
 ### Memory
 
@@ -1846,6 +2014,7 @@ Or just give them the service URL directly. The tool works fine on its own host.
 | `POST /tools/listing-video/api/jobs` | Signed in only. Takes JSON, or multipart with a `listingImage` and the address fields. A shipped script can be named by `templateId`; one out of the browser is sent whole as `template` |
 | `POST /tools/listing-video/api/jobs/:id/recapture` | Signed in only. With a listing URL, goes back to the live site and drops any uploaded screenshot. Without one, it is "film it again, same answers" and keeps the screenshot |
 | `POST /tools/listing-video/api/jobs/:id/listing-image` | Signed in only. Multipart: the listing screenshot plus the address — `addressPlace` as picked from the suggestions, with `addressStreet`, `addressCity`, `addressState`, `addressZip` split out of it |
+| `POST /tools/listing-video/api/uploaded-videos` | Signed in only. Multipart: a finished `video` mp4 plus the customer's first name, company and email. Hosts it as it is and answers with the `/v/{id}` link. Nothing is filmed, and no Chrome is opened. Off when `LISTING_VIDEO_VIDEO_UPLOAD=off` |
 | `POST /tools/listing-video/api/jobs/:id/audio`, `.../ai-voice` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/reviewed`, `.../email` | Signed in only |
 | `POST /tools/listing-video/api/jobs/:id/trim` | Signed in only |
@@ -1870,6 +2039,7 @@ src/persona.js               the user agent, client hints and language, all agre
 src/capture.js               opens their site, accepts cookies, walks to a listing
 src/site-account.js          signs in with the QUAL account at an account wall
 src/listing-image.js         an uploaded screenshot, checked and fitted to the frame
+src/uploaded-video.js        a finished video uploaded whole: checked, remuxed, postered
 src/page-analysis.js         is this one listing or a landing page, and what address
 src/frames.js                turns each beat into a 1920x1080 still
 src/video.js                 ffmpeg: the silent cut, then the voiced cut
@@ -1886,11 +2056,14 @@ views/frame.html             the frame: top caption bar, popup button, SE and NE
 public/js/place-picker.js    the address box: the Explorer's suggestions as you type
 public/js/beat-timing.js     how long a beat should be, from the words in it
 public/js/script-store.js    scripts in the browser, where a deploy cannot reach them
-public/                      the three tabs and the public watch page
+public/js/upload-video.js    the Upload a video tab: one request, then a link
+public/                      the four tabs and the public watch page
 test/                        node --test smoke tests
 test/fixture-site.js         a stand-in realtor site built from the pages that broke
 test/client.test.js          the front end in Chrome: a lost job must not hang
 test/uploaded-listing.test.js  the 403 dead end, the upload out of it, and its address
+test/uploaded-video.test.js  a finished video uploaded whole, and the link it gets
+test/no-captions.test.js     no green bar unless a video asked for one
 test/persona.test.js         the persona's rules, with no browser needed to check them
 test/beat-timing.test.js     the suggested seconds, against the hand-timed scripts
 test/listing-scenes.test.js  the three listing looks, and the bare one staying bare
@@ -1900,3 +2073,34 @@ test/school-explorer.test.js Peoria's schools for a Peoria listing, not Smyrna's
 test/places.test.js          the address is a place the Explorer named, not free text
 test/site-account.test.js    the QUAL account, and what it must not be used for
 ```
+
+---
+
+## Ideas that are not built
+
+Written down so they are not re-invented from scratch, and so it is clear they are
+not in here.
+
+### A webcam picture-in-picture while you talk
+
+A small circle of whoever is speaking, bottom left, over the listing and the
+Explorer popups — the way a Loom looks. The argument for it is authenticity: a
+face on a prospecting video is a person talking to a realtor rather than a
+slideshow with a voice on it, and it is the one thing these videos most obviously
+lack next to what an agent would record themselves.
+
+**Not built. Do not build it as part of anything else.** It is a bigger change
+than it sounds:
+
+- the take is currently a microphone recording, and this needs the camera as well,
+  recorded in sync and kept in sync through a re-record
+- the frames are stills stitched by the concat demuxer, so a moving overlay means
+  a second video input and an `overlay` filter over the whole timeline rather than
+  one pass over a list of JPEGs
+- bottom **left** on purpose: bottom right is where the house button is, and the
+  button being covered would break the one thing the video is about
+- a face in shot changes what the review step is for, and probably what "record
+  again" means
+
+If it gets picked up, it wants its own pass and its own before-and-after, not a
+corner of a change about something else.
