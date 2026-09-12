@@ -193,23 +193,22 @@ test("the script, the picture source and the address come back too", options, as
     const shown = await page.evaluate(() => ({
       upload: !document.getElementById("uploadField").hidden,
       listingUrl: !document.getElementById("listingUrlField").hidden,
-      // The upgrade script is not a before shot, so nothing is asked about a
-      // clean listing - which only follows if the script really was restored.
-      cleanShot: !document.getElementById("cleanShotField").hidden,
     }));
     assert.equal(shown.upload, true, "the upload box follows the remembered choice");
     assert.equal(shown.listingUrl, false);
-    assert.equal(shown.cleanShot, false);
   } finally {
     await tool.close();
   }
 });
 
 /*
- * The before-shot confirmation is a statement about one particular screenshot,
- * so it is never remembered - it has to be made again for the next picture.
+ * There is nothing on a before-shot upload to confirm any more.
+ *
+ * The form used to ask - a tickbox saying "this listing has no Explorer on it
+ * yet" - and Bill asked for it to go: he picked the page and took the picture, so
+ * he can already see there is no Explorer on it. Nothing replaced it on the form.
  */
-test("neither the password nor the clean-shot confirmation is remembered", options, async () => {
+test("a before-shot upload has no confirmation box, and no password is remembered", options, async () => {
   const tool = await openTool();
   try {
     const page = await tool.open();
@@ -225,20 +224,26 @@ test("neither the password nor the clean-shot confirmation is remembered", optio
       };
       pick("templateId", "vanessa-se-only-v11");
       pick("pictureSource", "upload");
-      document.getElementById("listingHasNoExplorer").checked = true;
       window.DNLV.maker.memory.save();
     });
 
     await tool.open();
     const after = await page.evaluate(() => ({
-      cleanShotAsked: !document.getElementById("cleanShotField").hidden,
-      confirmed: document.getElementById("listingHasNoExplorer").checked,
+      // The before-shot script and the upload are both still picked, which is
+      // exactly the case the tickbox used to appear for.
+      templateId: (document.querySelector('input[name="templateId"]:checked') || {}).value || "",
+      upload: !document.getElementById("uploadField").hidden,
+      box: Boolean(document.getElementById("listingHasNoExplorer")),
+      field: Boolean(document.getElementById("cleanShotField")),
+      retryBox: Boolean(document.getElementById("retryListingHasNoExplorer")),
       stored: window.localStorage.getItem(window.DNLV.remember.key) || "",
     }));
 
-    // The before-shot script is still picked, so the question is still asked.
-    assert.equal(after.cleanShotAsked, true);
-    assert.equal(after.confirmed, false, "the confirmation is about one picture, not about the form");
+    assert.equal(after.templateId, "vanessa-se-only-v11");
+    assert.equal(after.upload, true);
+    assert.equal(after.box, false, "the clean-shot tickbox is gone from the form");
+    assert.equal(after.field, false);
+    assert.equal(after.retryBox, false, "and from the failure panel's upload too");
     assert.doesNotMatch(after.stored, /listingHasNoExplorer/, after.stored);
     assert.doesNotMatch(after.stored, /memory-test-token/, "no password goes anywhere near this");
   } finally {

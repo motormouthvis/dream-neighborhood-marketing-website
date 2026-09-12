@@ -85,24 +85,23 @@ async function useUploadedListing(job, workDir, log) {
   const picture = await prepareListingImage({ sourcePath: uploaded.file, outDir: workDir, log });
 
   /*
-   * Nothing here can check the picture for an Explorer, so a person did.
+   * Nothing here reads the picture, and nothing asks about it either.
    *
-   * On the live path capture refuses a listing that already has one when the
-   * script is a before-and-after, right up to the moment of the shot. There is
-   * no page to ask on this path - it is an image - and reading one off the
-   * pixels would be guessing, the same guessing this file refuses to do with the
-   * address. So the upload form asks instead, and will not take a before-shot
-   * screenshot until whoever can see it says it is a clean listing. That answer
-   * is written down here beside the video, with their name on it.
+   * On the live path capture refuses a listing that already has one of our
+   * Explorers on it when the script is a before-and-after, right up to the
+   * moment of the shot. There is no page to ask on this path - it is an image -
+   * and reading one off the pixels would be guessing, the same guessing this
+   * file refuses to do with the address.
+   *
+   * The upload form used to ask instead, with a tickbox. Bill can see there is
+   * no Explorer on the page he screenshotted, because he chose it and took the
+   * picture, so the script's own choice is the answer now. What the video is
+   * held to is what we draw: a before-shot script gets a clean listing, checked
+   * frame by frame in src/frames.js, and that is what is said below.
    */
   const beforeShot = isBeforeShot(job);
-  const confirmed = Boolean(uploaded.noExplorerConfirmed);
   if (beforeShot) {
-    log(
-      confirmed
-        ? "You confirmed the listing you photographed has no Explorer on it yet"
-        : "Nothing can check an uploaded picture for an Explorer - worth a look in the review"
-    );
+    log("This script is the before shot, so the listing frames are drawn clean");
   }
 
   return {
@@ -123,9 +122,7 @@ async function useUploadedListing(job, workDir, log) {
       }. Check the map in the review.`,
       ...(beforeShot
         ? [
-            confirmed
-              ? "This script is the before shot. No live page could be checked for an Explorer, so you confirmed on the upload that the listing you photographed does not have School Explorer or Neighborhood Explorer on it yet. Nothing we draw on the listing frames mentions the Neighborhood Explorer."
-              : "This script is the before shot, and nothing checked your screenshot for an Explorer - that check needs a live page, and there is not one here. If the listing you photographed already has School Explorer or Neighborhood Explorer on it, this is the wrong picture for this script and the \u201cSE to NE upgrade\u201d one is the right script.",
+            "This script is the before shot, so the listing frames are drawn clean - nothing we put on them mentions the Neighborhood Explorer. Nothing here reads your screenshot, so if the listing you photographed already has School Explorer on it, that customer wants the \u201cSE to NE upgrade\u201d script instead.",
           ]
         : []),
     ],

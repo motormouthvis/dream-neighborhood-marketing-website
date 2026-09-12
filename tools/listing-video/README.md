@@ -103,13 +103,12 @@ again leaves the caret where they put it.
 **Clear the form** empties it and stops it coming back, for when what is
 remembered is a customer ago.
 
-Three things are deliberately never kept:
+Two things are deliberately never kept:
 
 | | Why |
 | --- | --- |
 | the password | that is a session cookie's job, and it is not going anywhere that outlives the tab |
 | the screenshot | a file input cannot be filled in by script, and last week's picture quietly standing in for this listing is exactly what this tool exists to stop |
-| the before-shot confirmation | it is a statement about **one** particular screenshot, so it has to be made again for the next one |
 
 A browser that will not store anything — Safari in private browsing throws on
 `setItem` — is no problem. The form works as it always did; it just forgets
@@ -1342,7 +1341,7 @@ screenshot would film another street's schools, commutes and walk scores while
 looking completely convincing — a wrong video that reviews as a right one. So the
 address is typed by the person who can see the listing, or there is no video.
 
-### A before-shot upload has to be a clean listing, and only a person can say so
+### A before-shot upload is taken as a clean listing, and nothing is asked
 
 On the live path the capture looks at the page itself and refuses a listing that
 **already** has one of our Explorers on it when the script is a before-and-after —
@@ -1353,22 +1352,24 @@ There is no page behind a screenshot. And nothing here reads the pixels, for the
 same reason nothing reads the address off them: a wrong answer would look
 completely correct.
 
-This used to be a note beside the finished video — *"nothing checked your
-screenshot for an Explorer"* — which is a thing to notice after the fact rather
-than a check. Now the upload is **refused** until whoever took the screenshot
-confirms the listing in it has no Explorer on it yet:
+There **used to be a tickbox** on the upload — *"this listing has no Explorer on it
+yet"* — and the upload was refused without it. Bill asked for it to go, and he is
+right: he opens the listing, decides it is the one, and takes the picture, so he
+can already see there is no School Explorer or Neighborhood Explorer on it. The
+box was one more click to say something he had just done. The script's own
+*listing* setting is the answer now.
 
-> This listing has no Explorer on it yet — I can see there is no School Explorer or
-> Neighborhood Explorer on the page I screenshotted.
+Nothing important rests on that box being gone, because the promise was never
+"somebody ticked a box" — it is **what we draw**. A before-shot script gets a clean
+listing whatever the picture behind it holds: every frame is read back off the
+stage before the shutter, and a listing beat with any Explorer wording on it is
+refused rather than photographed. See
+[Nothing about the Neighborhood Explorer goes on a listing frame](#nothing-about-the-neighborhood-explorer-goes-on-a-listing-frame)
+and `test/before-shot-frames.test.js`.
 
-Asked only for a script whose *listing* setting is **absent**, and asked at both
-doors the upload can come in by: the form and the failure panel. Saying no is not
-a dead end — the refusal names the **SE to NE upgrade** script, which is the one
-that wants a listing that already has School Explorer on it.
-
-The answer is kept with the job and said beside the video, with what was drawn on
-the listing frames, so the review reads what was confirmed rather than what could
-not be checked.
+What is said beside the video says that, and names the way out if the screenshot
+was the wrong one: if the listing already has School Explorer on it, that customer
+wants the **SE to NE upgrade** script.
 
 ### The address is picked from the Explorer's own suggestions
 
