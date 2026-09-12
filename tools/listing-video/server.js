@@ -1093,6 +1093,9 @@ app.get(["/v/:id", `${TOOL_PATH}/v/:id`], async (req, res) => {
         id: job.id,
         firstName: job.input.firstName,
         company: job.input.company,
+        // A made video is School Explorer on their own listing and the heading
+        // says so. An uploaded one is whatever it is, so it does not claim to be.
+        uploaded: store.isUploadedVideo(job),
         durationSeconds: job.result.durationSeconds,
         videoUrl: `/v/${job.id}/video.mp4`,
         posterUrl: `/v/${job.id}/poster.jpg`,

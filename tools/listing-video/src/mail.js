@@ -29,37 +29,48 @@ function buildEmail({ job, watchUrl }) {
   // Only mention Neighborhood Explorer when the script the customer just
   // watched actually covered it.
   const bothProducts = Boolean(job.template && job.template.explorers === "se-ne");
+  /*
+   * A video this tool made is always School Explorer on one of their own
+   * listings, so the email describes exactly that. A video that was uploaded is
+   * whatever was recorded - see src/uploaded-video.js - so the email says
+   * nothing about what is in it beyond who it is for. Promising School Explorer
+   * on their own page over a video that does not show it is how a prospecting
+   * email becomes a complaint.
+   */
+  const uploaded = Boolean(job.kind === "uploaded");
 
-  const subject = `${firstName}, I made you a short video about the ${company} website`;
+  const subject = uploaded
+    ? `${firstName}, a short video for ${company}`
+    : `${firstName}, I made you a short video about the ${company} website`;
 
-  const lines = [
-    `Hi ${firstName},`,
-    "",
-    `I put together a short video using a real listing from the ${company} website. It shows School Explorer sitting on your own page: one line of code, it auto-detects the address, and we install it for you free.`,
-    "",
-    `Watch it here: ${watchUrl}`,
-    "",
-    "School Explorer is free for life, no credit card.",
-  ];
-  if (bothProducts) {
-    lines.push("", "If you ever want more, Neighborhood Explorer is an upgrade on the same button.");
+  const opening = uploaded
+    ? `I recorded a short video for ${company}. It is about two minutes at most, and it is easier to watch than to read.`
+    : `I put together a short video using a real listing from the ${company} website. It shows School Explorer sitting on your own page: one line of code, it auto-detects the address, and we install it for you free.`;
+
+  const lines = [`Hi ${firstName},`, "", opening, "", `Watch it here: ${watchUrl}`];
+  if (!uploaded) {
+    lines.push("", "School Explorer is free for life, no credit card.");
+    if (bothProducts) {
+      lines.push("", "If you ever want more, Neighborhood Explorer is an upgrade on the same button.");
+    }
+    lines.push("", "If it looks useful, give us a call and we will get it on your site.");
+  } else {
+    lines.push("", "If it looks useful, give us a call.");
   }
-  lines.push("", "If it looks useful, give us a call and we will get it on your site.", "", "— Dream Neighborhood");
+  lines.push("", "— Dream Neighborhood");
 
   const text = lines.join("\n");
   const html = `
     <div style="font-family:Inter,Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#16202b">
       <p>Hi ${escapeHtml(firstName)},</p>
-      <p>I put together a short video using a real listing from the ${escapeHtml(company)} website. It shows
-      School Explorer sitting on your own page: one line of code, it auto-detects the address, and we install it
-      for you free.</p>
+      <p>${escapeHtml(opening)}</p>
       <p><a href="${escapeHtml(watchUrl)}"
         style="display:inline-block;background:#1f7a4d;color:#fff;text-decoration:none;padding:13px 24px;border-radius:10px;font-weight:700">
         Watch the video</a></p>
       <p style="font-size:14px;color:#5b6b7b">${escapeHtml(watchUrl)}</p>
-      <p>School Explorer is <strong>free for life, no credit card</strong>.</p>
-      ${bothProducts ? "<p>If you ever want more, Neighborhood Explorer is an upgrade on the same button.</p>" : ""}
-      <p>If it looks useful, give us a call and we will get it on your site.</p>
+      ${uploaded ? "" : "<p>School Explorer is <strong>free for life, no credit card</strong>.</p>"}
+      ${!uploaded && bothProducts ? "<p>If you ever want more, Neighborhood Explorer is an upgrade on the same button.</p>" : ""}
+      <p>If it looks useful, give us a call${uploaded ? "" : " and we will get it on your site"}.</p>
       <p>— Dream Neighborhood</p>
     </div>`;
 

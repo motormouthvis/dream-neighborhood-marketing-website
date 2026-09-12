@@ -295,6 +295,9 @@ test("an uploaded video becomes a ready job with a watch link that plays", async
     const html = await page.text();
     assert.match(html, new RegExp(`/v/${id}/video.mp4`));
     assert.match(html, /DOMO Realty/);
+    // The page knows it was uploaded, so its heading does not tell the customer
+    // they are about to see School Explorer on their own listing.
+    assert.match(html, /"uploaded":true/);
 
     const video = await fetch(`${tool.origin}/v/${id}/video.mp4`);
     assert.equal(video.status, 200);
@@ -363,15 +366,23 @@ test("sending it is behind the same review as everything else", async () => {
     assert.equal(reviewed.status, 200);
     assert.equal((await reviewed.json()).review.reviewed, true);
 
-    // The draft is the email that would go, and it must not promise a
-    // Neighborhood Explorer upgrade in a video that showed neither product.
+    /*
+     * The draft is the email that would go, and it must not describe a video it
+     * has never seen. Nothing here knows what is in an uploaded file, so an
+     * email promising School Explorer on their own listing over a video that
+     * does not show it is how a prospecting email becomes a complaint.
+     */
     const draft = await fetch(`${tool.origin}${TOOL}/api/jobs/${id}/email-draft`, {
       headers: { cookie: tool.cookie },
     });
     const body = await draft.json();
     assert.match(body.subject, /Vanessa/);
+    assert.match(body.subject, /DOMO Realty/);
     assert.match(body.text, new RegExp(`/v/${id}`));
     assert.doesNotMatch(body.text, /Neighborhood Explorer/);
+    assert.doesNotMatch(body.text, /School Explorer/, body.text);
+    assert.doesNotMatch(body.html, /School Explorer/);
+    assert.doesNotMatch(body.text, /real listing/i, "nothing here knows a listing was involved");
   } finally {
     await tool.close();
   }

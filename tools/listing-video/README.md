@@ -1124,9 +1124,19 @@ step, because there is genuinely nothing behind them:
 
 Trimming still works, because it is one ffmpeg pass over the finished file.
 
-The email is the same email, and it does **not** mention Neighborhood Explorer:
-that line only appears when the script the customer watched covered it, and an
-uploaded video has no script at all.
+### The email and the watch page do not describe a video they have not seen
+
+A video this tool made is always School Explorer on one of their own listings, so
+the watch page heading and the email say exactly that. **Nothing here knows what is
+in an uploaded file**, so on that path neither of them claims to:
+
+| | Made here | Uploaded |
+| --- | --- | --- |
+| Watch page heading | *"Vanessa, here is a quick look at School Explorer on the DOMO Realty website"* | *"Vanessa, here is a short video for the DOMO Realty team"* |
+| Email | Describes School Explorer on a real listing from their site, free for life, and Neighborhood Explorer if the script covered it | Says there is a short video and links to it |
+
+Promising School Explorer on their own page over a video that does not show it is
+how a prospecting email becomes a complaint.
 
 ### Switching it off
 
@@ -1882,7 +1892,11 @@ a different address. If a mailbox refuses to send as an address it does not own,
 that is an SMTP-side setting, not something this tool decides.
 
 The email only mentions Neighborhood Explorer when the script the customer just
-watched covered it.
+watched covered it, and it only describes School Explorer on their own listing
+when that is what the video is — an uploaded video gets a shorter email that says
+nothing about what is in it. See [The email and the watch page do not describe a
+video they have not
+seen](#the-email-and-the-watch-page-do-not-describe-a-video-they-have-not-seen).
 
 ---
 
