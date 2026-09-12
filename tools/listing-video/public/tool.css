@@ -338,6 +338,9 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .check input { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 22px; }
 
 .teleprompter summary { cursor: pointer; font-weight: 700; font-size: 16px; }
+/* The voice picker sits at the top of the fold, so it needs the gap a summary
+   does not give it on its own. */
+.teleprompter > .field:first-of-type { margin-top: 14px; }
 .scriptbox {
   white-space: pre-wrap; font-family: inherit; font-size: 15px; line-height: 1.55;
   background: #fff; border: 1px solid var(--line); border-radius: 11px;
