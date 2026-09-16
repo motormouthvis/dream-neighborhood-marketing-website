@@ -1,9 +1,9 @@
-/* Gated Calendly scheduling for / review site.
+/* Gated scheduling for the marketing site.
    Links with [data-calendly-gate] stay disabled until sessionStorage
    dn_calendly_unlock_v1 is set (after the realtor or partner form submits).
-   Optional prefill (name, email, etc.) is stored in dn_calendly_prefill_v1 and
-   appended to unlocked Calendly URLs per Calendly help:
-   https://calendly.com/help/how-to-pre-fill-invitee-information-in-your-calendly-link */
+   Unlocked booking links use William's Google Calendar appointment page.
+   Optional form fields are stored in dn_calendly_prefill_v1; Calendly-style
+   query prefill is not applied to Google Calendar booking URLs. */
 (function () {
   var STORAGE_KEY = "dn_calendly_unlock_v1";
   var PREFILL_KEY = "dn_calendly_prefill_v1";
@@ -34,7 +34,7 @@
     }
   }
 
-  /** Map site form fields to Calendly query params (name, email, first/last, optional a1). */
+  /** Map site form fields to stored prefill (name, email, first/last, optional a1). */
   function normalizePrefill(raw) {
     if (!raw || typeof raw !== "object") return {};
     var out = {};
@@ -95,9 +95,20 @@
     return norm;
   }
 
+  function isGoogleBookingUrl(href) {
+    try {
+      var host = new URL(href).hostname.toLowerCase();
+      return host === "calendar.app.google" || host === "calendar.google.com";
+    } catch (e) {
+      return false;
+    }
+  }
+
   function buildCalendlyUrl(baseHref) {
     var base = baseHref || "";
     if (!base) return base;
+    // Google Appointment Schedule pages do not use Calendly invitee query params.
+    if (isGoogleBookingUrl(base)) return base;
     var stored = getStoredPrefill();
     try {
       var u = new URL(base);
