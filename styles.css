@@ -1760,7 +1760,7 @@ a {
   line-height: 1.55;
 }
 
-/* Calendly links disabled until realtor/partner form is submitted (see calendly-gate.js) */
+/* Booking links disabled until realtor/partner form is submitted (see calendly-gate.js) */
 a.calendly-gate.calendly-gate--locked {
   opacity: 0.42;
   cursor: not-allowed;
