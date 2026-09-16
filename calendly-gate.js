@@ -1,9 +1,8 @@
-/* Gated Calendly scheduling for / review site.
+/* Gated booking for the marketing site.
    Links with [data-calendly-gate] stay disabled until sessionStorage
    dn_calendly_unlock_v1 is set (after the realtor or partner form submits).
    Optional prefill (name, email, etc.) is stored in dn_calendly_prefill_v1 and
-   appended to unlocked Calendly URLs per Calendly help:
-   https://calendly.com/help/how-to-pre-fill-invitee-information-in-your-calendly-link */
+   appended to unlocked Google Calendar Appointment URLs. */
 (function () {
   var STORAGE_KEY = "dn_calendly_unlock_v1";
   var PREFILL_KEY = "dn_calendly_prefill_v1";
@@ -34,7 +33,7 @@
     }
   }
 
-  /** Map site form fields to Calendly query params (name, email, first/last, optional a1). */
+  /** Map site form fields to booking query params (name, email, first/last, optional a1). */
   function normalizePrefill(raw) {
     if (!raw || typeof raw !== "object") return {};
     var out = {};
